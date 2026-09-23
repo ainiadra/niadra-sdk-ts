@@ -1,10 +1,10 @@
 {
   "name": "@niadra/sdk",
   "version": "0.1.0",
-  "description": "TypeScript client for Niadra: customer memory shared by every AI agent, read before the model call and written after it.",
+  "description": "TypeScript SDK for Niadra, the shared customer memory for every AI agent in a company: context before the model call, history, tools and MCP.",
   "license": "Apache-2.0",
   "author": "Niadra",
-  "homepage": "https://docs.niadra.com/sdk/typescript",
+  "homepage": "https://niadra.com/en/docs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ainiadra/niadra-sdk-ts.git"
@@ -13,10 +13,17 @@
   "keywords": [
     "niadra",
     "ai-agents",
-    "memory",
-    "context",
+    "agent-memory",
     "llm",
-    "customer-context"
+    "customer-context",
+    "context-engineering",
+    "mcp",
+    "function-calling",
+    "whatsapp",
+    "voice-ai",
+    "customer-support",
+    "lgpd",
+    "gdpr"
   ],
   "type": "module",
   "main": "./dist/index.cjs",

@@ -1,26 +1,96 @@
-# @niadra/sdk
+# Niadra TypeScript SDK
 
-The TypeScript client for [Niadra](https://niadra.com): customer memory shared by every AI agent a company runs. Read the customer's context before calling the model, record what happened after it, and every other agent, on any channel or vendor, starts from the same memory.
+[![npm](https://img.shields.io/npm/v/@niadra/sdk)](https://www.npmjs.com/package/@niadra/sdk)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-- Runs on Node 18+ and on edge runtimes (Vercel, Cloudflare Workers, Deno). It only needs `fetch`.
-- Ships ESM and CommonJS builds with full type definitions.
-- Fail-open by default: if Niadra is slow or down, your agent keeps answering, just without memory.
+**Niadra is the shared customer memory for every AI agent in a company.** The WhatsApp agent, the
+voice agent, the billing agent and the human team read the same memory before they act and write
+back what they said and did. This package connects a TypeScript or JavaScript agent to it, on Node
+18+ and on edge runtimes (Vercel, Cloudflare Workers, Deno).
+
+[Website](https://niadra.com/en) · [Documentation](https://niadra.com/en/docs) ·
+[Talk to us](https://niadra.com/en/enterprise) · [Python SDK](https://github.com/ainiadra/niadra-sdk-python)
 
 ```sh
 npm install @niadra/sdk
 ```
 
+## The problem it solves
+
+A customer tells your WhatsApp agent that order 4471 arrived with a broken lid and that she needs a
+replacement by Friday. An hour later she calls. Without shared memory, the voice agent asks her to
+explain everything again, and nobody remembers the Friday promise. With Niadra, the voice agent
+starts the call knowing about the open replacement and its deadline, and when the billing agent
+credits her invoice, the other agents see it within seconds.
+
+Niadra does the remembering for you:
+
+- it turns conversations and system events into facts, open items and promises, each with the
+  turns that prove it;
+- it ties them to the right person across phone numbers, e-mails, WhatsApp ids and CRM ids, and to
+  the companies and partners that person acts for;
+- it compiles a short context for each agent, holding back what the customer's verification level
+  does not allow, and records a receipt of every read.
+
+Your agents keep their own models, prompts and vendors. Niadra is the memory layer they share.
+
 ## Quickstart
 
 ```ts
 import { Niadra, handles } from "@niadra/sdk";
+
 const niadra = new Niadra({ apiKey: process.env.NIADRA_API_KEY });
 const marina = handles.phone("+5511987654321");
-const { text } = await niadra.context({ subject: marina, conversation_id: "wa-8812" });
-niadra.track({ channel: "whatsapp", conversation_id: "wa-8812", handles: [marina], speaker: "customer", text: "The technician never came" });
+const convo = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-8812" });
+
+convo.customer(inbound.text, { idempotency_key: inbound.id }); // what the customer wrote
+const ctx = await convo.context();                                // what this agent needs to know now
+convo.markInjected(ctx);
+const reply = await callModel(instructions + "\n\n" + ctx.text, history, ctx.suffix);
+convo.agent(reply);                                               // what the agent answered
+await convo.end();
 ```
 
-Put `text` in the system prompt. `track()` returns at once; events leave in batches in the background.
+Three moments cover most agents: read the context before the model call, record the turns after
+it, and record an `action()` when the agent does something in a system (a refund, a new delivery
+date). `wrap()` does the reading and recording for you around an OpenAI-compatible client. Ships
+ESM and CommonJS builds with full type definitions; it only needs `fetch`.
+
+## What your agent gets
+
+| Call | What it returns |
+|---|---|
+| `context()` | a few lines about this customer, compiled from every channel and agent, pinned for the conversation |
+| `search()`, `timeline()`, `open()` | the full history on demand, with how often a problem happened before |
+| `tools()` | the same history as function-calling tools bound to one customer, for any model provider |
+| `subjectToken()` | a token that binds an MCP connection to one customer |
+| `track()`, `action()` | messages, system events and actions, sent in the background, never blocking the agent |
+| `identify()`, `verify()` | which ids belong to the same person, and what the conversation proved about who is there |
+| `objectState()`, `objectTimeline()` | a business object (an order, an invoice, a ticket) as the systems of record reported it |
+| `feedback()` | a correction of what Niadra derived, audited like any other event |
+
+## Questions people ask
+
+**How do I give my AI agent memory of past conversations on other channels?** Record the turns
+with `track()` or `conversation()` in every agent, and read `context()` before each model call.
+Niadra ties the turns to the person, whichever id each channel uses.
+
+**How is this different from keeping chat history in my database or in a vector store?** Stored
+history is raw text for one channel. Niadra keeps derived facts and open items with evidence,
+resolves identity across channels and systems, closes items when a system of record confirms an
+action, and filters what each agent may read by the verification level of the conversation.
+
+**What happens if Niadra is slow or down?** The agent keeps answering without the memory. Every
+call has its own time budget (150 ms for voice context, 300 ms otherwise) and resolves with an
+error value instead of throwing, unless you ask for strict mode.
+
+**What about privacy and LGPD or GDPR?** Items carry a verification level and a purpose, and the
+policy decides what each agent sees. Every read leaves a receipt, and a person can be erased or
+exported on request. The SDK never logs handles or message text.
+
+**Which models and frameworks does it work with?** Any. The context is text you place in your
+prompt, the tools follow the common function-calling format, and `wrap()` covers
+OpenAI-compatible clients.
 
 ## Concepts
 
@@ -276,6 +346,15 @@ pnpm install
 pnpm check     # typecheck, lint, tests
 pnpm build     # ESM and CommonJS into dist/
 ```
+
+## Em português
+
+A Niadra é a memória de clientes compartilhada por todos os agentes de IA de uma empresa: o agente
+do WhatsApp, o de voz, o de cobrança e o time humano leem a mesma memória antes de agir e registram
+o que disseram e fizeram. Este pacote conecta um agente em TypeScript ou JavaScript a essa memória:
+`context()` antes de chamar o modelo, `track()` depois, e `action()` quando o agente faz algo num
+sistema. Documentação em [niadra.com/docs](https://niadra.com/docs) e contato em
+[niadra.com/enterprise](https://niadra.com/enterprise).
 
 ## License
 
