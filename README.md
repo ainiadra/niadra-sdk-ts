@@ -347,14 +347,10 @@ pnpm check     # typecheck, lint, tests
 pnpm build     # ESM and CommonJS into dist/
 ```
 
-## Em português
+## Documentation in Portuguese
 
-A Niadra é a memória de clientes compartilhada por todos os agentes de IA de uma empresa: o agente
-do WhatsApp, o de voz, o de cobrança e o time humano leem a mesma memória antes de agir e registram
-o que disseram e fizeram. Este pacote conecta um agente em TypeScript ou JavaScript a essa memória:
-`context()` antes de chamar o modelo, `track()` depois, e `action()` quando o agente faz algo num
-sistema. Documentação em [docs.niadra.com](https://docs.niadra.com) e contato em
-[niadra.com/enterprise](https://niadra.com/enterprise).
+The documentation is also available in Portuguese at [docs.niadra.com](https://docs.niadra.com),
+and the contact page in Portuguese at [niadra.com/enterprise](https://niadra.com/enterprise).
 
 ## License
 
