@@ -1,0 +1,67 @@
+{
+  "name": "@niadra/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript client for Niadra: customer memory shared by every AI agent, read before the model call and written after it.",
+  "license": "Apache-2.0",
+  "author": "Niadra",
+  "homepage": "https://docs.niadra.com/sdk/typescript",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ainiadra/niadra-sdk-ts.git"
+  },
+  "bugs": "https://github.com/ainiadra/niadra-sdk-ts/issues",
+  "keywords": [
+    "niadra",
+    "ai-agents",
+    "memory",
+    "context",
+    "llm",
+    "customer-context"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "prepublishOnly": "pnpm check && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.13.6",
+    "eslint": "^10.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.1"
+  },
+  "packageManager": "pnpm@10.32.1"
+}
