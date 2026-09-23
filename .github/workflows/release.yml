@@ -1,0 +1,33 @@
+# Publishes @niadra/sdk to npm when a tag vX.Y.Z is pushed, through npm's trusted publishing (with
+# provenance): no token is stored anywhere and the 2FA of the account stays as it is. Once, on
+# npmjs.com: package @niadra/sdk > Settings > Trusted publisher > GitHub Actions (organization
+# ainiadra, repository niadra-sdk-ts, workflow release.yml).
+#   git tag v0.1.1 && git push origin v0.1.1      (the tag must match the version in package.json)
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Trusted publishing needs npm 11.5.1 or later
+        run: npm install -g npm@latest
+      - name: The tag matches the package version
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME, package $version"; exit 1; }
+      - run: pnpm install --frozen-lockfile
+      - name: Publish (prepublishOnly runs the checks and the build)
+        run: npm publish --provenance --access public
