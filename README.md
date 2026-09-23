@@ -8,7 +8,7 @@ voice agent, the billing agent and the human team read the same memory before th
 back what they said and did. This package connects a TypeScript or JavaScript agent to it, on Node
 18+ and on edge runtimes (Vercel, Cloudflare Workers, Deno).
 
-[Website](https://niadra.com/en) · [Documentation](https://niadra.com/en/docs) ·
+[Website](https://niadra.com/en) · [Documentation](https://docs.niadra.com/en) ·
 [Talk to us](https://niadra.com/en/enterprise) · [Python SDK](https://github.com/ainiadra/niadra-sdk-python)
 
 ```sh
@@ -353,7 +353,7 @@ A Niadra é a memória de clientes compartilhada por todos os agentes de IA de u
 do WhatsApp, o de voz, o de cobrança e o time humano leem a mesma memória antes de agir e registram
 o que disseram e fizeram. Este pacote conecta um agente em TypeScript ou JavaScript a essa memória:
 `context()` antes de chamar o modelo, `track()` depois, e `action()` quando o agente faz algo num
-sistema. Documentação em [niadra.com/docs](https://niadra.com/docs) e contato em
+sistema. Documentação em [docs.niadra.com](https://docs.niadra.com) e contato em
 [niadra.com/enterprise](https://niadra.com/enterprise).
 
 ## License
