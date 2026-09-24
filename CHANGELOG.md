@@ -12,6 +12,9 @@ All notable changes to this package are documented here. The format follows [Kee
 ### Changed
 
 - `engines` asks for Node 20 or later, the versions the CI tests. The README no longer claims Node 18.
+- The search tool no longer offers the model a `system_event` item kind, and its description names
+  business objects instead of system events: a system event is never an item, it changes its object,
+  so the filter is `object`. The server still reads `system_event` from 0.1.0 as `object`.
 
 ### Fixed
 

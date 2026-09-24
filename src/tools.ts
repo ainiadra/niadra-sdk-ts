@@ -58,7 +58,7 @@ export const TOOL_NAMES = {
   open: "open_history_item",
 } as const;
 
-const ITEM_KINDS: HistoryItemKind[] = ["episode", "fact", "open_item", "action", "system_event", "object", "trait"];
+const ITEM_KINDS: HistoryItemKind[] = ["episode", "fact", "open_item", "action", "object", "trait"];
 
 const period = {
   since: { type: "string", format: "date-time", description: "Only items at or after this ISO 8601 time." },
@@ -81,7 +81,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     function: {
       name: TOOL_NAMES.search,
       description:
-        "Search this customer's past conversations, actions and system events by meaning and keywords. " +
+        "Search this customer's past conversations, actions and business objects by meaning and keywords. " +
         "Use it when the customer refers to something that happened before and the details are not in the " +
         "customer context you already have. Do not use it for facts already listed there. The result also " +
         "says how often the same kind of issue came back. To read one result in full, call open_history_item.",

@@ -67,13 +67,15 @@ export type VerifyMethod =
  */
 export type DeliveryPath = "t0" | "t1" | "t2" | "t3" | "t4" | "holdout" | "not_modified";
 
-/** Kinds of history items the navigation calls can filter on. */
+/**
+ * Kinds of history items the navigation calls can filter on. A system event is never an item: it
+ * changes its object's state, so filter on `object`.
+ */
 export type HistoryItemKind =
   | "episode"
   | "fact"
   | "open_item"
   | "action"
-  | "system_event"
   | "object"
   | "trait";
 
