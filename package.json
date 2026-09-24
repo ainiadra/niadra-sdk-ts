@@ -59,12 +59,15 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint .",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "runtimes": "pnpm build && deno run --no-prompt test/runtimes/smoke.mjs && bun test/runtimes/smoke.mjs && node test/runtimes/workerd.mjs && node test/runtimes/edge.mjs",
     "prepublishOnly": "pnpm check && pnpm build"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "5.0.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.6",
     "eslint": "^10.0.0",
+    "miniflare": "4.20260730.0",
     "tsup": "^8.5.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.70.1",

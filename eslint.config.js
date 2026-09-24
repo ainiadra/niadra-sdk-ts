@@ -39,4 +39,13 @@ export default tseslint.config(
     files: ["eslint.config.js"],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // Plain JavaScript that runs the build on Deno, Bun, workerd and the Edge Runtime.
+    files: ["test/runtimes/**/*.mjs"],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      parserOptions: { project: null },
+      globals: { console: "readonly", process: "readonly", URL: "readonly", Response: "readonly" },
+    },
+  },
 );

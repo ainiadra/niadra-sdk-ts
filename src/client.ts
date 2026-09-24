@@ -96,10 +96,18 @@ interface Core {
 
 type WritePolicy = Extract<RetryPolicy, { kind: "write" }>;
 
+/**
+ * An environment variable, where the runtime has them. Deno without `--allow-env` throws on any
+ * read of `process.env`, and a missing permission must not stop the client from being built.
+ */
 function readEnv(name: string): string | undefined {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
-  const value = env?.[name];
-  return value === "" ? undefined : value;
+  try {
+    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+    const value = env?.[name];
+    return value === "" ? undefined : value;
+  } catch {
+    return undefined;
+  }
 }
 
 function describe(error: NiadraError): string {

@@ -6,7 +6,8 @@
 **Niadra is the shared customer memory for every AI agent in a company.** The WhatsApp agent, the
 voice agent, the billing agent and the human team read the same memory before they act and write
 back what they said and did. This package connects a TypeScript or JavaScript agent to it, on
-Node 20+.
+Node 20+, Deno, Bun, Cloudflare Workers and the Vercel Edge Runtime: it needs only `fetch` and
+Web Crypto, and CI runs the build on each of them.
 
 [Website](https://niadra.com/en) · [Documentation](https://docs.niadra.com/en) ·
 [Talk to us](https://niadra.com/en/enterprise) · [Python SDK](https://github.com/ainiadra/niadra-sdk-python)

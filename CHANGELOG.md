@@ -4,13 +4,19 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [0.1.1] - 2026-09-24
 
+### Added
+
+- CI runs the build on Deno (with no permissions), Bun, workerd (Cloudflare Workers) and the Vercel
+  Edge Runtime (`pnpm runtimes`), and the README names them.
+
 ### Changed
 
-- `engines` asks for Node 20 or later, the versions the CI tests. The README no longer claims Node 18
-  or edge runtimes.
+- `engines` asks for Node 20 or later, the versions the CI tests. The README no longer claims Node 18.
 
 ### Fixed
 
+- Building a client on Deno without `--allow-env` no longer throws: a runtime that refuses to read
+  the environment now counts as one without `NIADRA_API_KEY` and `NIADRA_BASE_URL`.
 - `feedback()` and the reservation in `uploadMedia()` end within `timeouts.write` (5 s) in total,
   retries and backoff included, instead of 5 s per attempt.
 - The transfer in `uploadMedia()` ends within `timeouts.upload` (60 s) in total instead of per attempt.
