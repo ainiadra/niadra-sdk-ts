@@ -2,7 +2,7 @@
 export interface ParsedApiKey {
   /** `live` keys reach production spaces, `test` keys reach sandbox spaces. */
   mode: "live" | "test";
-  /** Data region, such as `sa-east-1`. */
+  /** Data region, such as `us-east-2`. */
   region: string;
   /** The space (project and environment) the key belongs to. */
   space: string;

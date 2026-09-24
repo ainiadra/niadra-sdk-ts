@@ -5,8 +5,8 @@
 
 **Niadra is the shared customer memory for every AI agent in a company.** The WhatsApp agent, the
 voice agent, the billing agent and the human team read the same memory before they act and write
-back what they said and did. This package connects a TypeScript or JavaScript agent to it, on Node
-18+ and on edge runtimes (Vercel, Cloudflare Workers, Deno).
+back what they said and did. This package connects a TypeScript or JavaScript agent to it, on
+Node 20+.
 
 [Website](https://niadra.com/en) · [Documentation](https://docs.niadra.com/en) ·
 [Talk to us](https://niadra.com/en/enterprise) · [Python SDK](https://github.com/ainiadra/niadra-sdk-python)
@@ -229,7 +229,7 @@ if (upload) {
 }
 ```
 
-Media never travels inside an event. `uploadMedia()` takes a `Uint8Array`, `ArrayBuffer` or `Blob`, reserves an upload, sends the bytes straight to storage over a signed URL (HTTPS only, with exactly the headers the signature covers and nothing else, so never your key or default headers; storage checks the body against the declared size and digest), and resolves with the reference and digest for the event. With `subject`, the file is stored under that person, so erasing them erases it even if no event ever references it. Hashing uses Web Crypto, which Node 18 only exposes behind a flag.
+Media never travels inside an event. `uploadMedia()` takes a `Uint8Array`, `ArrayBuffer` or `Blob`, reserves an upload, sends the bytes straight to storage over a signed URL (HTTPS only, with exactly the headers the signature covers and nothing else, so never your key or default headers; storage checks the body against the declared size and digest), and resolves with the reference and digest for the event. With `subject`, the file is stored under that person, so erasing them erases it even if no event ever references it. Hashing uses Web Crypto.
 
 ### Tools for any model
 
@@ -310,7 +310,6 @@ Configure it with `cache: { ttlMs, staleWhileRevalidateMs, maxStaleMs, maxEntrie
 
 - **Long-running Node services:** queued events are flushed when the event loop runs out of work (`beforeExit`). That event does not fire on signals or `process.exit()`, so call `await niadra.shutdown()` in your SIGTERM handler.
 - **Serverless functions:** `await niadra.flush()` before returning.
-- **Edge runtimes:** pass the flush to the platform, for example `ctx.waitUntil(niadra.flush())`.
 
 Create one client per process and share it: it owns the queue and the cache.
 

@@ -2,6 +2,13 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `engines` asks for Node 20 or later, the versions the CI tests. The README no longer claims Node 18
+  or edge runtimes.
+
 ## [0.1.0] - 2026-09-23
 
 First public release, with the same surface as the Python SDK.
