@@ -84,6 +84,24 @@ export interface ContextStamp {
   injected_at: string;
 }
 
+/**
+ * What the model provider reported for the call behind an agent's turn. `wrap()` reads it from every
+ * call it sees; without `wrap()`, pass it with the turn: `agent(text, { usage: response })` takes an
+ * OpenAI or Anthropic response or a `ModelUsage`.
+ */
+export interface ModelUsage {
+  /** Who served the call, lowercase: `openai`, `anthropic`, a router or a cloud. */
+  provider: string;
+  /** The model the provider says answered, such as `gpt-4.1-2025-04-14`. */
+  model: string;
+  /** Every input token, cached ones included. */
+  prompt_tokens: number;
+  /** Input tokens read from the provider's prompt cache. */
+  cached_tokens?: number;
+  /** Input tokens written to the cache (Anthropic's cache creation). */
+  cache_write_tokens?: number;
+}
+
 /** A message, a system event or an agent action, exactly as sent on the wire. */
 export interface EventItem {
   type: "event";
@@ -110,6 +128,8 @@ export interface EventItem {
   corrects_event_id?: string | null;
   voice?: VoiceInfo | null;
   context_stamp?: ContextStamp | null;
+  /** The model call behind an `ai_agent` message: tokens and prompt cache. */
+  usage?: ModelUsage | null;
 }
 
 /** States that several handles belong to the same subject. */

@@ -6,6 +6,16 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Added
 
+- The agent's turn carries the usage the model provider reported for the call behind it, as
+  `usage` (`ModelUsage`: provider, model, prompt tokens with the cached ones included, cached
+  tokens, tokens written to the cache). `wrap()` reads it from every OpenAI-compatible response
+  and from the last chunk of a stream that asked for it (`stream_options: { include_usage: true }`),
+  and never changes the request. Niadra sums it per agent, vendor and model, and the Console shows
+  the prompt cache's hit rate and estimated savings.
+- `agent(text, { usage })` on conversations and tasks takes the provider's response (OpenAI chat
+  completions or Responses, Anthropic messages) or a `ModelUsage`, for agents that do not use
+  `wrap()`; `modelUsage()` reads one yourself. A response without usage is left out; the turn is
+  recorded either way.
 - CI runs the build on Deno (with no permissions), Bun, workerd (Cloudflare Workers) and the Vercel
   Edge Runtime (`pnpm runtimes`), and the README names them.
 

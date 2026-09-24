@@ -12,6 +12,7 @@ import type { Handle, ObjectRef } from "./types/common.js";
 import type { TargetModel } from "./types/context.js";
 import type { ContextStamp } from "./types/events.js";
 import type { Verification, VerifyMethod, View } from "./types/vocabulary.js";
+import { asModelUsage } from "./usage.js";
 
 export interface TaskParams {
   /** Your id for the task. A UUIDv7 is minted when omitted. */
@@ -121,6 +122,8 @@ export class Task {
     if (options.idempotency_key) event.idempotency_key = options.idempotency_key;
     if (options.occurred_at) event.occurred_at = options.occurred_at;
     if (options.visibility) event.visibility = options.visibility;
+    const usage = asModelUsage(options.usage);
+    if (usage) event.usage = usage;
     return this.track(event);
   }
 

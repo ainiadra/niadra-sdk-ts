@@ -20,6 +20,7 @@ export type {
   ItemError,
   MediaUploadRequest,
   MediaUploadResponse,
+  ModelUsage,
   SpeakerRef,
   TaskEndedItem,
   VerifyItem,

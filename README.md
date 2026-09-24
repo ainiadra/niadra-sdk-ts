@@ -91,7 +91,8 @@ exported on request. The SDK never logs handles or message text.
 
 **Which models and frameworks does it work with?** Any. The context is text you place in your
 prompt, the tools follow the common function-calling format, and `wrap()` covers
-OpenAI-compatible clients.
+OpenAI-compatible clients; `agent(text, { usage })` takes the usage of an OpenAI or Anthropic
+response.
 
 ## Concepts
 
@@ -168,6 +169,22 @@ const completion = await openai.chat.completions.create({ model: "gpt-4.1", mess
 ```
 
 Every `chat.completions.create` and `chat.completions.parse` call through the wrapper, streaming or not, gets the pack after your leading system messages and the suffix at the end. The injection is stamped, and the model's answer (its first choice) is recorded as the agent's turn: at once, or when a stream ends or you stop reading it. `.withResponse()` keeps working and records too; `.asResponse()` returns the raw HTTP response, so nothing is recorded then. Pass a function instead of a conversation to pick one per call; when it returns `null`, the call passes through untouched. Nothing the wrapper does can fail your call: a context it cannot fetch is left out, and a failure to record the answer is logged, without content.
+
+#### The provider's prompt cache
+
+The agent's turn also carries the usage the provider reported for the call: every input token (`usage.prompt_tokens`), the ones read from its prompt cache (`usage.prompt_tokens_details.cached_tokens`) and, through gateways that pass Anthropic's fields along, the ones written to it. A stream reports usage only when you ask for it with `stream_options: { include_usage: true }`; the wrapper never changes your request to get it. Niadra sums the usage per agent, vendor and model, and the Console shows the cache's hit rate and the estimated savings next to the rest of the space's usage.
+
+Without `wrap()`, pass the provider's response with the turn. An OpenAI response and an Anthropic one are both understood (Anthropic's `usage.input_tokens`, `cache_read_input_tokens` and `cache_creation_input_tokens`):
+
+```ts
+const message = await anthropic.messages.create({ model: "claude-sonnet-4-5", max_tokens: 1024, system, messages });
+convo.agent(textOf(message), { usage: message });
+
+// or build it yourself
+convo.agent(reply, { usage: { provider: "openai", model: "gpt-4.1", prompt_tokens: 3000, cached_tokens: 2048 } });
+```
+
+`modelUsage(response)` reads one yourself. A response without usage is left out, and the turn is recorded either way.
 
 ### Tasks
 

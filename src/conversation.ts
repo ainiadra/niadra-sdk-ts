@@ -9,7 +9,8 @@ import type { Timings } from "./session.js";
 import type { BoundTools, ToolBinding } from "./tools.js";
 import type { Handle } from "./types/common.js";
 import type { TargetModel } from "./types/context.js";
-import type { Content, ContextStamp, VoiceInfo } from "./types/events.js";
+import type { Content, ContextStamp, ModelUsage, VoiceInfo } from "./types/events.js";
+import { asModelUsage } from "./usage.js";
 import type { Speaker, Verification, VerifyMethod, View, Visibility } from "./types/vocabulary.js";
 
 export interface ConversationParams {
@@ -41,6 +42,12 @@ export interface TurnOptions {
   voice?: VoiceInfo;
   /** Overrides the stamp an agent turn would carry from `markInjected()`. */
   context_stamp?: ContextStamp;
+  /**
+   * Agent turns only: what the model provider reported for the call behind the answer, as the
+   * provider's response (OpenAI or Anthropic) or a `ModelUsage`. `wrap()` passes it for you. A
+   * response without usage is left out; the turn is recorded either way.
+   */
+  usage?: ModelUsage | object | null;
 }
 
 export type ConversationEvent = Omit<TrackEvent, "channel" | "conversation_id"> & { channel?: string };
@@ -256,6 +263,8 @@ export class Conversation {
     if (options.visibility) event.visibility = options.visibility;
     if (options.voice) event.voice = options.voice;
     if (options.context_stamp) event.context_stamp = options.context_stamp;
+    const usage = role === "ai_agent" ? asModelUsage(options.usage) : null;
+    if (usage) event.usage = usage;
     return this.client.track(event);
   }
 }

@@ -6,6 +6,7 @@ export { Task } from "./task.js";
 export type { TaskAction, TaskEvent, TaskParams } from "./task.js";
 export type { Timings } from "./session.js";
 export { injectContext, wrap } from "./wrap.js";
+export { modelUsage, providerOf, tokenCounts } from "./usage.js";
 export type { SessionSource, WrapSession } from "./wrap.js";
 export type { MediaUpload, UploadParams } from "./media.js";
 export type { ObjectTimelineParams } from "./objects.js";

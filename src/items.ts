@@ -20,6 +20,7 @@ import {
   type FeedbackRequest,
   type HandoffItem,
   type IdentifyItem,
+  type ModelUsage,
   type SpeakerRef,
   type TaskEndedItem,
   type VerifyItem,
@@ -82,6 +83,8 @@ export interface TrackEvent extends EventBase {
   fields?: Record<string, unknown>;
   /** Required for `action`, and only valid there. */
   action?: ActionInfo | null;
+  /** What the provider reported for the model call behind an `ai_agent` message; only valid there. */
+  usage?: ModelUsage | null;
 }
 
 /** An agent action for `action()`: what an agent did in a system of record. */
@@ -198,6 +201,16 @@ function checkCloses(closes: Closes | null | undefined): void {
   if (byId === byObject) fail("closes takes either item_id, or object and operation");
 }
 
+function checkUsage(usage: ModelUsage): void {
+  if (!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(usage.provider)) fail("usage.provider must be lowercase, like `openai`");
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,127}$/.test(usage.model)) fail("usage.model is not a model name");
+  const counts = [usage.prompt_tokens, usage.cached_tokens ?? 0, usage.cache_write_tokens ?? 0];
+  if (!counts.every((n) => Number.isInteger(n) && n >= 0)) fail("usage counts are whole numbers from 0");
+  if ((usage.cached_tokens ?? 0) + (usage.cache_write_tokens ?? 0) > usage.prompt_tokens) {
+    fail("cached and written tokens are part of prompt_tokens");
+  }
+}
+
 function checkContent(content: Content | null | undefined): void {
   if (!content) return;
   if ((content.text?.length ?? 0) > MAX_EVENT_TEXT) fail(`content.text is longer than ${MAX_EVENT_TEXT}`);
@@ -232,6 +245,10 @@ export function buildEvent(input: TrackEvent): EventItem {
     if ((input.action.result?.length ?? 0) > 2000) fail("action.result is longer than 2000");
     checkCloses(input.action.closes);
   }
+  if (input.usage) {
+    if (kind !== "message" || speaker.role !== "ai_agent") fail("`usage` is only valid on a message of the `ai_agent`");
+    checkUsage(input.usage);
+  }
 
   const event: EventItem = {
     type: "event",
@@ -248,6 +265,7 @@ export function buildEvent(input: TrackEvent): EventItem {
   if (input.canonical_type) event.canonical_type = input.canonical_type;
   if (input.fields) event.fields = input.fields;
   if (input.action) event.action = input.action;
+  if (input.usage) event.usage = input.usage;
   copyOptional(event, input);
   assertSerializable(event);
   return event;

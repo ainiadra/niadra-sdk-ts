@@ -7,7 +7,11 @@
  * leading system or developer messages, and the suffix (deltas and live turns) as a system
  * message at the end. The pack goes after the caller's instructions because those are the same
  * for every customer: kept first, they stay the cacheable prefix of the prompt. The injection is
- * stamped on the conversation, and the model's answer is recorded as the agent's turn.
+ * stamped on the conversation, and the model's answer is recorded as the agent's turn, with the
+ * usage the provider reported for the call: the prompt's tokens, the ones read from the provider's
+ * prompt cache and the ones written to it (see `modelUsage()`). A stream reports its usage only when
+ * the caller asks for it (`stream_options: { include_usage: true }`); the wrapper never changes the
+ * request to get it.
  *
  * Nothing the wrapper does can fail the model call: a context that cannot be fetched is left
  * out, and a failure to record the answer is logged, without content, and swallowed.
@@ -15,12 +19,14 @@
 
 import type { ContextResult } from "./context.js";
 import type { Logger } from "./logger.js";
+import type { ModelUsage } from "./types/events.js";
+import { modelUsage } from "./usage.js";
 
 /** What `wrap()` needs from a conversation or a task. Both implement it. */
 export interface WrapSession {
   context(): Promise<ContextResult>;
   markInjected(context?: ContextResult | null): void;
-  agent(text: string): string | null;
+  agent(text: string, options?: { usage?: ModelUsage | null }): string | null;
   readonly logger: Logger;
 }
 
@@ -182,12 +188,12 @@ class Answer {
   parsed(value: unknown): unknown {
     try {
       if (!this.stream) {
-        this.record(messageText(value));
+        this.record(messageText(value), modelUsage(value));
         return value;
       }
       return isAsyncIterable(value)
-        ? captureStream(value, (text) => {
-            this.record(text);
+        ? captureStream(value, (text, usage) => {
+            this.record(text, usage);
           })
         : value;
     } catch (error) {
@@ -196,11 +202,11 @@ class Answer {
     }
   }
 
-  private record(text: string | null): void {
+  private record(text: string | null, usage: ModelUsage | null): void {
     if (this.recorded || !text) return;
     this.recorded = true;
     try {
-      this.session.agent(text);
+      this.session.agent(text, usage ? { usage } : {});
     } catch (error) {
       this.session.logger.warn(`could not record the model's answer (${errorName(error)})`);
     }
@@ -212,13 +218,25 @@ class Answer {
  * and hands it over when the stream ends, fails or is abandoned. Everything else, `tee()` and
  * `controller` included, is the stream's own.
  */
-function captureStream<T extends AsyncIterable<unknown>>(stream: T, done: (text: string) => void): T {
+function captureStream<T extends AsyncIterable<unknown>>(
+  stream: T,
+  done: (text: string, usage: ModelUsage | null) => void,
+): T {
   const parts: string[] = [];
+  // The last chunk carries the usage when the caller asked for it.
+  let usage: unknown = null;
+  let model: string | undefined;
   let finished = false;
+  const observe = (chunk: unknown): void => {
+    const reported = property(chunk, "usage");
+    if (isRecord(reported)) usage = reported;
+    const name = property(chunk, "model");
+    if (typeof name === "string" && name) model = name;
+  };
   const finish = (): void => {
     if (finished) return;
     finished = true;
-    done(parts.join(""));
+    done(parts.join(""), usage ? modelUsage(usage, model ? { model } : {}) : null);
   };
   return new Proxy(stream, {
     get(target, prop) {
@@ -230,7 +248,10 @@ function captureStream<T extends AsyncIterable<unknown>>(stream: T, done: (text:
               try {
                 const step = await inner.next();
                 if (step.done) finish();
-                else parts.push(deltaText(step.value));
+                else {
+                  parts.push(deltaText(step.value));
+                  observe(step.value);
+                }
                 return step;
               } catch (error) {
                 finish();
