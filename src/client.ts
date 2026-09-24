@@ -280,7 +280,7 @@ export class Niadra {
     });
   }
 
-  /** The customer's history in chronological order, one line per item, paginated by cursor. */
+  /** The customer's history, newest first, one line per item, paginated by cursor. */
   async timeline(params: TimelineRequest, options: RequestOptions = {}): Promise<Result<TimelineResponse>> {
     return this.navigate(() =>
       this.readSpec("POST", "/v1/history/timeline", params, this.timeouts.navigation, options),

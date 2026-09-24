@@ -22,7 +22,8 @@ const HEARTBEAT_WINDOW_MS = 60_000;
 /**
  * A bounded in-memory queue in front of `POST /v1/batch`.
  *
- * Items leave in batches when `flushAt` of them are waiting or `flushIntervalMs` has passed,
+ * Items leave in batches when `flushAt` of them are waiting, `flushIntervalMs` after the first
+ * one was queued, or `turnFlushIntervalMs` after the first conversation turn was queued,
  * whichever comes first. Only one batch is in flight at a time, so items reach the server in
  * the order they were queued. A batch that still fails after its retries is dropped and logged:
  * holding it would let one bad outage grow the queue without bound.
@@ -30,6 +31,7 @@ const HEARTBEAT_WINDOW_MS = 60_000;
 export class EventQueue {
   private items: Pending[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private timerDueAt = Number.POSITIVE_INFINITY;
   private tail: Promise<unknown> = Promise.resolve();
   private closed = false;
   private droppedSinceWarning = 0;
@@ -65,7 +67,8 @@ export class EventQueue {
     if (this.items.length >= this.options.flushAt) {
       this.flushInBackground();
     } else {
-      this.schedule();
+      const { flushIntervalMs, turnFlushIntervalMs } = this.options;
+      this.schedule(isTurn(item) ? Math.min(turnFlushIntervalMs, flushIntervalMs) : flushIntervalMs);
     }
     return true;
   }
@@ -163,12 +166,17 @@ export class EventQueue {
     return item;
   }
 
-  private schedule(): void {
-    if (this.timer !== null) return;
+  /** Sends what is waiting in `delayMs`, unless a send is already due sooner. */
+  private schedule(delayMs: number): void {
+    const dueAt = this.now() + delayMs;
+    if (this.timer !== null && this.timerDueAt <= dueAt) return;
+    this.cancelTimer();
+    this.timerDueAt = dueAt;
     this.timer = setTimeout(() => {
       this.timer = null;
+      this.timerDueAt = Number.POSITIVE_INFINITY;
       this.flushInBackground();
-    }, this.options.flushIntervalMs);
+    }, delayMs);
     unref(this.timer);
   }
 
@@ -176,7 +184,13 @@ export class EventQueue {
     if (this.timer === null) return;
     clearTimeout(this.timer);
     this.timer = null;
+    this.timerDueAt = Number.POSITIVE_INFINITY;
   }
+}
+
+/** A message of a conversation: what the other agents read in `live` while it goes on. */
+export function isTurn(item: BatchItem): boolean {
+  return item.type === "event" && item.kind === "message" && Boolean(item.conversation_id);
 }
 
 /** In Node, a pending flush timer must not keep an otherwise finished process alive. */

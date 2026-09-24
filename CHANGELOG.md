@@ -22,6 +22,12 @@ All notable changes to this package are documented here. The format follows [Kee
 ### Changed
 
 - `engines` asks for Node 20 or later, the versions the CI tests. The README no longer claims Node 18.
+- A conversation turn (a message with a `conversation_id`) leaves the queue at most 200 ms after it
+  was queued, taking whatever else is waiting along, instead of up to a second: it is what the other
+  agents read in `live`. `queue.turnFlushIntervalMs` sets it; other items still wait for
+  `flushIntervalMs` (1 s) or `flushAt` (15).
+- The timeline tool says the history comes newest first, as the server returns it, instead of
+  "in chronological order".
 - The search tool no longer offers the model a `system_event` item kind, and its description names
   business objects instead of system events: a system event is never an item, it changes its object,
   so the filter is `object`. The server still reads `system_event` from 0.1.0 as `object`.

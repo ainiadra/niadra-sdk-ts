@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EventQueue } from "../src/queue.js";
+import { EventQueue, isTurn } from "../src/queue.js";
 import { DEFAULT_QUEUE } from "../src/options.js";
 import type { BatchItem, BatchResponse } from "../src/index.js";
 import { MockServer, batchOk, makeClient, marina, problem, spyLogger } from "./helpers.js";
@@ -36,6 +36,58 @@ describe("batching", () => {
     expect(server.calls).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(server.calls).toHaveLength(1);
+  });
+
+  it("sends a conversation turn after turnFlushIntervalMs, with what was already waiting", async () => {
+    vi.useFakeTimers();
+    const server = new MockServer().on("POST /v1/batch", batchOk(2));
+    const niadra = makeClient(server, { queue: { flushAt: 100, flushIntervalMs: 60_000, turnFlushIntervalMs: 200 } });
+    niadra.track(message("outside any conversation"));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(server.calls).toHaveLength(0);
+    niadra.track({ ...message("I was charged twice"), conversation_id: "wa-1" });
+    await vi.advanceTimersByTimeAsync(199);
+    expect(server.calls).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(server.calls).toHaveLength(1);
+    const texts = server.calls[0]!.body.items.map((item: any) => item.content.text);
+    expect(texts).toEqual(["outside any conversation", "I was charged twice"]);
+  });
+
+  it("by default sends a turn within 200 ms and anything else within a second", async () => {
+    vi.useFakeTimers();
+    const server = new MockServer().on("POST /v1/batch", batchOk());
+    const niadra = makeClient(server);
+    niadra.track({ ...message("a turn"), conversation_id: "wa-1" });
+    await vi.advanceTimersByTimeAsync(199);
+    expect(server.calls).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(server.calls).toHaveLength(1);
+    niadra.track(message("no conversation"));
+    niadra.track({ channel: "erp", speaker: "system", kind: "system_event", canonical_type: "invoice.credited", object_refs: ["invoice:erp:0823"], conversation_id: "wa-1" });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(server.calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(server.calls).toHaveLength(2);
+  });
+
+  it("keeps a send that is due sooner when a later item would wait longer", async () => {
+    vi.useFakeTimers();
+    const server = new MockServer().on("POST /v1/batch", batchOk(2));
+    const niadra = makeClient(server, { queue: { flushAt: 100, flushIntervalMs: 1_000, turnFlushIntervalMs: 200 } });
+    niadra.track({ ...message("a turn"), conversation_id: "wa-1" });
+    niadra.track(message("no conversation"));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(server.calls).toHaveLength(1);
+    expect(server.calls[0]!.body.items).toHaveLength(2);
+  });
+
+  it("counts only messages of a conversation as turns", () => {
+    const base = { type: "event", kind: "message", idempotency_key: "k", channel: "chat", speaker: { role: "customer" }, occurred_at: "2026-09-24T12:00:00Z" } as const;
+    expect(isTurn({ ...base, conversation_id: "wa-1" })).toBe(true);
+    expect(isTurn(base)).toBe(false);
+    expect(isTurn({ ...base, kind: "action", conversation_id: "wa-1" })).toBe(false);
+    expect(isTurn({ type: "conversation.ended", conversation_id: "wa-1" } as BatchItem)).toBe(false);
   });
 
   it("splits large queues into batches of maxBatchSize, in order", async () => {

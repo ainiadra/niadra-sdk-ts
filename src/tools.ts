@@ -103,8 +103,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     function: {
       name: TOOL_NAMES.timeline,
       description:
-        "List this customer's history in chronological order, one line per item. Use it " +
-        "when you need the sequence of events, for example what happened since a given date. Prefer " +
+        "List this customer's history, newest first, one line per item. Use it when you need " +
+        "the sequence of events, for example what happened since a given date. Prefer " +
         "search_customer_history when you are looking for something specific.",
       parameters: {
         type: "object",
