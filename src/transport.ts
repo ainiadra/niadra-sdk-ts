@@ -15,11 +15,14 @@ import { VERSION } from "./version.js";
  * Reads run against one deadline for the whole call and are only retried on 421, which means
  * the space just moved to another cell: the answer was not "no", it was "not here". Writes
  * give each attempt its own timeout and retry anything transient, because every batch item
- * carries an idempotency key and a repeat is harmless.
+ * carries an idempotency key and a repeat is harmless. A write someone waits on also carries
+ * `totalMs`: every attempt and every wait between them ends by then.
  */
 export type RetryPolicy =
   | { kind: "read"; maxAttempts: number }
-  | { kind: "write"; maxAttempts: number; baseDelayMs: number; maxDelayMs: number };
+  | { kind: "write"; maxAttempts: number; baseDelayMs: number; maxDelayMs: number; totalMs?: number };
+
+type WritePolicy = Extract<RetryPolicy, { kind: "write" }>;
 
 export interface RequestSpec {
   method: "GET" | "POST";
@@ -39,7 +42,7 @@ export interface UploadSpec {
   /** Exactly the headers the signature covers, as the reservation named them. */
   headers: Record<string, string>;
   timeoutMs: number;
-  retry: Extract<RetryPolicy, { kind: "write" }>;
+  retry: WritePolicy;
   signal?: AbortSignal | undefined;
 }
 
@@ -89,10 +92,7 @@ export class Transport {
     }
   }
 
-  private async write<T>(
-    spec: RequestSpec,
-    policy: { maxAttempts: number; baseDelayMs: number; maxDelayMs: number },
-  ): Promise<TransportResponse<T>> {
+  private async write<T>(spec: RequestSpec, policy: WritePolicy): Promise<TransportResponse<T>> {
     return this.retrying(spec.timeoutMs, policy, spec.signal, (deadline) => this.send<T>(spec, deadline));
   }
 
@@ -114,17 +114,21 @@ export class Transport {
 
   private async retrying<T>(
     timeoutMs: number,
-    policy: { maxAttempts: number; baseDelayMs: number; maxDelayMs: number },
+    policy: WritePolicy,
     signal: AbortSignal | undefined,
     attempt: (deadline: Deadline) => Promise<T>,
   ): Promise<T> {
+    const end = policy.totalMs === undefined ? Number.POSITIVE_INFINITY : Date.now() + policy.totalMs;
     for (let count = 1; ; count++) {
-      const deadline = new Deadline(timeoutMs, signal);
+      const left = end - Date.now();
+      if (left <= 0) throw new NiadraTimeoutError(policy.totalMs ?? timeoutMs);
+      const deadline = new Deadline(Math.min(timeoutMs, left), signal);
       try {
         return await attempt(deadline);
       } catch (error) {
         if (count >= policy.maxAttempts || !isTransient(error)) throw error;
         const delay = retryDelay(error, count, policy.baseDelayMs, policy.maxDelayMs);
+        if (Date.now() + delay >= end) throw error;
         await sleep(delay, signal);
       } finally {
         deadline.clear();

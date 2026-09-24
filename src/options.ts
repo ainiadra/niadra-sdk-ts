@@ -14,11 +14,15 @@ export interface Timeouts {
   navigation: number;
   /** Navigation calls made through a voice conversation or voice-bound tools. */
   navigationVoice: number;
-  /** Each attempt of a batch upload. Writes happen off the hot path, so this one is generous. */
+  /**
+   * The whole of a write the caller waits for: `identify()`, `verify()`, `handoff()`,
+   * `feedback()` and the reservation in `uploadMedia()`, retries included. Also each attempt
+   * of a background batch, which never holds a caller.
+   */
   write: number;
   /** `subjectToken()`, usually called once when a session starts. */
   token: number;
-  /** Each attempt of sending media bytes to storage in `uploadMedia()`, off the hot path. */
+  /** The whole of sending media bytes to storage in `uploadMedia()`, retries included. */
   upload: number;
 }
 

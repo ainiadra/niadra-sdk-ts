@@ -2,12 +2,20 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.1] - 2026-09-24
 
 ### Changed
 
 - `engines` asks for Node 20 or later, the versions the CI tests. The README no longer claims Node 18
   or edge runtimes.
+
+### Fixed
+
+- `feedback()` and the reservation in `uploadMedia()` end within `timeouts.write` (5 s) in total,
+  retries and backoff included, instead of 5 s per attempt.
+- The transfer in `uploadMedia()` ends within `timeouts.upload` (60 s) in total instead of per attempt.
+- `identify()`, `verify()` and `handoff()` resolve by `timeouts.write` with a `NiadraTimeoutError`
+  when the queue could not confirm them in time; the item stays queued and is still sent.
 
 ## [0.1.0] - 2026-09-23
 

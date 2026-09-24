@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NiadraValidationError } from "../src/index.js";
+import { NiadraTimeoutError, NiadraValidationError } from "../src/index.js";
 import { MockServer, batchOk, makeClient, marina, problem, spyLogger } from "./helpers.js";
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -196,6 +196,27 @@ describe("identify(), verify() and handoff()", () => {
     const result = await makeClient(server).verify({ handle: marina, method: "kba", level: "V4", conversation_id: "c" });
     expect(result.ok).toBe(false);
     expect(result.error?.message).toBe("verification_not_allowed");
+  });
+
+  it("stops waiting at the write budget and keeps sending the item in the background", async () => {
+    // The first attempt fails at 60 ms and the retry waits 100 to 200 ms, so the caller's 100 ms run out in between.
+    const server = new MockServer().on("POST /v1/batch", { ...problem(503, "unavailable"), delay: 60 }, batchOk());
+    const niadra = makeClient(server, { timeouts: { write: 100 }, queue: { flushIntervalMs: 60_000, retryDelayMs: 200 } });
+    const started = Date.now();
+    const result = await niadra.identify({ handles: [marina, { type: "email", value: "marina@example.com" }] });
+    expect(Date.now() - started).toBeLessThan(180);
+    expect(result).toMatchObject({ ok: false, error: { name: "NiadraTimeoutError" } });
+    await niadra.flush();
+    expect(server.callsTo("POST /v1/batch")).toHaveLength(2);
+    expect(server.calls[1]!.body.items[0]).toMatchObject({ type: "identify", idempotency_key: result.idempotency_key });
+
+    const strict = makeClient(new MockServer().on("POST /v1/batch", { ...batchOk(), delay: 300 }), {
+      strict: true,
+      timeouts: { write: 50 },
+    });
+    await expect(strict.identify({ handles: [marina, { type: "email", value: "m@x.co" }] })).rejects.toBeInstanceOf(
+      NiadraTimeoutError,
+    );
   });
 
   it("resolves not ok when the batch fails, and rejects in strict mode", async () => {

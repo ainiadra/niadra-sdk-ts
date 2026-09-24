@@ -115,6 +115,32 @@ describe("time budgets", () => {
     expect(chat.text).not.toBe("");
   });
 
+  it("ends a write the caller waits for at its total budget, retries included", async () => {
+    const server = new MockServer().on("POST /v1/feedback", { ...problem(503, "unavailable"), delay: 150 });
+    const niadra = makeClient(server, { timeouts: { write: 200 }, queue: { retryDelayMs: 1 } });
+    const started = Date.now();
+    const result = await niadra.feedback({ subject: marina, action: "retract_fact", fact_id: "f-1" });
+    expect(Date.now() - started).toBeLessThan(350);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeInstanceOf(NiadraTimeoutError);
+    expect(server.calls).toHaveLength(2);
+  });
+
+  it("ends a media upload within its budget, retries included", async () => {
+    const server = new MockServer()
+      .on("POST /v1/media/uploads", {
+        status: 201,
+        body: { media_ref: "med_1", upload_url: "https://media.example-bucket.s3.amazonaws.com/sp/med_1", expires_at: "2026-09-22T17:22:00Z" },
+      })
+      .on("PUT /sp/med_1", { status: 200, delay: 400 });
+    const niadra = makeClient(server, { timeouts: { upload: 150 }, queue: { retryDelayMs: 1 } });
+    const started = Date.now();
+    const { data, error } = await niadra.uploadMedia({ data: new Uint8Array([1, 2, 3]), content_type: "image/png" });
+    expect(Date.now() - started).toBeLessThan(300);
+    expect(data).toBeNull();
+    expect(error).toBeInstanceOf(NiadraTimeoutError);
+  });
+
   it("lets the caller cancel through an AbortSignal", async () => {
     const server = new MockServer().on("POST /v1/history/search", { body: {}, delay: 200 });
     const controller = new AbortController();

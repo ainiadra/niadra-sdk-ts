@@ -273,17 +273,17 @@ Memory should make an agent better, never make it fail. By default:
 | Queue full (10,000 items) | New events are dropped and logged. |
 | Server rejects one item of a batch (207) | Only that item fails; the rest are stored. |
 
-Every read has its own time budget, independent of your platform's:
+Every call you wait for has its own time budget for the whole call, retries and waits included, independent of your platform's:
 
 | Call | Default |
 | --- | --- |
 | `context()` | 300 ms, 150 ms with `view: "voice"` |
 | `search()`, `timeline()`, `open()`, `objectState()`, `objectTimeline()` | 600 ms, 300 ms through voice conversations and voice-bound tools |
 | `subjectToken()` | 2 s |
-| Each attempt of a batch, `feedback()` or an upload reservation | 5 s |
-| Each attempt of an `uploadMedia()` transfer | 60 s |
+| `identify()`, `verify()`, `handoff()`, `feedback()` and the reservation in `uploadMedia()` | 5 s |
+| The transfer in `uploadMedia()` | 60 s |
 
-Override them with `timeouts`, or per call with `{ timeout }`. Pass `{ signal }` to cancel a call.
+An `identify()`, `verify()` or `handoff()` that runs out of time resolves with a `NiadraTimeoutError` and stays in the queue, which keeps sending it. `track()` never waits; each attempt of a background batch has 5 s. Override them with `timeouts`, or per call with `{ timeout }`. Pass `{ signal }` to cancel a call.
 
 ### The context cache
 

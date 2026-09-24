@@ -18,6 +18,7 @@ import {
   NiadraConfigError,
   NiadraError,
   NiadraPermissionError,
+  NiadraTimeoutError,
   NiadraValidationError,
   toNiadraError,
 } from "./errors.js";
@@ -414,7 +415,7 @@ export class Niadra {
         body: request,
         headers: { "idempotency-key": key },
         timeoutMs: this.timeouts.write,
-        retry: core.writes,
+        retry: { ...core.writes, totalMs: this.timeouts.write },
       });
       const [rejected] = response.data?.errors ?? [];
       if (rejected) {
@@ -446,7 +447,7 @@ export class Niadra {
         path: "/v1/media/uploads",
         body: request,
         timeoutMs: this.timeouts.write,
-        retry: core.writes,
+        retry: { ...core.writes, totalMs: this.timeouts.write },
         signal: options.signal,
       });
       const media_ref = reserved.data?.media_ref;
@@ -459,7 +460,7 @@ export class Niadra {
           body: bytes,
           headers: uploadHeaders(reserved.data?.upload_headers, request.content_type),
           timeoutMs: this.timeouts.upload,
-          retry: core.writes,
+          retry: { ...core.writes, totalMs: this.timeouts.upload },
           signal: options.signal,
         });
       }
@@ -685,11 +686,22 @@ export class Niadra {
     }
     return new Promise<WriteResult>((resolve, reject) => {
       const key = item.idempotency_key;
-      core.queue.push(item, (error) => {
+      let settled = false;
+      // The caller waits at most `timeouts.write`. Past it the item stays in the queue, which
+      // keeps sending it with its own retries.
+      const timer = setTimeout(() => {
+        this.logger.warn(`write not confirmed within ${this.timeouts.write} ms; it stays queued`);
+        settle(new NiadraTimeoutError(this.timeouts.write));
+      }, this.timeouts.write);
+      const settle = (error: NiadraError | null): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (!error) resolve({ ok: true, idempotency_key: key, error: null });
         else if (this.strict) reject(error);
         else resolve({ ok: false, idempotency_key: key, error });
-      });
+      };
+      core.queue.push(item, settle);
       core.queue.flushInBackground();
     });
   }
