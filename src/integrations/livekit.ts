@@ -27,10 +27,10 @@ import { handles } from "../handles.js";
 import type { Handle } from "../types/common.js";
 import type { ModelUsage } from "../types/events.js";
 import { Bridge, count, errorName } from "./shared.js";
-import type { ProofSource } from "./shared.js";
+import type { AgentMemoryOption, ProofSource } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
-export type { Proof, ProofSource } from "./shared.js";
+export type { AgentMemoryOption, Proof, ProofSource } from "./shared.js";
 
 /** Instructions LiveKit keeps at the head of the chat context; the pack goes after them. */
 const LEADING_IDS = new Set(["lk.agent_task.instructions", "lk.expressive.instructions"]);
@@ -56,6 +56,8 @@ export interface NiadraMemoryOptions {
   verify?: ProofSource;
   /** Records the agent's answers from `conversation_item_added`. Defaults to `true`. */
   recordAgent?: boolean;
+  /** Puts the agent's own notes before the caller's context and adds its memory tools. */
+  agentMemory?: AgentMemoryOption;
 }
 
 /** Participant fields the helpers read. A `RemoteParticipant` has them. */
@@ -95,7 +97,7 @@ export class NiadraMemory {
 
   constructor(options: NiadraMemoryOptions) {
     this.conversation = options.conversation;
-    this.bridge = new Bridge(options.conversation, options.verify);
+    this.bridge = new Bridge(options.conversation, options.verify, options.agentMemory);
     this.recordAgent = options.recordAgent ?? true;
   }
 
@@ -105,24 +107,24 @@ export class NiadraMemory {
    */
   async onUserTurnCompleted(turnCtx: llm.ChatContext, newMessage: llm.ChatMessage): Promise<void> {
     this.recordCustomer(newMessage);
-    const context = await this.bridge.context();
+    const read = await this.bridge.read();
     try {
       const items = turnCtx.items;
       for (const id of [CONTEXT_ID, SUFFIX_ID]) {
         const index = items.findIndex((item) => item.id === id);
         if (index >= 0) items.splice(index, 1);
       }
-      if (context.text) {
+      if (read.prefix) {
         let position = 0;
         while (position < items.length && isInstruction(items[position])) position++;
-        const message = turnCtx.addMessage({ id: CONTEXT_ID, role: "system", content: context.text });
+        const message = turnCtx.addMessage({ id: CONTEXT_ID, role: "system", content: read.prefix });
         items.splice(items.indexOf(message), 1);
         items.splice(position, 0, message);
       }
       // Pushed last with the current time: LiveKit inserts the new message by its own, earlier,
       // timestamp, so the suffix stays after it.
-      if (context.suffix) turnCtx.addMessage({ id: SUFFIX_ID, role: "system", content: context.suffix });
-      this.bridge.injected(context);
+      if (read.suffix) turnCtx.addMessage({ id: SUFFIX_ID, role: "system", content: read.suffix });
+      this.bridge.injected(read.context);
     } catch (error) {
       this.bridge.logger.warn(`could not inject context (${errorName(error)})`);
     }

@@ -29,10 +29,10 @@ import { createTool } from "@mastra/core/tools";
 import type { ModelUsage } from "../types/events.js";
 import { injectPrompt, recordNewest } from "./prompt.js";
 import { Bridge, count, errorName, isRecord, resolveSession } from "./shared.js";
-import type { ProofSource, Session } from "./shared.js";
+import type { AgentMemoryOption, ProofSource, Session } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
-export type { Proof, ProofSource, Session } from "./shared.js";
+export type { AgentMemoryOption, Proof, ProofSource, Session } from "./shared.js";
 
 /** The request context key the processor and `niadraTools` read by default. */
 export const NIADRA_CONTEXT_KEY = "niadra";
@@ -50,6 +50,8 @@ export interface NiadraProcessorOptions {
   recordCustomer?: boolean;
   /** Records the final answer as the agent's turn. Defaults to `true`. */
   recordAgent?: boolean;
+  /** Puts the agent's own notes before the customer's context. Pass the same to `niadraTools`. */
+  agentMemory?: AgentMemoryOption;
 }
 
 interface State {
@@ -74,7 +76,7 @@ export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraPro
     if (!session) return null;
     let state = states.get(session);
     if (!state) {
-      state = { bridge: new Bridge(session, options.verify), seen: new Set(), model: null };
+      state = { bridge: new Bridge(session, options.verify, options.agentMemory), seen: new Set(), model: null };
       states.set(session, state);
     }
     return state;
@@ -95,9 +97,9 @@ export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraPro
           };
         }
         if (options.recordCustomer ?? true) recordNewest(state.bridge, state.seen, prompt);
-        const context = await state.bridge.context();
-        state.bridge.injected(context);
-        return { prompt: injectPrompt(prompt, context) as typeof prompt };
+        const read = await state.bridge.read();
+        state.bridge.injected(read.context);
+        return { prompt: injectPrompt(prompt, read) as typeof prompt };
       } catch (error) {
         state.bridge.logger.warn(`could not inject context (${errorName(error)})`);
         return undefined;
@@ -124,11 +126,11 @@ export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraPro
  * nothing inside `tools: ({ requestContext }) => niadraTools(requestContext.get("niadra"))`;
  * without a session it returns no tools.
  */
-export function niadraTools(session: unknown): Record<string, ReturnType<typeof createTool>> {
+export function niadraTools(session: unknown, options: { agentMemory?: AgentMemoryOption } = {}): Record<string, ReturnType<typeof createTool>> {
   const resolved = asSession(session);
   if (!resolved) return {};
   const tools: Record<string, ReturnType<typeof createTool>> = {};
-  for (const spec of new Bridge(resolved).tools()) {
+  for (const spec of new Bridge(resolved, undefined, options.agentMemory).tools()) {
     tools[spec.name] = createTool({
       id: spec.name,
       description: spec.description,
@@ -143,14 +145,14 @@ export function niadraTools(session: unknown): Record<string, ReturnType<typeof 
  * Instructions that carry the context, for agents that cannot take a processor: pass as
  * `instructions`. The pack follows your instructions; turns are not recorded this way.
  */
-export function niadraInstructions(base: string, options: { session?: Session } = {}) {
+export function niadraInstructions(base: string, options: { session?: Session; agentMemory?: AgentMemoryOption } = {}) {
   return async ({ requestContext }: { requestContext: RequestContextLike }): Promise<string> => {
     const session = options.session ?? asSession(requestContext.get(NIADRA_CONTEXT_KEY));
     if (!session) return base;
-    const bridge = new Bridge(session);
-    const context = await bridge.context();
-    bridge.injected(context);
-    return [base, context.text, context.suffix].filter(Boolean).join("\n\n");
+    const bridge = new Bridge(session, undefined, options.agentMemory);
+    const read = await bridge.read();
+    bridge.injected(read.context);
+    return [base, read.prefix, read.suffix].filter(Boolean).join("\n\n");
   };
 }
 

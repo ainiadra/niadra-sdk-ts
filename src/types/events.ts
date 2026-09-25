@@ -130,6 +130,11 @@ export interface EventItem {
   context_stamp?: ContextStamp | null;
   /** The model call behind an `ai_agent` message: tokens and prompt cache. */
   usage?: ModelUsage | null;
+  /**
+   * Until when what this event states holds, such as an offer valid until a date. After it, the
+   * facts the event gave leave the pack and the history unless a read asks for expired items.
+   */
+  valid_until?: string | null;
 }
 
 /** States that several handles belong to the same subject. */

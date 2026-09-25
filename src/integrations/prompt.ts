@@ -3,27 +3,26 @@
  * that see it: the AI SDK middleware and Mastra's processor.
  */
 
-import type { ContextResult } from "../context.js";
-import type { Bridge } from "./shared.js";
+import type { Bridge, Read } from "./shared.js";
 import { isRecord } from "./shared.js";
 
 /**
- * The pack as a system message right after the leading system messages, and the suffix as a text
+ * The prefix (the agent's notes and the customer's pack) as a system message right after the leading system messages, and the suffix as a text
  * part at the end of the last user message, where every provider accepts it. Returns a new array.
  */
-export function injectPrompt(prompt: readonly unknown[], context: ContextResult): unknown[] {
+export function injectPrompt(prompt: readonly unknown[], read: Pick<Read, "prefix" | "suffix">): unknown[] {
   const injected = [...prompt];
-  if (context.suffix) {
+  if (read.suffix) {
     const last = lastUserIndex(injected);
     const message = injected[last];
     if (isRecord(message) && Array.isArray(message.content)) {
-      injected[last] = { ...message, content: [...(message.content as unknown[]), { type: "text", text: context.suffix }] };
+      injected[last] = { ...message, content: [...(message.content as unknown[]), { type: "text", text: read.suffix }] };
     }
   }
-  if (context.text) {
+  if (read.prefix) {
     let position = 0;
     while (position < injected.length && roleOf(injected[position]) === "system") position++;
-    injected.splice(position, 0, { role: "system", content: context.text });
+    injected.splice(position, 0, { role: "system", content: read.prefix });
   }
   return injected;
 }

@@ -190,7 +190,7 @@ describe("wrap()", () => {
   it("places the pack and suffix with injectContext() too", () => {
     const messages = [{ role: "developer", content: "rules" }, { role: "user", content: "hi" }];
     const placed = injectContext(
-      { text: "<context/>", suffix: "<delta/>", variables: {}, source: "network", response: null, error: null },
+      { text: "<context/>", suffix: "<delta/>", variables: {}, pack: null, source: "network", response: null, error: null },
       messages,
     );
     expect(placed).toEqual([

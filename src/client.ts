@@ -1,3 +1,5 @@
+import { AgentMemoryCache, blockResult, checkNote, checkTags, emptyBlock } from "./agent-memory.js";
+import type { AgentMemoryParams, AgentMemoryResult, RememberParams } from "./agent-memory.js";
 import { ContextCache } from "./cache.js";
 import type { Revalidated } from "./cache.js";
 import {
@@ -54,7 +56,7 @@ import { EventQueue } from "./queue.js";
 import { Task } from "./task.js";
 import type { TaskParams } from "./task.js";
 import { bindTools } from "./tools.js";
-import type { BoundTools, Navigator, Result, ToolBinding } from "./tools.js";
+import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./tools.js";
 import { READ_POLICY, Transport } from "./transport.js";
 import type { RequestSpec, RetryPolicy } from "./transport.js";
 import type { Handle, ObjectRef } from "./types/common.js";
@@ -71,6 +73,14 @@ import type {
   TimelineResponse,
 } from "./types/context.js";
 import type { BatchItem, BatchResponse, MediaUploadResponse } from "./types/events.js";
+import type {
+  AgentMemoryBlock,
+  AgentMemorySearchRequest,
+  AgentMemorySearchResponse,
+  AgentNote,
+  CreateAgentNoteRequest,
+  RememberResult,
+} from "./types/agent-memory.js";
 import type { SubjectToken, SubjectTokenRequest } from "./types/tokens.js";
 import type { Verification } from "./types/vocabulary.js";
 
@@ -96,6 +106,8 @@ interface Core {
   transport: Transport;
   queue: EventQueue;
   cache: ContextCache | null;
+  /** The agent memory block per request shape, with its ETag. */
+  agentMemory: AgentMemoryCache | null;
   baseURL: string;
   /** How requests sent at once, outside the queue, are retried: like a batch. */
   writes: WritePolicy;
@@ -204,14 +216,16 @@ export class Niadra {
       queueOptions,
       this.logger,
     );
-    const cache = options.cache === false ? null : new ContextCache({ ...DEFAULT_CACHE, ...options.cache });
+    const cacheOptions = { ...DEFAULT_CACHE, ...(options.cache === false ? {} : options.cache) };
+    const cache = options.cache === false ? null : new ContextCache(cacheOptions);
+    const agentMemory = options.cache === false ? null : new AgentMemoryCache(cacheOptions.ttlMs, cacheOptions.maxStaleMs);
     const writes: WritePolicy = {
       kind: "write",
       maxAttempts: queueOptions.maxAttempts,
       baseDelayMs: queueOptions.retryDelayMs,
       maxDelayMs: queueOptions.maxRetryDelayMs,
     };
-    return { transport, queue, cache, baseURL, writes };
+    return { transport, queue, cache, agentMemory, baseURL, writes };
   }
 
   /**
@@ -350,7 +364,7 @@ export class Niadra {
    * const kit = niadra.tools(handles.phone("+5511987654321"), { conversation_id: "wa-8812" });
    * const output = await kit.call(toolCall.function.name, toolCall.function.arguments);
    */
-  tools(subject: Handle, binding: ToolBinding = {}): BoundTools {
+  tools(subject: Handle, binding: ToolBinding = {}, options: ToolOptions = {}): BoundTools {
     const navigator: Navigator = {
       search: (params, voice) => this.search(params, this.voiceBudget(voice)),
       timeline: (params, voice) => this.timeline(params, this.voiceBudget(voice)),
@@ -361,8 +375,110 @@ export class Niadra {
         if (bound.conversation_id) scope.conversation_id = bound.conversation_id;
         return this.open(id, scope, this.voiceBudget(voice));
       },
+      searchAgentMemory: (query, scope, voice) => this.searchAgentMemory(query, scope, this.voiceBudget(voice)),
+      remember: (note) => this.remember(note),
     };
-    return bindTools(subject, binding, navigator, this.strict);
+    return bindTools(subject, binding, navigator, this.strict, options);
+  }
+
+  /**
+   * The agent's own working notes as text for the prompt: put it after your instructions and
+   * before the customer's context. It is the same for every customer, so it stays in the
+   * cacheable prefix. Served from an ETag cache like `context()`.
+   *
+   * Never rejects unless `strict` is set: on failure, or when agent memory is off for the space,
+   * `text` is empty.
+   */
+  async agentMemory(params: AgentMemoryParams = {}, options: RequestOptions & { cache?: boolean } = {}): Promise<AgentMemoryResult> {
+    if (!this.core) return emptyBlock(this.disabledReason);
+    const core = this.core;
+    try {
+      checkTags(params.tags);
+      const tokens = params.max_tokens ?? 300;
+      if (!Number.isInteger(tokens) || tokens < 1 || tokens > 4000) throw new NiadraValidationError("max_tokens must be between 1 and 4000");
+    } catch (error) {
+      const failure = toNiadraError(error);
+      if (this.strict) throw failure;
+      this.logger.warn(`agentMemory() failed: ${describe(failure)}`);
+      return emptyBlock(failure);
+    }
+    const cache = options.cache === false ? null : core.agentMemory;
+    const key = AgentMemoryCache.key(params);
+    const fresh = cache?.fresh(key);
+    if (fresh) return blockResult(fresh, "cache");
+
+    const timeout = options.timeout ?? (params.view === "voice" ? this.timeouts.contextVoice : this.timeouts.context);
+    const spec = this.readSpec("GET", "/v1/agent-memory/block", undefined, timeout, options);
+    spec.query = {
+      max_tokens: String(params.max_tokens ?? 300),
+      view: params.view,
+      ...(params.tags?.length ? { tags: params.tags } : {}),
+    };
+    const etag = cache?.etag(key);
+    if (etag) spec.headers = { ...options.headers, "if-none-match": etag };
+    try {
+      const response = await core.transport.request<AgentMemoryBlock>(spec);
+      cache?.store(key, response.data);
+      return blockResult(response.data, "network");
+    } catch (error) {
+      const failure = toNiadraError(error);
+      if (failure instanceof NiadraAPIError && failure.status === 304) {
+        const current = cache?.touch(key);
+        if (current) return blockResult(current, "network");
+      }
+      if (failure instanceof NiadraAPIError && failure.status === 501) {
+        this.logger.debug("agent memory is not served by this cell yet");
+        return emptyBlock(failure, false);
+      }
+      if (failure instanceof NiadraAuthenticationError || failure instanceof NiadraPermissionError) cache?.clear();
+      if (this.strict) throw failure;
+      this.logger.warn(`agentMemory() failed: ${describe(failure)}`);
+      const fallback = cache?.usable(key);
+      return fallback ? blockResult(fallback, "fallback", failure) : emptyBlock(failure);
+    }
+  }
+
+  /** Searches the agent's own working notes by words and tags. Resolves with `data: null` on failure. */
+  async searchAgentMemory(
+    query: string,
+    params: { tags?: string[]; limit?: number; conversation_id?: string; task_id?: string } = {},
+    options: RequestOptions = {},
+  ): Promise<Result<AgentNote[]>> {
+    const result = await this.navigate<AgentMemorySearchResponse>(() => {
+      if (!query || query.length > 2000) throw new NiadraValidationError("query must be 1 to 2000 characters");
+      checkTags(params.tags);
+      if (params.conversation_id && params.task_id) throw new NiadraValidationError("pass `conversation_id` or `task_id`, not both");
+      const body: AgentMemorySearchRequest = { query };
+      if (params.tags?.length) body.tags = params.tags;
+      if (params.limit !== undefined) body.limit = params.limit;
+      if (params.conversation_id) body.conversation_id = params.conversation_id;
+      if (params.task_id) body.task_id = params.task_id;
+      return this.readSpec("POST", "/v1/agent-memory/search", body, this.timeouts.navigation, options);
+    });
+    return result.error ? result : { data: result.data.notes, error: null };
+  }
+
+  /**
+   * Saves a working note for this agent: a procedure, how a tool or process behaves, a pitfall.
+   * Never anything about a customer: the server refuses a note with personal data (422
+   * `personal_data_in_agent_memory`) instead of masking it. Needs the `agent_memory:write` scope.
+   * Resolves with the note, or the id of a proposal when the space wants a person to approve it;
+   * `data: null` on failure.
+   */
+  async remember(note: RememberParams, options: RequestOptions = {}): Promise<Result<RememberResult>> {
+    return this.navigate(() => {
+      checkNote(note);
+      const body: CreateAgentNoteRequest = { kind: note.kind, title: note.title, body: note.body };
+      if (note.tags?.length) body.tags = note.tags;
+      if (note.evidence) body.evidence = note.evidence;
+      if (note.visibility) body.visibility = note.visibility;
+      if (note.valid_until) {
+        const at = note.valid_until instanceof Date ? note.valid_until.toISOString() : note.valid_until;
+        if (Number.isNaN(Date.parse(at))) throw new NiadraValidationError("valid_until must be ISO 8601");
+        body.valid_until = at;
+      }
+      return this.readSpec("POST", "/v1/agent-memory/notes", body, this.timeouts.write, options);
+    });
   }
 
   /**

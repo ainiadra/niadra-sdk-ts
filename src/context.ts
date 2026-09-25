@@ -2,7 +2,7 @@ import { NiadraValidationError } from "./errors.js";
 import type { NiadraError } from "./errors.js";
 import { toObjectRef } from "./handles.js";
 import type { Handle, ObjectRef } from "./types/common.js";
-import type { ContextRequest, ContextResponse, LiveTurn, TargetModel } from "./types/context.js";
+import type { ContextFormat, ContextPack, ContextRequest, ContextResponse, LiveTurn, TargetModel } from "./types/context.js";
 import type { Verification, View } from "./types/vocabulary.js";
 
 /** Arguments of `context()`. Pass exactly one of `subject` or `object`. */
@@ -30,6 +30,8 @@ export interface ContextParams {
   delta?: boolean;
   /** The model that will read the pack, so the server can size it for that model's prompt cache. */
   target?: TargetModel;
+  /** `json` also returns the pack as typed sections in `pack` (`context-pack.v0`). Defaults to `text`. */
+  format?: ContextFormat;
 }
 
 /** Per-call options shared by every read method. */
@@ -45,6 +47,8 @@ export interface RequestOptions {
 export interface ContextOptions extends RequestOptions {
   /** Pass `false` to skip the per-conversation cache for this call. */
   cache?: boolean | undefined;
+  /** For `conversation.context()` and `task.context()`: `json` also returns `pack`. */
+  format?: ContextFormat | undefined;
 }
 
 /**
@@ -69,6 +73,8 @@ export interface ContextResult {
   suffix: string;
   /** Named values from the pack, for templates that place them individually. */
   variables: Record<string, string>;
+  /** The pack as typed sections, when read with `format: "json"`; otherwise `null`. */
+  pack: ContextPack | null;
   source: ContextSource;
   /** The response this result was built from; `null` when `source` is `none`. */
   response: ContextResponse | null;
@@ -104,6 +110,9 @@ export function buildContextRequest(params: ContextParams): ContextRequest {
   if (params.query) request.query = params.query;
   if (params.delta) request.delta = true;
   if (params.target) request.target = params.target;
+  const format: string = params.format ?? "text";
+  if (format !== "text" && format !== "json") throw new NiadraValidationError("format is `text` or `json`");
+  if (format === "json") request.format = "json";
   return request;
 }
 
@@ -130,6 +139,7 @@ export function cacheKey(request: ContextRequest): string {
     request.task_id ?? null,
     request.query ?? null,
     request.target ?? null,
+    request.format ?? "text",
   ]);
 }
 
@@ -148,6 +158,7 @@ export function mergeNotModified(cached: ContextResponse, fresh: ContextResponse
     manifest_hash: cached.manifest_hash ?? null,
     withheld: cached.withheld,
     cache: cached.cache ?? null,
+    pack: cached.pack ?? null,
   };
 }
 
@@ -157,12 +168,14 @@ export function resultFrom(
   error: NiadraError | null = null,
 ): ContextResult {
   // A conversation in the control group gets an empty pack on purpose; it is not an error.
-  const text = response.path === "holdout" ? "" : (response.text ?? "");
-  return { text, suffix: renderSuffix(response), variables: response.variables, source, response, error };
+  const holdout = response.path === "holdout";
+  const text = holdout ? "" : (response.text ?? "");
+  const pack = holdout ? null : (response.pack ?? null);
+  return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, response, error };
 }
 
 export function emptyResult(error: NiadraError | null): ContextResult {
-  return { text: "", suffix: "", variables: {}, source: "none", response: null, error };
+  return { text: "", suffix: "", variables: {}, pack: null, source: "none", response: null, error };
 }
 
 /**

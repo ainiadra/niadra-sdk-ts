@@ -6,6 +6,7 @@
  * is logged without content, and the agent keeps working without memory.
  */
 
+import type { AgentMemoryParams } from "../agent-memory.js";
 import type { ContextOptions, ContextResult } from "../context.js";
 import { emptyResult } from "../context.js";
 import type { Conversation, TurnOptions } from "../conversation.js";
@@ -35,6 +36,24 @@ export type ProofSource =
   | null
   | undefined
   | (() => Proof | null | undefined | PromiseLike<Proof | null | undefined>);
+
+/**
+ * The agent's own working notes: `true` puts the block before the customer's context and offers
+ * `search_agent_memory`; `{ write: true }` also offers `remember` (for a key with the
+ * `agent_memory:write` scope); the other fields go to `agentMemory()`.
+ */
+export type AgentMemoryOption = boolean | (AgentMemoryParams & { write?: boolean });
+
+/** What goes into the prompt for one model call. */
+export interface Read {
+  context: ContextResult;
+  /** The agent's own notes, or an empty string. */
+  memory: string;
+  /** What goes after the instructions: the notes, then the customer's pack. */
+  prefix: string;
+  /** What goes at the end: deltas and live turns. */
+  suffix: string;
+}
 
 /** A tool as every framework needs it: the name, the text for the model, the JSON Schema and the call. */
 export interface ToolSpec {
@@ -97,7 +116,21 @@ export class Bridge {
   constructor(
     readonly session: Session,
     private readonly proof?: ProofSource,
+    private readonly memory: AgentMemoryOption = false,
   ) {}
+
+  /**
+   * The context and, when enabled, the agent's notes, read side by side within the same budget.
+   * Never rejects.
+   */
+  async read(options: ContextOptions = {}): Promise<Read> {
+    const memoryParams = this.memory === false ? null : this.memory === true ? {} : withoutWrite(this.memory);
+    const [context, memory] = await Promise.all([
+      this.context(options),
+      memoryParams ? this.agentMemory(memoryParams, options) : Promise.resolve(""),
+    ]);
+    return { context, memory, prefix: [memory, context.text].filter(Boolean).join("\n\n"), suffix: context.suffix };
+  }
 
   get logger(): Logger {
     return this.session.logger;
@@ -152,16 +185,27 @@ export class Bridge {
     }
   }
 
-  /** The navigation kit as plain specs, or an empty list for a task about an object only. */
+  /** The navigation kit as plain specs (with the agent's memory tools when enabled), or none for a task about an object only. */
   tools(): ToolSpec[] {
     let bound: BoundTools | null;
     try {
-      bound = this.session.tools();
+      const memory = this.memory;
+      bound = this.session.tools(memory === false ? {} : { agentMemory: true, writeAgentMemory: memory !== true && memory.write === true });
     } catch (error) {
       this.logger.warn(`could not build the tools (${errorName(error)})`);
       return [];
     }
     return bound ? toolSpecs(bound) : [];
+  }
+
+  private async agentMemory(params: AgentMemoryParams, options: ContextOptions): Promise<string> {
+    try {
+      const result = await this.session.agentMemory(params, options.timeout === undefined ? {} : { timeout: options.timeout });
+      return result.text;
+    } catch (error) {
+      this.logger.warn(`could not read the agent's memory (${errorName(error)})`);
+      return "";
+    }
   }
 
   private async verifyOnce(): Promise<void> {
@@ -188,6 +232,11 @@ export class Bridge {
       this.logger.warn(`could not ${what} (${errorName(error)})`);
     }
   }
+}
+
+function withoutWrite(option: AgentMemoryParams & { write?: boolean }): AgentMemoryParams {
+  const { write: _, ...params } = option;
+  return params;
 }
 
 /** The bound kit as specs. The customer stays inside `bound`; no parameter names them. */

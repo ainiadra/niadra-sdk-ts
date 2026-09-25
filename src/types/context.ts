@@ -23,6 +23,46 @@ export interface ContextRequest {
   delta?: boolean;
   target?: TargetModel | null;
   known_etag?: string | null;
+  /** `json` also returns `pack`: the same pack as typed sections (`context-pack.v0`). Defaults to `text`. */
+  format?: ContextFormat;
+}
+
+/** `text` returns the pack as prompt text; `json` returns it as typed sections too. */
+export type ContextFormat = "text" | "json";
+
+/** Where a section of the pack sits: the account block, the stable prefix or the volatile part. */
+export type PackLayer = "account" | "stable" | "volatile";
+
+/** One section of the pack. Read `name`, which is the same in every language, never `label`. */
+export interface PackSection {
+  name: string;
+  /** The section's label in the space's language, as the text shows it. */
+  label: string;
+  layer: PackLayer;
+  lines: string[];
+}
+
+/** What identifies the pack a program built its prompt from. */
+export interface PackStamp {
+  etag: string;
+  version: string;
+  as_of?: string | null;
+  manifest_hash?: string | null;
+}
+
+/** The pack as data (`context-pack.v0`), for programs that build their own prompt. */
+export interface ContextPack {
+  spec: "context-pack.v0";
+  view: string;
+  /** The effective level. */
+  verification: Verification;
+  withheld: number;
+  as_of?: string | null;
+  /** The line that says the content is data, not instructions, and the usage rules. */
+  preamble: string;
+  sections: PackSection[];
+  variables: Record<string, string>;
+  stamp: PackStamp;
 }
 
 export interface VerificationResult {
@@ -75,11 +115,21 @@ export interface ContextResponse {
   timing: Record<string, number>;
   path: DeliveryPath;
   degraded: boolean;
+  /** The pack as typed sections, when the request asked for `format: "json"`. */
+  pack?: ContextPack | null;
 }
 
 export interface HistoryFilters {
   since?: string | null;
   until?: string | null;
+  /**
+   * A time expression in the customer's words, such as `last week`, `semana passada`, `en marzo`
+   * or `ontem`, read by the server in Portuguese, English or Spanish. The period it was read as
+   * comes back as `window`; one it could not read is listed in `ignored`.
+   */
+  when?: string | null;
+  /** Also items whose validity ended (`valid_until` in the past). */
+  show_expired?: boolean;
   channels?: string[];
   categories?: string[];
   item_kinds?: HistoryItemKind[];
@@ -111,6 +161,14 @@ export interface HistoryItem {
   outcome?: string | null;
   confidence?: number | null;
   origin_event_id?: string | null;
+  /** Until when what the item states holds; after it, the item leaves reads unless `show_expired`. */
+  valid_until?: string | null;
+}
+
+/** The period a `when` filter was read as. */
+export interface TimeWindow {
+  since?: string | null;
+  until?: string | null;
 }
 
 /** How often the same kind of issue came back, computed by the same rule as the recurring-complaint pattern. */
@@ -131,6 +189,10 @@ export interface SearchResponse {
   tokens_used: number;
   /** `text_only` when semantic search was unavailable and only keyword matching ran. */
   degraded?: string | null;
+  /** The period `when` was read as, when it was read. */
+  window?: TimeWindow | null;
+  /** Filters the server could not read and left out, such as `when`. */
+  ignored?: string[];
 }
 
 /** Body of `POST /v1/history/timeline`. */
@@ -162,6 +224,16 @@ export interface TimelineResponse {
   next_cursor?: string | null;
   withheld: number;
   as_of?: string | null;
+  window?: TimeWindow | null;
+  ignored?: string[];
+}
+
+/** One version of a history item. */
+export interface ItemVersion {
+  version: number;
+  changed_at: string;
+  /** `created`, `outcome`, `resolution`, `summary`, `state`... */
+  what_changed: string;
 }
 
 /** A commitment recorded in an episode, made by the company or by the customer. */
@@ -186,6 +258,8 @@ export interface OpenedItem {
   /** The server no longer sends a transcript excerpt; the field stays for code that reads it. */
   excerpt?: string | null;
   as_of?: string | null;
+  /** Earlier and current versions, oldest first, when the item has them. */
+  versions?: ItemVersion[];
 }
 
 /** The derived state of a business object, from `GET /v1/objects/{type}/{namespace}/{id}`. */

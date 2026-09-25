@@ -138,8 +138,10 @@ describe("ElevenLabs: server tools", () => {
     expect(search.request_body_schema.properties.niadra_conversation_id).toEqual({ type: "string", dynamic_variable: "system__conversation_id" });
     expect(search.request_body_schema.properties.niadra_caller_id).toEqual({ type: "string", dynamic_variable: "system__caller_id" });
     expect(search.request_body_schema.properties.niadra_tool).toEqual({ type: "string", constant_value: "search_customer_history" });
-    expect(search.request_body_schema.properties.query.description).toBe("What to look for, in the customer's own terms.");
-    expect(search.request_body_schema.properties.channels.items.type).toBe("string");
+    expect(search.request_body_schema.properties.query.description).toBe("What to look for, in the customer's words.");
+    expect(search.request_body_schema.properties.filters.properties.channels.items).toEqual({ type: "string" });
+    expect(search.request_body_schema.properties.filters.properties.item_kinds.items.enum).toContain("open_item");
+    expect(JSON.stringify(configs)).not.toMatch(/format|additionalProperties|minimum/);
   });
 });
 

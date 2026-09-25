@@ -17,15 +17,15 @@
 
 import type { Niadra } from "../client.js";
 import type { Conversation } from "../conversation.js";
-import { TOOL_DEFINITIONS, TOOL_NAMES } from "../tools.js";
+import { AGENT_MEMORY_TOOL_DEFINITIONS, AGENT_MEMORY_TOOL_NAMES, TOOL_DEFINITIONS, TOOL_NAMES } from "../tools.js";
 import type { Handle } from "../types/common.js";
 import { Bridge, errorName, isRecord, phoneHandle } from "./shared.js";
-import type { Proof } from "./shared.js";
+import type { AgentMemoryOption, Proof } from "./shared.js";
 import { header, memoryCallStore, safeEqual } from "./webhook.js";
 import type { CallRecord, CallStore, HeadersLike, WebhookResponse } from "./webhook.js";
 
 export { attestationProof } from "./shared.js";
-export type { Proof } from "./shared.js";
+export type { AgentMemoryOption, Proof } from "./shared.js";
 export { memoryCallStore } from "./webhook.js";
 export type { CallRecord, CallStore, HeadersLike, WebhookResponse } from "./webhook.js";
 
@@ -43,6 +43,8 @@ export interface VapiCall {
 export interface VapiContext {
   /** The pack, for the system prompt. Empty when there is nothing to inject. */
   context: string;
+  /** The agent's own notes, when `agentMemory` is on; they go before the pack. */
+  agentMemory: string;
   /** Deltas and live turns from other channels. */
   turn: string;
 }
@@ -71,14 +73,21 @@ export interface VapiOptions {
   store?: CallStore;
   /** Time budget of the context read in `assistant-request`, in milliseconds. Defaults to the voice budget. */
   contextTimeout?: number;
+  /** The agent's own notes in `{{niadra_agent_memory}}` (and before the pack of a transient assistant), and its memory tools. */
+  agentMemory?: AgentMemoryOption;
 }
 
-const OURS = new Set<string>(Object.values(TOOL_NAMES));
+const OURS = new Set<string>([...Object.values(TOOL_NAMES), ...Object.values(AGENT_MEMORY_TOOL_NAMES)]);
 const AGENT_ROLES = new Set(["bot", "assistant"]);
 
 /** The navigation kit as Vapi `function` tools, pointing at your server URL, with the SDK's descriptions. */
-export function vapiTools(server: { url: string; secret?: string }): Record<string, unknown>[] {
-  return TOOL_DEFINITIONS.map(({ function: definition }) => ({
+export function vapiTools(server: { url: string; secret?: string }, options: { agentMemory?: AgentMemoryOption } = {}): Record<string, unknown>[] {
+  const memory = options.agentMemory;
+  const definitions = [
+    ...TOOL_DEFINITIONS,
+    ...(memory ? AGENT_MEMORY_TOOL_DEFINITIONS.slice(0, memory !== true && memory.write ? 2 : 1) : []),
+  ];
+  return definitions.map(({ function: definition }) => ({
     type: "function",
     function: { name: definition.name, description: definition.description, parameters: definition.parameters },
     server: server.secret ? { url: server.url, secret: server.secret } : { url: server.url },
@@ -120,15 +129,16 @@ export function vapi(options: VapiOptions): (body: unknown, headers: HeadersLike
     options.niadra.conversation({ subject: record.subject, channel: "voice", conversation_id: call.id, verification: record.verification });
 
   async function assistantRequest(call: VapiCall): Promise<WebhookResponse> {
-    const context: VapiContext = { context: "", turn: "" };
+    const context: VapiContext = { context: "", agentMemory: "", turn: "" };
     const subject = subjectOf(call);
     if (subject) {
       const conversation = options.niadra.conversation({ subject, channel: "voice", conversation_id: call.id });
-      const bridge = new Bridge(conversation, options.verify ? () => options.verify?.(call) : undefined);
-      const result = await bridge.context(options.contextTimeout ? { timeout: options.contextTimeout } : {});
-      bridge.injected(result);
-      context.context = result.text;
-      context.turn = result.suffix;
+      const bridge = new Bridge(conversation, options.verify ? () => options.verify?.(call) : undefined, options.agentMemory);
+      const read = await bridge.read(options.contextTimeout ? { timeout: options.contextTimeout } : {});
+      bridge.injected(read.context);
+      context.context = read.context.text;
+      context.agentMemory = read.memory;
+      context.turn = read.suffix;
       try {
         await store.set(call.id, { subject, verification: conversation.verification, stamp: conversation.contextStamp });
       } catch (error) {
@@ -142,13 +152,13 @@ export function vapi(options: VapiOptions): (body: unknown, headers: HeadersLike
       logger.warn(`could not build the assistant (${errorName(error)})`);
       return { status: 200, body: { error: "The assistant is not available right now." } };
     }
-    return { status: 200, body: assistantResponse(chosen, context) };
+    return { status: 200, body: assistantResponse(chosen, context, Boolean(options.agentMemory)) };
   }
 
   async function toolCalls(call: VapiCall): Promise<WebhookResponse> {
     const list = Array.isArray(call.message.toolCallList) ? (call.message.toolCallList as unknown[]) : [];
     const record = await recall(call);
-    const specs = record ? new Bridge(open(call, record)).tools() : [];
+    const specs = record ? new Bridge(open(call, record), undefined, options.agentMemory).tools() : [];
     const results: Record<string, unknown>[] = [];
     for (const item of list) {
       if (!isRecord(item) || !isRecord(item.function)) continue;
@@ -250,8 +260,9 @@ function callOf(body: unknown): VapiCall | null {
   return { id, customerNumber: typeof customer.number === "string" ? customer.number : undefined, message };
 }
 
-function assistantResponse(chosen: Assistant | string | undefined, context: VapiContext): Record<string, unknown> {
-  const variableValues = { niadra_context: context.context, niadra_turn: context.turn };
+function assistantResponse(chosen: Assistant | string | undefined, context: VapiContext, memory: boolean): Record<string, unknown> {
+  const variableValues: Record<string, string> = { niadra_context: context.context, niadra_turn: context.turn };
+  if (memory) variableValues.niadra_agent_memory = context.agentMemory;
   if (typeof chosen === "string") return { assistantId: chosen, assistantOverrides: { variableValues } };
   if (!chosen) return { assistantOverrides: { variableValues } };
   // A full response, such as `{ assistantId, assistantOverrides }` or `{ squadId }`, gets the variables merged in.
@@ -262,10 +273,11 @@ function assistantResponse(chosen: Assistant | string | undefined, context: Vapi
   }
   const model = isRecord(chosen.model) ? chosen.model : null;
   const messages = model && Array.isArray(model.messages) ? [...(model.messages as unknown[])] : [];
-  if (model && context.context) {
+  const prefix = [context.agentMemory, context.context].filter(Boolean).join("\n\n");
+  if (model && prefix) {
     let position = 0;
     while (position < messages.length && isRecord(messages[position]) && (messages[position] as Assistant).role === "system") position++;
-    messages.splice(position, 0, { role: "system", content: context.context });
+    messages.splice(position, 0, { role: "system", content: prefix });
   }
   const assistant = model ? { ...chosen, model: { ...model, messages } } : chosen;
   return { assistant, assistantOverrides: { variableValues } };

@@ -146,6 +146,20 @@ describe("Vercel AI SDK: niadraMiddleware", () => {
     expect(Object.keys(schema.properties)).not.toContain("subject");
   });
 
+  it("puts the agent's own notes before the customer's pack and offers its memory tools", async () => {
+    const { server, niadra } = setup({ live: false });
+    const notes = "<agent_memory>\n- Credit shows after refresh\n</agent_memory>";
+    server.on("GET /v1/agent-memory/block", { body: { text: notes, notes: ["n1"], etag: "am-1", tokens: 9, enabled: true } });
+    const convo = niadra.conversation({ subject: marina, channel: "web_chat" });
+    const model = new MockLanguageModelV4({ doGenerate: answer("ok") });
+    await generateText({ model: wrapLanguageModel({ model, middleware: niadraMiddleware(convo, { agentMemory: true }) }), system: "S", prompt: "hi" });
+    expect(prompts(model)[0]![1]).toEqual({ role: "system", content: `${notes}\n\n${PACK}` });
+    expect(server.callsTo("GET /v1/agent-memory/block")[0]!.url.searchParams.get("view")).toBe("chat");
+    expect(Object.keys(niadraTools(convo, { agentMemory: { write: true } }))).toEqual([
+      "search_customer_history", "get_customer_timeline", "open_history_item", "search_agent_memory", "remember",
+    ]);
+  });
+
   it("reads the usage of AI SDK 5 (numbers) and 6 and 7 (split input)", () => {
     expect(aiSdkUsage({ inputTokens: 900, outputTokens: 10, cachedInputTokens: 512 }, { provider: "openai.chat", modelId: "gpt-4o" })).toEqual({
       provider: "openai", model: "gpt-4o", prompt_tokens: 900, cached_tokens: 512, cache_write_tokens: 0,

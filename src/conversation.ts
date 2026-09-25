@@ -1,12 +1,13 @@
 import type { Niadra, WriteResult } from "./client.js";
-import type { ContextOptions, ContextParams, ContextResult } from "./context.js";
+import type { AgentMemoryParams, AgentMemoryResult } from "./agent-memory.js";
+import type { ContextOptions, ContextParams, ContextResult, RequestOptions } from "./context.js";
 import { uuidv7 } from "./ids.js";
 import { hasTarget } from "./items.js";
 import type { ActionEvent, Timestamp, TrackEvent } from "./items.js";
 import type { Logger } from "./logger.js";
 import { SessionState } from "./session.js";
 import type { Timings } from "./session.js";
-import type { BoundTools, ToolBinding } from "./tools.js";
+import type { BoundTools, ToolBinding, ToolOptions } from "./tools.js";
 import type { Handle } from "./types/common.js";
 import type { TargetModel } from "./types/context.js";
 import type { Content, ContextStamp, ModelUsage, VoiceInfo } from "./types/events.js";
@@ -133,7 +134,7 @@ export class Conversation {
    * pinned, so it leaves the conversation's deltas alone.
    */
   async context(options: ContextOptions & { query?: string } = {}): Promise<ContextResult> {
-    const { query, ...requestOptions } = options;
+    const { query, format, ...requestOptions } = options;
     const params: ContextParams = {
       subject: this.subject,
       view: this.view,
@@ -141,10 +142,19 @@ export class Conversation {
       conversation_id: this.id,
       ...(this.params.about ? { about: this.params.about } : {}),
       ...(this.params.target ? { target: this.params.target } : {}),
+      ...(format === "json" ? { format } : {}),
     };
     if (query) return this.client.context({ ...params, query }, requestOptions);
     if (this.state.wantsDelta) params.delta = true;
     return this.state.absorb(await this.client.context(params, requestOptions));
+  }
+
+  /**
+   * The agent's own working notes for this conversation's prompt, as `niadra.agentMemory()` with
+   * the conversation's view: put `text` after your instructions and before the customer's context.
+   */
+  agentMemory(params: AgentMemoryParams = {}, options: RequestOptions = {}): Promise<AgentMemoryResult> {
+    return this.client.agentMemory({ view: this.view, ...params }, options);
   }
 
   /**
@@ -217,9 +227,11 @@ export class Conversation {
 
   /**
    * The navigation kit bound to this customer and conversation. The verification level is
-   * read at each call, so tools created before a `verify()` pick up the new level.
+   * read at each call, so tools created before a `verify()` pick up the new level. With
+   * `agentMemory: true` it also offers `search_agent_memory`, and `remember` with
+   * `writeAgentMemory: true`, bound to this conversation as the note's evidence.
    */
-  tools(): BoundTools {
+  tools(options: ToolOptions = {}): BoundTools {
     const read = (): Verification => this.level;
     const binding: ToolBinding = {
       conversation_id: this.id,
@@ -229,7 +241,7 @@ export class Conversation {
       },
     };
     if (this.params.about) binding.about = this.params.about;
-    return this.client.tools(this.subject, binding);
+    return this.client.tools(this.subject, binding, options);
   }
 
   /** Emits `conversation.ended` and drops the conversation's cached packs. Safe to call twice. */

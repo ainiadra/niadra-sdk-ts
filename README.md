@@ -135,6 +135,7 @@ const messages = [...history, { role: "user", content: `${ctx.suffix}\n\n${userT
 - `delta: true` asks for what changed since this agent last read the subject. The server sends each change once, so the SDK hands each delta out once too, even one fetched by a background refresh; `conversation()` keeps them for you.
 - `source` says where the result came from (`network`, `cache`, `stale`, `fallback` or `none`), and `error` says what went wrong when something did.
 - Pass `object: "invoice:erp:0823"` instead of `subject` when the task is about a business object, and `about` for the account a person acts for.
+- `format: "json"` also returns `pack`: the same pack as typed sections (`context-pack.v0`: `preamble`, `sections` with a stable `name`, a `layer` and their `lines`, `variables` and the `stamp`), for programs that build their own prompt. `convo.context({ format: "json" })` works the same way.
 
 ### Conversations
 
@@ -231,6 +232,8 @@ if (first) {
 
 `search()` also reports recurrence: how many times the same kind of issue came back, and how it was last resolved.
 
+`filters.when` takes the period in the customer's own words, in Portuguese, English or Spanish (`"semana passada"`, `"last week"`, `"en marzo"`); the answer says in `window` how the server read it, and lists in `ignored` a filter it could not read. Items whose validity ended (an event recorded with `valid_until`, such as an offer valid until Friday) leave reads unless you pass `show_expired: true`. An opened item carries its `versions`, oldest first.
+
 The handle, the search and the conversation id go in request bodies, never in a URL: a conversation id may be a phone number or an e-mail. `open()` sends `POST /v1/history/open`, and the tool kit adds the bound customer to it, so the server opens only that customer's items.
 
 ### Business objects
@@ -268,7 +271,22 @@ for (const call of response.choices[0].message.tool_calls ?? []) {
 }
 ```
 
-The definitions use the `{ type: "function", function: { name, description, parameters } }` shape. For APIs that expect `{ name, description, input_schema }`, map `function.parameters` to `input_schema`.
+The definitions use the `{ type: "function", function: { name, description, parameters } }` shape. For APIs that expect `{ name, description, input_schema }`, map `function.parameters` to `input_schema`. They are, word for word, the definitions the server publishes (`GET /v1/history/tools`) and the Python SDK ships, so a model sees one toolset whatever language the agent is written in; a test checks it byte for byte. The kit still reads the flat filter fields the 0.1 definitions offered.
+
+### The agent's own memory
+
+Besides the customer's memory, an agent can keep working notes about its job: a procedure that worked, how a tool or a process of the company behaves, a pitfall to avoid. Never anything about a customer: the server refuses a note with personal data (422 `personal_data_in_agent_memory`) instead of masking it. The space turns it on; reading needs the `agent_memory` (or `context`) scope and writing `agent_memory:write`.
+
+```ts
+const notes = await convo.agentMemory({ max_tokens: 300 });   // or niadra.agentMemory({ view, tags })
+const system = [instructions, notes.text, ctx.text].filter(Boolean).join("\n\n");
+
+const kit = convo.tools({ agentMemory: true, writeAgentMemory: true }); // + search_agent_memory and remember
+await niadra.remember({ kind: "tool_note", title: "Dates need a time zone", body: "The scheduling API refuses dates without one.", tags: ["scheduling"] });
+const { data: found } = await niadra.searchAgentMemory("credit on an invoice", { tags: ["erp"] });
+```
+
+The block goes after your instructions and before the customer's context: it is the same for every customer, so it stays in the cacheable prefix. It is served from an ETag cache like the context, and is empty (never an error) when the space has it off. `remember()` waits for the server and resolves with the note, or with a `proposal_id` when the space wants a person to approve notes; through the `remember` tool, a refusal for personal data reaches the model as a request to rewrite the note. Every integration takes `agentMemory: true` (or `{ write: true, max_tokens, tags }`) to do all of this for you.
 
 ### Subject tokens for MCP
 

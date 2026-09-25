@@ -27,10 +27,10 @@ import type { ToolSet } from "ai";
 import type { ModelUsage } from "../types/events.js";
 import { injectPrompt, recordNewest } from "./prompt.js";
 import { Bridge, count, errorName, isRecord, resolveSession } from "./shared.js";
-import type { ProofSource, Session, SessionResolver } from "./shared.js";
+import type { AgentMemoryOption, ProofSource, Session, SessionResolver } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
-export type { Proof, ProofSource, Session, SessionResolver } from "./shared.js";
+export type { AgentMemoryOption, Proof, ProofSource, Session, SessionResolver } from "./shared.js";
 
 export interface NiadraMiddlewareOptions {
   /** What your app proved about the user (a login, say), recorded once before the first context read. */
@@ -39,6 +39,8 @@ export interface NiadraMiddlewareOptions {
   recordCustomer?: boolean;
   /** Records the model's text as the agent's turn. Defaults to `true`. */
   recordAgent?: boolean;
+  /** Puts the agent's own notes before the customer's context. Pass the same to `niadraTools`. */
+  agentMemory?: AgentMemoryOption;
 }
 
 type Params = Record<string, unknown> & { prompt?: unknown };
@@ -78,7 +80,7 @@ export function niadraMiddleware(session: SessionResolver, options: NiadraMiddle
     if (!current) return null;
     let state = states.get(current);
     if (!state) {
-      state = { bridge: new Bridge(current, options.verify), seen: new Set() };
+      state = { bridge: new Bridge(current, options.verify, options.agentMemory), seen: new Set() };
       states.set(current, state);
     }
     return state;
@@ -93,9 +95,9 @@ export function niadraMiddleware(session: SessionResolver, options: NiadraMiddle
       try {
         const prompt = params.prompt as unknown[];
         if (options.recordCustomer ?? true) recordNewest(state.bridge, state.seen, prompt);
-        const context = await state.bridge.context();
-        state.bridge.injected(context);
-        return { ...params, prompt: injectPrompt(prompt, context) };
+        const read = await state.bridge.read();
+        state.bridge.injected(read.context);
+        return { ...params, prompt: injectPrompt(prompt, read) };
       } catch (error) {
         state.bridge.logger.warn(`could not inject context (${errorName(error)})`);
         return params;
@@ -153,9 +155,9 @@ export function niadraMiddleware(session: SessionResolver, options: NiadraMiddle
  * The navigation kit as AI SDK tools (`search_customer_history`, `get_customer_timeline`,
  * `open_history_item`), bound to the session's customer. Spread them next to your own tools.
  */
-export function niadraTools(session: Session): ToolSet {
+export function niadraTools(session: Session, options: { agentMemory?: AgentMemoryOption } = {}): ToolSet {
   const tools: ToolSet = {};
-  for (const spec of new Bridge(session).tools()) {
+  for (const spec of new Bridge(session, undefined, options.agentMemory).tools()) {
     tools[spec.name] = tool({
       description: spec.description,
       inputSchema: jsonSchema<Record<string, unknown>>(spec.parameters as Parameters<typeof jsonSchema>[0]),

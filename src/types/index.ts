@@ -1,6 +1,7 @@
 export type * from "./vocabulary.js";
 export type * from "./common.js";
 export type * from "./context.js";
+export type * from "./agent-memory.js";
 export type * from "./tokens.js";
 export type {
   ActionInfo,

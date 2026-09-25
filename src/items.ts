@@ -66,6 +66,11 @@ interface EventBase {
    * tasks set it from `markInjected()`.
    */
   context_stamp?: ContextStamp | null;
+  /**
+   * Until when what this event states holds, such as an offer valid until a date. After it, the
+   * facts it gave leave the pack and the history unless a read asks for expired items.
+   */
+  valid_until?: Timestamp | null;
 }
 
 /** An event for `track()`. `kind` defaults to `message`. */
@@ -383,6 +388,7 @@ function copyOptional(event: EventItem, input: EventBase): void {
   if (input.verification_hint) event.verification_hint = input.verification_hint;
   if (input.corrects_event_id) event.corrects_event_id = input.corrects_event_id;
   if (input.voice) event.voice = input.voice;
+  if (input.valid_until) event.valid_until = iso(input.valid_until);
   if (input.context_stamp) {
     const { etag, injected_at } = input.context_stamp;
     event.context_stamp = etag ? { etag, injected_at: iso(injected_at) } : { injected_at: iso(injected_at) };

@@ -1,5 +1,6 @@
 import type { Niadra, WriteResult } from "./client.js";
-import type { ContextOptions, ContextParams, ContextResult } from "./context.js";
+import type { AgentMemoryParams, AgentMemoryResult } from "./agent-memory.js";
+import type { ContextOptions, ContextParams, ContextResult, RequestOptions } from "./context.js";
 import type { TurnOptions } from "./conversation.js";
 import { uuidv7 } from "./ids.js";
 import { hasTarget } from "./items.js";
@@ -7,7 +8,7 @@ import type { ActionEvent, TrackEvent, VerifyParams } from "./items.js";
 import type { Logger } from "./logger.js";
 import { SessionState } from "./session.js";
 import type { Timings } from "./session.js";
-import type { BoundTools, ToolBinding } from "./tools.js";
+import type { BoundTools, ToolBinding, ToolOptions } from "./tools.js";
 import type { Handle, ObjectRef } from "./types/common.js";
 import type { TargetModel } from "./types/context.js";
 import type { ContextStamp } from "./types/events.js";
@@ -89,7 +90,7 @@ export class Task {
    * Resolves with an empty result, never rejects, unless the client is strict.
    */
   async context(options: ContextOptions & { query?: string } = {}): Promise<ContextResult> {
-    const { query, ...requestOptions } = options;
+    const { query, format, ...requestOptions } = options;
     const target = this.object ? { object: this.object } : this.params.subject ? { subject: this.params.subject } : {};
     const params: ContextParams = {
       ...target,
@@ -98,10 +99,19 @@ export class Task {
       ...(this.params.about ? { about: this.params.about } : {}),
       ...(this.level ? { verification: this.level } : {}),
       ...(this.params.target ? { target: this.params.target } : {}),
+      ...(format === "json" ? { format } : {}),
     };
     if (query) return this.client.context({ ...params, query }, requestOptions);
     if (this.state.wantsDelta) params.delta = true;
     return this.state.absorb(await this.client.context(params, requestOptions));
+  }
+
+  /**
+   * The agent's own working notes for this task's prompt, as `niadra.agentMemory()` with
+   * the task's view: put `text` after your instructions and before the customer's context.
+   */
+  agentMemory(params: AgentMemoryParams = {}, options: RequestOptions = {}): Promise<AgentMemoryResult> {
+    return this.client.agentMemory({ view: this.params.view ?? "brief", ...params }, options);
   }
 
   /** Records that `context` (by default the last one this task returned) went into the prompt. */
@@ -162,7 +172,7 @@ export class Task {
    * The verification level is read at each call, so tools created before a `verify()` pick up
    * the new level.
    */
-  tools(): BoundTools | null {
+  tools(options: ToolOptions = {}): BoundTools | null {
     const subject = this.params.subject;
     if (!subject) return null;
     const read = (): Verification => this.level ?? "V0";
@@ -174,7 +184,7 @@ export class Task {
       },
     };
     if (this.params.about) binding.about = this.params.about;
-    return this.client.tools(subject, binding);
+    return this.client.tools(subject, binding, options);
   }
 
   /** Emits `task.ended` and drops the task's cached packs. Safe to call twice. */

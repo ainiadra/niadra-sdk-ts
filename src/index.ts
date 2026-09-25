@@ -15,8 +15,9 @@ export type { ContextOptions, ContextParams, ContextResult, ContextSource, Reque
 export { handles, toObjectRef } from "./handles.js";
 export { parseApiKey, baseURLFromKey } from "./key.js";
 export type { ParsedApiKey } from "./key.js";
-export { TOOL_DEFINITIONS, TOOL_NAMES } from "./tools.js";
-export type { BoundTools, Result, ToolBinding } from "./tools.js";
+export { AGENT_MEMORY_TOOL_DEFINITIONS, AGENT_MEMORY_TOOL_NAMES, PERSONAL_DATA_TOOL_ERROR, TOOL_DEFINITIONS, TOOL_NAMES } from "./tools.js";
+export type { BoundTools, Result, ToolBinding, ToolOptions } from "./tools.js";
+export type { AgentMemoryParams, AgentMemoryResult, AgentMemorySource, RememberParams } from "./agent-memory.js";
 export type {
   ActionEvent,
   FeedbackParams,

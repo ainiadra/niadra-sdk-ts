@@ -27,7 +27,8 @@ type WritePolicy = Extract<RetryPolicy, { kind: "write" }>;
 export interface RequestSpec {
   method: "GET" | "POST";
   path: string;
-  query?: Record<string, string | undefined>;
+  /** A list becomes the parameter repeated, as `?tags=a&tags=b`. */
+  query?: Record<string, string | string[] | undefined>;
   body?: unknown;
   timeoutMs: number;
   retry: RetryPolicy;
@@ -179,12 +180,13 @@ export class Transport {
     return { status: response.status, data: payload as T, requestId };
   }
 
-  private url(path: string, query?: Record<string, string | undefined>): string {
+  private url(path: string, query?: Record<string, string | string[] | undefined>): string {
     const url = `${this.baseURL}${path}`;
     if (!query) return url;
     const params = new URLSearchParams();
     for (const [name, value] of Object.entries(query)) {
-      if (value !== undefined) params.set(name, value);
+      if (Array.isArray(value)) for (const entry of value) params.append(name, entry);
+      else if (value !== undefined) params.set(name, value);
     }
     const encoded = params.toString();
     return encoded ? `${url}?${encoded}` : url;

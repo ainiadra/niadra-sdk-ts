@@ -20,17 +20,17 @@
 
 import type { Niadra } from "../client.js";
 import type { Conversation } from "../conversation.js";
-import { TOOL_DEFINITIONS } from "../tools.js";
+import { AGENT_MEMORY_TOOL_DEFINITIONS, TOOL_DEFINITIONS } from "../tools.js";
 import type { Handle } from "../types/common.js";
 import type { ModelUsage } from "../types/events.js";
 import { providerOf } from "../usage.js";
 import { Bridge, count, errorName, isRecord, phoneHandle } from "./shared.js";
-import type { Proof } from "./shared.js";
+import type { AgentMemoryOption, Proof } from "./shared.js";
 import { bodyText, header, hmac, hex, memoryCallStore, parseJson, safeEqual } from "./webhook.js";
 import type { CallRecord, CallStore, HeadersLike, WebhookResponse } from "./webhook.js";
 
 export { attestationProof } from "./shared.js";
-export type { Proof } from "./shared.js";
+export type { AgentMemoryOption, Proof } from "./shared.js";
 export { memoryCallStore } from "./webhook.js";
 export type { CallRecord, CallStore, HeadersLike, WebhookResponse } from "./webhook.js";
 
@@ -67,6 +67,11 @@ export interface ElevenLabsOptions {
   contextTimeout?: number;
   /** The clock for the signature's 30-minute window, in milliseconds. */
   now?: () => number;
+  /**
+   * The agent's own notes as the dynamic variable `niadra_agent_memory` (put it before
+   * `{{niadra_context}}`), and its memory tools among the server tools.
+   */
+  agentMemory?: AgentMemoryOption;
 }
 
 export interface ElevenLabsToolConfigOptions {
@@ -137,6 +142,7 @@ export function elevenLabs(options: ElevenLabsOptions): ElevenLabsHandlers {
     if (!authorized(headers)) return { status: 401, body: { error: "unauthorized" } };
     const call = initiationCall(body);
     const variables: Record<string, string | number | boolean> = { niadra_context: "", niadra_turn: "" };
+    if (options.agentMemory) variables.niadra_agent_memory = "";
     try {
       Object.assign(variables, call && options.dynamicVariables ? options.dynamicVariables(call) : {});
     } catch (error) {
@@ -150,11 +156,12 @@ export function elevenLabs(options: ElevenLabsOptions): ElevenLabsHandlers {
     if (!call || !subject) return answer();
 
     const conversation = options.niadra.conversation({ subject, channel: "voice", conversation_id: call.conversationId });
-    const bridge = new Bridge(conversation, options.verify ? () => options.verify?.(call) : undefined);
-    const context = await bridge.context(options.contextTimeout ? { timeout: options.contextTimeout } : {});
-    bridge.injected(context);
-    variables.niadra_context = context.text;
-    variables.niadra_turn = context.suffix;
+    const bridge = new Bridge(conversation, options.verify ? () => options.verify?.(call) : undefined, options.agentMemory);
+    const read = await bridge.read(options.contextTimeout ? { timeout: options.contextTimeout } : {});
+    bridge.injected(read.context);
+    variables.niadra_context = read.context.text;
+    variables.niadra_turn = read.suffix;
+    if (options.agentMemory) variables.niadra_agent_memory = read.memory;
     try {
       await store.set(call.conversationId, {
         subject,
@@ -180,7 +187,7 @@ export function elevenLabs(options: ElevenLabsOptions): ElevenLabsHandlers {
     for (const [key, value] of Object.entries(body)) {
       if (key !== TOOL_FIELD && key !== CONVERSATION_FIELD && key !== CALLER_FIELD) args[key] = value;
     }
-    const specs = new Bridge(open(conversationId, record)).tools();
+    const specs = new Bridge(open(conversationId, record), undefined, options.agentMemory).tools();
     const spec = specs.find((candidate) => candidate.name === name);
     if (!spec) return { status: 404, body: { error: "unknown_tool" } };
     return { status: 200, body: parseJson(await spec.execute(args)) ?? null };
@@ -235,7 +242,12 @@ export function elevenLabs(options: ElevenLabsOptions): ElevenLabsHandlers {
 
   function toolConfigs(config: ElevenLabsToolConfigOptions): Record<string, unknown>[] {
     const headerName = config.secretHeader ?? secretHeader;
-    return TOOL_DEFINITIONS.map(({ function: definition }) => {
+    const memory = options.agentMemory;
+    const definitions = [
+      ...TOOL_DEFINITIONS,
+      ...(memory ? AGENT_MEMORY_TOOL_DEFINITIONS.slice(0, memory !== true && memory.write ? 2 : 1) : []),
+    ];
+    return definitions.map(({ function: definition }) => {
       const parameters = definition.parameters as { properties?: Record<string, unknown>; required?: string[] };
       const properties: Record<string, unknown> = {};
       for (const [key, schema] of Object.entries(parameters.properties ?? {})) properties[key] = literal(schema);
@@ -322,15 +334,19 @@ function usageOf(value: unknown): ModelUsage | null {
   return null;
 }
 
-/** A JSON Schema property in the subset ElevenLabs accepts, with the same description. */
+/** A JSON Schema property in the subset ElevenLabs accepts, with the same descriptions. */
 function literal(schema: unknown): Record<string, unknown> {
   if (!isRecord(schema)) return { type: "string" };
-  const out: Record<string, unknown> = { type: schema.type };
+  const type = typeof schema.type === "string" ? schema.type : "string";
+  const out: Record<string, unknown> = { type };
   if (typeof schema.description === "string") out.description = schema.description;
   if (Array.isArray(schema.enum)) out.enum = schema.enum;
-  if (schema.type === "array") {
-    const items = isRecord(schema.items) ? schema.items : {};
-    out.items = { type: items.type ?? "string", description: schema.description, ...(Array.isArray(items.enum) ? { enum: items.enum } : {}) };
+  if (type === "array") out.items = literal(isRecord(schema.items) ? schema.items : {});
+  if (type === "object" && isRecord(schema.properties)) {
+    const properties: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(schema.properties)) properties[key] = literal(value);
+    out.properties = properties;
+    if (Array.isArray(schema.required)) out.required = schema.required;
   }
   return out;
 }
