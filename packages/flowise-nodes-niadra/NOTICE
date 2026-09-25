@@ -1,0 +1,10 @@
+flowise-nodes-niadra
+Copyright 2026 Niadra. Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+src/flowise.ts reproduces, as types only, the parts of Flowise's node interface these nodes
+implement (INodeParams, INodeData, INode, IMessage, MemoryMethods), from
+https://github.com/FlowiseAI/Flowise/blob/main/packages/components/src/Interface.ts,
+Copyright (c) 2023-present FlowiseAI, Inc., licensed under the Apache License, Version 2.0.
+The layout of the memory node (label, name, category, credential and inputs, and the
+getChatMessages, addChatMessages and clearChatMessages methods the agents call) follows
+Flowise's Mem0 memory node, packages/components/nodes/memory/Mem0/Mem0.ts, same license.

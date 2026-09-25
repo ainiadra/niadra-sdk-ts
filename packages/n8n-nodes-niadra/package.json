@@ -1,0 +1,54 @@
+{
+  "name": "n8n-nodes-niadra",
+  "version": "0.1.0",
+  "description": "n8n community node for Niadra, the shared customer memory for every AI agent: customer context, turns, history search, verification and handoffs.",
+  "keywords": [
+    "n8n-community-node-package",
+    "niadra",
+    "customer-context",
+    "agent-memory",
+    "ai-agents"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://docs.niadra.com/en",
+  "author": "Niadra",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ainiadra/niadra-sdk-ts.git",
+    "directory": "packages/n8n-nodes-niadra"
+  },
+  "engines": {
+    "node": ">=20.15"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "prepublishOnly": "pnpm check"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/NiadraApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Niadra/Niadra.node.js"
+    ]
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "n8n-workflow": "2.16.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

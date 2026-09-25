@@ -1,0 +1,31 @@
+{
+  "name": "flowise-nodes-niadra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Flowise nodes for Niadra, the shared customer memory for every AI agent: a memory node with the customer's context and a tool node with the customer's history.",
+  "license": "Apache-2.0",
+  "author": "Niadra",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ainiadra/niadra-sdk-ts.git",
+    "directory": "packages/flowise-nodes-niadra"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp src/niadra.svg dist/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "@niadra/sdk": "workspace:^"
+  },
+  "peerDependencies": {
+    "@langchain/core": "^1.0.0"
+  },
+  "devDependencies": {
+    "@langchain/core": "1.2.12",
+    "@types/node": "^24.13.6",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

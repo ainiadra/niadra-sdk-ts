@@ -14,7 +14,8 @@ export type AgentNoteStatus = "active" | "retired";
 /** `agent` wrote it, a person wrote it in the Console, or it was distilled and approved. */
 export type AgentNoteOrigin = "agent" | "human" | "distilled";
 
-export type ProposalStatus = "pending" | "approved" | "rejected";
+/** `drafting` while a distillation runs, `failed` when it could not propose a note (see `problem`). */
+export type ProposalStatus = "drafting" | "pending" | "approved" | "rejected" | "failed";
 
 /** Where a note came from: the id of the conversation or task, never its text. */
 export interface Evidence {
@@ -80,6 +81,28 @@ export interface CreateAgentNoteRequest {
   valid_until?: string | null;
   /** Only for keys that write for another source. */
   source_id?: string | null;
+}
+
+/** A note waiting for a person's approval: distilled from a conversation or task, or held from an agent. */
+export interface AgentNoteProposal {
+  proposal_id: string;
+  source_id: string;
+  /** `distilled` from a conversation or task; `agent` when the space holds agent writes for a person. */
+  origin: "distilled" | "agent";
+  kind: AgentNoteKind;
+  title: string;
+  body: string;
+  tags?: string[];
+  evidence?: Evidence | null;
+  visibility?: AgentNoteVisibility;
+  status: ProposalStatus;
+  /** The note an approval created. */
+  note_id?: string | null;
+  /** Why a distillation failed: `nothing_to_propose`, `personal_data`, `no_turns`. */
+  problem?: string | null;
+  created_at: string;
+  decided_at?: string | null;
+  decided_by?: string | null;
 }
 
 /** A note saved, or a proposal waiting for a person to approve it (when the space asks for that). */

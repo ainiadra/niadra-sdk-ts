@@ -323,7 +323,7 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/google-genai` | Google Gen AI SDK (`generateContent`, `generateContentStream`) | `@google/genai` 2.24.0 over recorded API answers |
 | `@niadra/sdk/bedrock` | Amazon Bedrock Converse (`ConverseCommand`, `ConverseStreamCommand`) | `@aws-sdk/client-bedrock-runtime` 3.1140.0 with a recorded service answer |
 
-<!-- integrations -->
+Two more live in [`packages/`](packages), each with its own `package.json`, tests and README, apart from `@niadra/sdk`: [`n8n-nodes-niadra`](packages/n8n-nodes-niadra) (an n8n community node: Get Context, Track Turn, Search History, Verify, Handoff, End) and [`flowise-nodes-niadra`](packages/flowise-nodes-niadra) (a Flowise memory node that puts the context before every model call and records the turns, and a tool node with the kit).
 
 ### LiveKit Agents
 

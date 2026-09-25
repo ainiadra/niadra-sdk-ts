@@ -30,6 +30,22 @@ jobs:
         run: pnpm check
       - run: pnpm build
 
+  packages:
+    # The n8n and Flowise nodes, published or copied apart from @niadra/sdk.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Types, tests and build of each package
+        run: pnpm --filter "./packages/*" check
+
   runtimes:
     # The build on the runtimes other than Node that the README names. Deno runs without any
     # permission, so reading the environment must not throw.
