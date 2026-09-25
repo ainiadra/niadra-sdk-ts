@@ -1,8 +1,29 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@niadra/sdk": [
+        "./src/index.ts"
+      ],
+      "@niadra/sdk/*": [
+        "./src/integrations/*.ts"
+      ]
+    }
   },
-  "include": ["src", "test", "tsup.config.ts", "vitest.config.ts", "eslint.config.js"]
+  "include": [
+    "src",
+    "test",
+    "examples",
+    "tsup.config.ts",
+    "vitest.config.ts",
+    "eslint.config.js"
+  ]
 }

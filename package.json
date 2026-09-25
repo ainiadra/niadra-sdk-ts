@@ -40,6 +40,16 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./livekit": {
+      "import": {
+        "types": "./dist/livekit.d.ts",
+        "default": "./dist/livekit.js"
+      },
+      "require": {
+        "types": "./dist/livekit.d.cts",
+        "default": "./dist/livekit.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -63,15 +73,63 @@
     "prepublishOnly": "pnpm check && pnpm build"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "4.0.18",
+    "@anthropic-ai/sdk": "0.128.0",
+    "@aws-sdk/client-bedrock-runtime": "3.1140.0",
     "@edge-runtime/vm": "5.0.0",
+    "@elevenlabs/elevenlabs-js": "2.69.0",
     "@eslint/js": "^10.0.1",
+    "@google/genai": "2.24.0",
+    "@langchain/core": "1.2.12",
+    "@langchain/langgraph": "1.4.17",
+    "@livekit/agents": "1.9.0",
+    "@mastra/core": "1.71.0",
+    "@openai/agents": "0.18.0",
     "@types/node": "^24.13.6",
+    "@vapi-ai/server-sdk": "2.0.1",
+    "ai": "7.0.114",
     "eslint": "^10.0.0",
     "miniflare": "4.20260730.0",
     "tsup": "^8.5.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.70.1",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "zod": "4.6.5"
   },
-  "packageManager": "pnpm@10.32.1"
+  "packageManager": "pnpm@10.32.1",
+  "typesVersions": {
+    "*": {
+      "livekit": [
+        "./dist/livekit.d.ts"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@livekit/agents": "^1.9.0",
+    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
+    "@mastra/core": "^1.0.0",
+    "@langchain/core": "^1.0.0",
+    "@openai/agents": ">=0.18.0 <1",
+    "zod": "^3.25.0 || ^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@livekit/agents": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "@mastra/core": {
+      "optional": true
+    },
+    "@langchain/core": {
+      "optional": true
+    },
+    "@openai/agents": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  }
 }

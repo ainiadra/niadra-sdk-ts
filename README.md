@@ -278,6 +278,44 @@ The definitions use the `{ type: "function", function: { name, description, para
 const { data } = await niadra.subjectToken({ subject: marina, conversation_id: "wa-8812", verification: "V1" });
 ```
 
+## Integrations
+
+Each integration is a subpath of this package, with its framework as an optional peer dependency: `@niadra/sdk` itself loads no framework, and you install only the one you use. Every adapter wires the same five things into the framework's own lifecycle:
+
+1. **Context before the model call**: the pack after your instructions, the suffix (deltas and live turns) at the end, within the read budget (150 ms on voice).
+2. **Turns**: what the customer said and what the agent answered, with the provider's usage when the framework exposes it, and the end of the conversation.
+3. **Tools**: `search_customer_history`, `get_customer_timeline` and `open_history_item` in the framework's tool format, bound to the customer outside the model's reach. No tool has a parameter that names a customer.
+4. **Verification**: what the framework or the carrier proved, recorded with `verify()` before the first context read.
+5. **Handoff**: a transfer to another agent or to a person, recorded with `handoff()`.
+
+All of it is fail-open: when Niadra is slow or down, the agent answers without memory, and nothing throws into the framework. Runnable examples are in [`examples/`](examples).
+
+| Import | For | Tested with |
+| --- | --- | --- |
+| `@niadra/sdk/livekit` | LiveKit Agents (Node) | `@livekit/agents` 1.9.0 |
+
+<!-- integrations -->
+
+### LiveKit Agents
+
+```ts
+import { NiadraAgent, NiadraMemory, attestationProof, sipConversationId, sipSubject } from "@niadra/sdk/livekit";
+
+const caller = await ctx.waitForParticipant();
+const conversation = niadra.conversation({
+  subject: sipSubject(caller),                                   // sip.phoneNumber, else the identity
+  channel: "voice",
+  conversation_id: sipConversationId(caller, ctx.room.name),     // sip.callID, else the room
+});
+const memory = new NiadraMemory({ conversation, verify: attestationProof(caller.attributes["sip.h.x-stir-verstat"]) });
+memory.attach(session);                                          // answers, handoffs, end of call
+await session.start({ agent: new NiadraAgent({ instructions, memory }), room: ctx.room });
+```
+
+`NiadraAgent` is a LiveKit `Agent` whose `onUserTurnCompleted` records the final transcript (with its STT confidence), then puts the pack in the turn's chat context right after the instructions and the suffix after the new message. LiveKit builds that context for one reply only, so nothing piles up in the agent's history and the prompt prefix stays the same turn after turn. The navigation kit joins the agent's own tools as the `niadra` toolset. With your own `Agent` subclass, call `memory.onUserTurnCompleted(turnCtx, newMessage)` from your hook and add `memory.toolset()` to its tools.
+
+`attach(session)` records the agent's answers from `conversation_item_added` (with the LLM usage LiveKit measured), a handoff for each `AgentHandoffItem` (`session.updateAgent()` or a tool that returns another agent), and the end of the conversation on `close`. Call `memory.handoffToHuman(reason)` right before a SIP transfer to a person. LiveKit's SIP attributes carry no STIR/SHAKEN attestation: map the carrier's header to a participant attribute in the trunk settings and pass it to `attestationProof()` (`A` proves V2, `B` and `C` prove V1).
+
 ## Failure behavior
 
 Memory should make an agent better, never make it fail. By default:
