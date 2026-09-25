@@ -1,6 +1,6 @@
 {
   "name": "@niadra/sdk",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "TypeScript SDK for Niadra, the shared customer memory for every AI agent in a company: context before the model call, history, tools and MCP.",
   "license": "Apache-2.0",
   "author": "Niadra",
@@ -256,8 +256,7 @@
     "@livekit/agents": "^1.9.0",
     "@mastra/core": "^1.0.0",
     "@openai/agents": ">=0.18.0 <1",
-    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
-    "zod": "^3.25.0 || ^4.0.0"
+    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0"
   },
   "peerDependenciesMeta": {
     "@livekit/agents": {
@@ -273,9 +272,6 @@
       "optional": true
     },
     "@openai/agents": {
-      "optional": true
-    },
-    "zod": {
       "optional": true
     }
   }
