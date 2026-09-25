@@ -25,6 +25,7 @@
 import { jsonSchema, tool } from "ai";
 import type { ToolSet } from "ai";
 import type { ModelUsage } from "../types/events.js";
+import { injectPrompt, recordNewest } from "./prompt.js";
 import { Bridge, count, errorName, isRecord, resolveSession } from "./shared.js";
 import type { ProofSource, Session, SessionResolver } from "./shared.js";
 
@@ -91,27 +92,10 @@ export function niadraMiddleware(session: SessionResolver, options: NiadraMiddle
       if (!state || !Array.isArray(params.prompt)) return params;
       try {
         const prompt = params.prompt as unknown[];
-        if (options.recordCustomer ?? true) recordNewest(state, prompt);
+        if (options.recordCustomer ?? true) recordNewest(state.bridge, state.seen, prompt);
         const context = await state.bridge.context();
-        if (!context.text && !context.suffix) {
-          state.bridge.injected(context);
-          return params;
-        }
-        const injected = [...prompt];
-        if (context.suffix) {
-          const last = lastUserIndex(injected);
-          const message = injected[last];
-          if (isRecord(message) && Array.isArray(message.content)) {
-            injected[last] = { ...message, content: [...(message.content as unknown[]), { type: "text", text: context.suffix }] };
-          }
-        }
-        if (context.text) {
-          let position = 0;
-          while (position < injected.length && roleOf(injected[position]) === "system") position++;
-          injected.splice(position, 0, { role: "system", content: context.text });
-        }
         state.bridge.injected(context);
-        return { ...params, prompt: injected };
+        return { ...params, prompt: injectPrompt(prompt, context) };
       } catch (error) {
         state.bridge.logger.warn(`could not inject context (${errorName(error)})`);
         return params;
@@ -207,36 +191,6 @@ export function aiSdkUsage(usage: unknown, model: ModelInfo, modelId?: unknown):
 function record(state: State, text: string, usage: unknown, model: ModelInfo, modelId: unknown): void {
   const reported = aiSdkUsage(usage, model, modelId);
   state.bridge.agent(text, reported ? { usage: reported } : {});
-}
-
-/** Records the last user message once, however many steps of a tool loop reuse the same prompt. */
-function recordNewest(state: State, prompt: unknown[]): void {
-  const index = lastUserIndex(prompt);
-  if (index < 0) return;
-  const message = prompt[index];
-  const text = isRecord(message) ? textParts(message.content) : "";
-  const key = `${String(index)}:${text}`;
-  if (!text || state.seen.has(key)) return;
-  state.seen.add(key);
-  state.bridge.customer(text);
-}
-
-function textParts(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return (content as unknown[])
-    .map((part) => (isRecord(part) && part.type === "text" && typeof part.text === "string" ? part.text : ""))
-    .filter(Boolean)
-    .join("\n");
-}
-
-function lastUserIndex(prompt: unknown[]): number {
-  for (let index = prompt.length - 1; index >= 0; index--) if (roleOf(prompt[index]) === "user") return index;
-  return -1;
-}
-
-function roleOf(message: unknown): string {
-  return isRecord(message) && typeof message.role === "string" ? message.role : "";
 }
 
 function parsed(text: string): unknown {

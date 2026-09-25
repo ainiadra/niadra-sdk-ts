@@ -298,6 +298,7 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/whatsapp` | WhatsApp Cloud API (Meta webhooks) | recorded payloads, signatures computed in the test |
 | `@niadra/sdk/twilio` | Twilio Voice, Messaging and Conversations webhooks | recorded payloads; signatures checked against `twilio` 6.1.1 |
 | `@niadra/sdk/ai-sdk` | Vercel AI SDK 5, 6 and 7 | `ai` 7.0.114 with its mock models (v4 and v3 specifications) |
+| `@niadra/sdk/mastra` | Mastra | `@mastra/core` 1.71.0, a real `Agent` over a mock model |
 
 <!-- integrations -->
 
@@ -417,6 +418,27 @@ const result = streamText({
 ```
 
 On every model call, `transformParams` records the newest user message as the customer's turn (once, however many steps a tool loop takes), puts the pack as a system message right after your system prompt, and adds the suffix as a text part at the end of the last user message, where every provider accepts it. `wrapGenerate` and `wrapStream` record the model's text as the agent's turn with the usage the provider reported, including prompt cache reads and writes; steps that only call tools record nothing. Pass a function instead of a conversation to wrap the model once and pick the conversation per call. The same middleware works with AI SDK 5, 6 and 7. See [`examples/ai-sdk.ts`](examples/ai-sdk.ts).
+
+### Mastra
+
+A processor that goes in both of the agent's processor lists, and the navigation kit as Mastra tools. Mastra's own `Memory` stays as it is; Niadra is the customer's memory shared with the company's other agents.
+
+```ts
+import { niadraProcessor, niadraTools } from "@niadra/sdk/mastra";
+
+const niadraContext = niadraProcessor();
+const support = new Agent({
+  id: "support", name: "Acme support", model: openai("gpt-4.1"),
+  instructions: "You are Acme's support agent.",
+  tools: ({ requestContext }) => niadraTools(requestContext.get("niadra")),
+  inputProcessors: [niadraContext],
+  outputProcessors: [niadraContext],
+});
+
+await support.generate(text, { requestContext: new RequestContext([["niadra", convo]]) });
+```
+
+`processLLMRequest` rewrites only the prompt sent to the model, not the message list, so the pack and the suffix never land in Mastra's memory: the pack goes after the system messages, the suffix at the end of the last user message, and the customer's newest message is recorded once per turn. `processOutputResult` records the final answer with the usage Mastra summed for the run. The conversation comes from the request context under `niadra` (or pass `niadraProcessor({ session })`). For an agent that cannot take processors, `niadraInstructions(base)` returns dynamic instructions with the context, without recording turns. See [`examples/mastra.ts`](examples/mastra.ts).
 
 ## Failure behavior
 

@@ -8,6 +8,7 @@ const integrations = [
   "whatsapp",
   "twilio",
   "ai-sdk",
+  "mastra",
 ];
 
 export default defineConfig({
