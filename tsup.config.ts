@@ -11,6 +11,9 @@ const integrations = [
   "mastra",
   "langchain",
   "openai-agents",
+  "anthropic",
+  "google-genai",
+  "bedrock",
 ];
 
 export default defineConfig({

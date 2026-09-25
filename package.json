@@ -130,6 +130,36 @@
         "default": "./dist/openai-agents.cjs"
       }
     },
+    "./anthropic": {
+      "import": {
+        "types": "./dist/anthropic.d.ts",
+        "default": "./dist/anthropic.js"
+      },
+      "require": {
+        "types": "./dist/anthropic.d.cts",
+        "default": "./dist/anthropic.cjs"
+      }
+    },
+    "./google-genai": {
+      "import": {
+        "types": "./dist/google-genai.d.ts",
+        "default": "./dist/google-genai.js"
+      },
+      "require": {
+        "types": "./dist/google-genai.d.cts",
+        "default": "./dist/google-genai.cjs"
+      }
+    },
+    "./bedrock": {
+      "import": {
+        "types": "./dist/bedrock.d.ts",
+        "default": "./dist/bedrock.js"
+      },
+      "require": {
+        "types": "./dist/bedrock.d.cts",
+        "default": "./dist/bedrock.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -149,7 +179,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint .",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
-    "runtimes": "pnpm build && deno run --no-prompt test/runtimes/smoke.mjs && bun test/runtimes/smoke.mjs && node test/runtimes/workerd.mjs && node test/runtimes/edge.mjs",
+    "runtimes": "pnpm build && deno run --no-prompt test/runtimes/smoke.mjs && deno run --no-prompt test/runtimes/webhooks.mjs && bun test/runtimes/smoke.mjs && bun test/runtimes/webhooks.mjs && node test/runtimes/workerd.mjs && node test/runtimes/edge.mjs",
     "prepublishOnly": "pnpm check && pnpm build"
   },
   "devDependencies": {
@@ -209,6 +239,15 @@
       ],
       "openai-agents": [
         "./dist/openai-agents.d.ts"
+      ],
+      "anthropic": [
+        "./dist/anthropic.d.ts"
+      ],
+      "google-genai": [
+        "./dist/google-genai.d.ts"
+      ],
+      "bedrock": [
+        "./dist/bedrock.d.ts"
       ]
     }
   },

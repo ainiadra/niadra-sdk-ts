@@ -319,6 +319,9 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/mastra` | Mastra | `@mastra/core` 1.71.0, a real `Agent` over a mock model |
 | `@niadra/sdk/langchain` | LangChain.js and LangGraph.js | `@langchain/core` 1.2.12, `@langchain/langgraph` 1.4.17, a real graph with `ToolNode` |
 | `@niadra/sdk/openai-agents` | OpenAI Agents SDK (JavaScript) | `@openai/agents` 0.18.0, a real `Runner` over a scripted model |
+| `@niadra/sdk/anthropic` | Anthropic SDK (`messages.create`, streaming or not) | `@anthropic-ai/sdk` 0.128.0 over recorded API answers |
+| `@niadra/sdk/google-genai` | Google Gen AI SDK (`generateContent`, `generateContentStream`) | `@google/genai` 2.24.0 over recorded API answers |
+| `@niadra/sdk/bedrock` | Amazon Bedrock Converse (`ConverseCommand`, `ConverseStreamCommand`) | `@aws-sdk/client-bedrock-runtime` 3.1140.0 with a recorded service answer |
 
 <!-- integrations -->
 
@@ -492,6 +495,22 @@ await runner.run(agent, text, { session: new NiadraSession(convo) });
 ```
 
 `niadraInstructions` makes the instructions dynamic: your text, then the pack, then the suffix (the SDK builds the system prompt from the instructions alone). `NiadraSession` is a `Session` that keeps the run's items in another session (`MemorySession` by default, or yours as `inner`) and records the customer's messages and the agent's answers. `niadraTools` returns non-strict function tools bound to the customer, since the canonical schemas have optional fields. `niadraRunHooks` records each `agent_handoff`. See [`examples/openai-agents.ts`](examples/openai-agents.ts).
+
+### Anthropic, Google Gen AI and Amazon Bedrock
+
+The same idea as `wrap()` for OpenAI, one wrapper per SDK. The client itself is never modified.
+
+```ts
+import { wrapAnthropic } from "@niadra/sdk/anthropic";
+import { wrapGoogleGenAI } from "@niadra/sdk/google-genai";
+import { wrapBedrock } from "@niadra/sdk/bedrock";
+
+const claude = wrapAnthropic(new Anthropic(), convo);          // messages.create, streaming or not
+const gemini = wrapGoogleGenAI(new GoogleGenAI({}), convo);    // models.generateContent and generateContentStream
+const bedrock = wrapBedrock(new BedrockRuntimeClient({}), convo); // ConverseCommand and ConverseStreamCommand
+```
+
+Each call gets the pack after your system text (Anthropic's `system`, Gemini's `config.systemInstruction`, one more Converse `system` block) and the suffix at the end of the last user message; the newest user text is recorded as the customer's turn and the answer as the agent's, with the provider's usage and prompt cache counts: Anthropic's `input_tokens`, `cache_read_input_tokens` and `cache_creation_input_tokens`, Gemini's `promptTokenCount` and `cachedContentTokenCount`, Bedrock's `inputTokens`, `cacheReadInputTokens` and `cacheWriteInputTokens`. On Anthropic, the pack's system block gets a cache breakpoint only when you already use prompt caching and one of the four is left. `.withResponse()` keeps working. For Anthropic's `messages.stream()` helper, prepare the body with `anthropicParams(convo, body)` and pass the final message to `recordAnthropic(convo, message)`. Azure OpenAI needs nothing new: `AzureOpenAI` has the OpenAI client's shape, so `wrap()` covers it. See [`examples/anthropic.ts`](examples/anthropic.ts), [`examples/google-genai.ts`](examples/google-genai.ts) and [`examples/bedrock.ts`](examples/bedrock.ts).
 
 ## Failure behavior
 

@@ -32,7 +32,23 @@ describe("entries", () => {
     expect([...files].filter((file) => file.includes("/integrations/"))).toEqual([]);
   });
 
-  it("lets an integration load only its own framework", () => {
-    expect([...runtimeGraph(resolve(SRC, "integrations/livekit.ts")).packages]).toEqual(["@livekit/agents"]);
+  it("lets each integration load only its own framework, and the webhook adapters none", () => {
+    const expected: Record<string, string[]> = {
+      livekit: ["@livekit/agents"],
+      elevenlabs: [],
+      vapi: [],
+      whatsapp: [],
+      twilio: [],
+      "ai-sdk": ["ai"],
+      mastra: ["@mastra/core/tools"],
+      langchain: ["@langchain/core/callbacks/base", "@langchain/core/messages", "@langchain/core/runnables", "@langchain/core/tools"],
+      "openai-agents": ["@openai/agents"],
+      anthropic: [],
+      "google-genai": [],
+      bedrock: [],
+    };
+    for (const [name, packages] of Object.entries(expected)) {
+      expect([...runtimeGraph(resolve(SRC, `integrations/${name}.ts`)).packages].sort(), name).toEqual(packages);
+    }
   });
 });
