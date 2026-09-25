@@ -297,6 +297,7 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/vapi` | Vapi (server URL) | recorded payloads typed with `@vapi-ai/server-sdk` 2.0.1 |
 | `@niadra/sdk/whatsapp` | WhatsApp Cloud API (Meta webhooks) | recorded payloads, signatures computed in the test |
 | `@niadra/sdk/twilio` | Twilio Voice, Messaging and Conversations webhooks | recorded payloads; signatures checked against `twilio` 6.1.1 |
+| `@niadra/sdk/ai-sdk` | Vercel AI SDK 5, 6 and 7 | `ai` 7.0.114 with its mock models (v4 and v3 specifications) |
 
 <!-- integrations -->
 
@@ -397,6 +398,25 @@ recordTwilioInbound(convo, request);  // Body, or SpeechResult with its Confiden
 ```
 
 `readTwilio` checks `X-Twilio-Signature` against the exact public URL Twilio called and reads the request: WhatsApp by `WaId`, voice and SMS by the number on the customer's side (`To` on outbound calls), Conversations by `Author`; `CallSid` or `ConversationSid` as the conversation id; `MessageSid` as the idempotency key. Record the attestation once, on the call's first webhook, and open later ones at `request.proof.level`, as [`examples/twilio-voice.ts`](examples/twilio-voice.ts) does.
+
+### Vercel AI SDK
+
+A language model middleware, so it works with every provider, and the navigation kit as AI SDK tools:
+
+```ts
+import { streamText, wrapLanguageModel } from "ai";
+import { niadraMiddleware, niadraTools } from "@niadra/sdk/ai-sdk";
+
+const convo = niadra.conversation({ subject: handles.appUserId(session.userId), channel: "web_chat", conversation_id: chatId });
+const result = streamText({
+  model: wrapLanguageModel({ model: openai("gpt-4.1"), middleware: niadraMiddleware(convo, { verify: { method: "login", level: "V2" } }) }),
+  system: "You are Acme's support agent.",
+  messages,
+  tools: { ...niadraTools(convo), ...yourTools },
+});
+```
+
+On every model call, `transformParams` records the newest user message as the customer's turn (once, however many steps a tool loop takes), puts the pack as a system message right after your system prompt, and adds the suffix as a text part at the end of the last user message, where every provider accepts it. `wrapGenerate` and `wrapStream` record the model's text as the agent's turn with the usage the provider reported, including prompt cache reads and writes; steps that only call tools record nothing. Pass a function instead of a conversation to wrap the model once and pick the conversation per call. The same middleware works with AI SDK 5, 6 and 7. See [`examples/ai-sdk.ts`](examples/ai-sdk.ts).
 
 ## Failure behavior
 

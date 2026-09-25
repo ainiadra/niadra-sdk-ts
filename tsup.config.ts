@@ -7,6 +7,7 @@ const integrations = [
   "vapi",
   "whatsapp",
   "twilio",
+  "ai-sdk",
 ];
 
 export default defineConfig({
