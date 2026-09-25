@@ -1,3 +1,4 @@
+import { Admin } from "./admin.js";
 import { AgentMemoryCache, blockResult, checkNote, checkTags, emptyBlock } from "./agent-memory.js";
 import type { AgentMemoryParams, AgentMemoryResult, RememberParams } from "./agent-memory.js";
 import { ContextCache } from "./cache.js";
@@ -72,7 +73,8 @@ import type {
   TimelineRequest,
   TimelineResponse,
 } from "./types/context.js";
-import type { BatchItem, BatchResponse, MediaUploadResponse } from "./types/events.js";
+import type { KeyIdentity } from "./types/admin.js";
+import type { BatchItem, BatchResponse, FeedbackRequest, MediaUploadResponse } from "./types/events.js";
 import type {
   AgentMemoryBlock,
   AgentMemorySearchRequest,
@@ -162,11 +164,21 @@ export class Niadra {
   readonly logger: Logger;
   private readonly disabledReason: NiadraConfigError | null;
   private unregisterExit: () => void = () => undefined;
+  /**
+   * Governance calls for a key with the `admin` scope: find a customer, read their memory and a
+   * fact's history, correct, erase and export. See `Admin`.
+   */
+  readonly admin: Admin;
 
   constructor(options: ClientOptions = {}) {
     this.strict = options.strict ?? false;
     this.logger = options.logger ?? consoleLogger;
     this.timeouts = { ...DEFAULT_TIMEOUTS, ...options.timeouts };
+    this.admin = new Admin({
+      send: (build) => this.navigate(build),
+      read: (method, path, body, opts) => this.readSpec(method, path, body, this.timeouts.write, opts),
+      write: (path, body, key, opts) => this.writeSpec(path, body, key, opts),
+    });
 
     const setup = this.setup(options);
     if (setup instanceof NiadraConfigError) {
@@ -556,6 +568,27 @@ export class Niadra {
   }
 
   /**
+   * Up to 500 corrections in one call, each with its own idempotency key (minted when missing).
+   * Resolves with `accepted`, `duplicates` for replayed keys and one error per refused item, by index.
+   */
+  async feedbackBatch(items: FeedbackParams[], options: RequestOptions = {}): Promise<Result<BatchResponse>> {
+    return this.navigate(() => {
+      if (items.length < 1 || items.length > 500) throw new NiadraValidationError("1 to 500 feedback items");
+      const body: { items: FeedbackRequest[] } = { items: items.map((item) => buildFeedback(item)) };
+      const spec = this.writeSpec("/v1/feedback/batch", body, null, options);
+      return spec;
+    });
+  }
+
+  /**
+   * What this key authenticates as: space, source, vendor, scopes and whether agent memory is on.
+   * Any key may ask, whatever its scopes; use it to check a key before wiring an agent to it.
+   */
+  async whoami(options: RequestOptions = {}): Promise<Result<KeyIdentity>> {
+    return this.navigate(() => this.readSpec("GET", "/v1/sources/me", undefined, this.timeouts.write, options));
+  }
+
+  /**
    * Hands a file to Niadra, such as a call recording, and returns the reference its event
    * carries. Media never travels inside an event: this reserves an upload, sends the bytes
    * straight to storage over a short-lived signed URL, and resolves with `media_ref` and
@@ -693,6 +726,21 @@ export class Niadra {
     };
     if (body !== undefined) spec.body = body;
     return spec;
+  }
+
+  /** A write sent at once, retried like a batch; the idempotency key makes the retries safe. */
+  private writeSpec(path: string, body: unknown, idempotencyKey: string | null, options: RequestOptions): RequestSpec {
+    const timeout = options.timeout ?? this.timeouts.write;
+    const headers = { ...options.headers, ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}) };
+    return {
+      method: "POST",
+      path,
+      body,
+      headers,
+      timeoutMs: timeout,
+      retry: this.core ? { ...this.core.writes, totalMs: timeout } : READ_POLICY,
+      signal: options.signal,
+    };
   }
 
   private async navigate<T>(build: () => RequestSpec): Promise<Result<T>> {

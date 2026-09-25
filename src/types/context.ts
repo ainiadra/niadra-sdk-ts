@@ -135,7 +135,21 @@ export interface HistoryFilters {
   item_kinds?: HistoryItemKind[];
   outcome?: string | null;
   object?: ObjectRef | null;
+  /**
+   * Conditions joined by `AND`, `OR` and `NOT` over the row fields `id`, `kind`, `channel`,
+   * `category`, `outcome`, `source_id`, `vendor`, `at`, `valid_until`, `confidence`, `text`,
+   * `object_type` and `object_namespace`, with `eq`, `ne`, `in`, `nin`, `gt`, `gte`, `lt`, `lte`,
+   * `contains`, `icontains` and `exists`. A bare value means `eq`, a list means `in`. It narrows
+   * what the policy already let through and never changes the order.
+   *
+   * @example
+   * { AND: [{ kind: ["episode", "action"] }, { NOT: { vendor: "acme" } }, { at: { gte: "2026-09-01" } }] }
+   */
+  where?: WhereExpression | null;
 }
+
+/** A condition tree for `HistoryFilters.where`. */
+export type WhereExpression = Record<string, unknown>;
 
 /** Body of `POST /v1/history/search`. */
 export interface SearchRequest {
@@ -149,6 +163,8 @@ export interface SearchRequest {
   verification?: Verification;
   conversation_id?: string | null;
   task_id?: string | null;
+  /** At most this many items, after the token budget: 1 to 100. */
+  limit?: number | null;
 }
 
 export interface HistoryItem {

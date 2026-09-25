@@ -2,6 +2,25 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - Unreleased
+
+### Added
+
+- `search({ ..., limit })` caps the items after the token budget, and `filters.where` takes a
+  condition tree for search and timeline: `AND`, `OR` and `NOT` over `id`, `kind`, `channel`,
+  `category`, `outcome`, `source_id`, `vendor`, `at`, `valid_until`, `confidence`, `text`,
+  `object_type` and `object_namespace`, with `eq`, `ne`, `in`, `nin`, `gt`, `gte`, `lt`, `lte`,
+  `contains`, `icontains` and `exists`. It narrows what the policy let through; it never reorders.
+- `feedbackBatch(items)`: up to 500 corrections in one call, each with its own idempotency key
+  (minted when missing); per-item errors come back by index.
+- `whoami()`: what the key authenticates as (space, source, vendor, scopes, audience, whether agent
+  memory is on), for any key.
+- `niadra.admin`, for a key with the `admin` scope: `findProfiles`, `memory`, `factHistory`,
+  `correct`, `correctBatch` (item `n` keyed `<key>:<n>`), `forget`, `forgetStatus` and `export`.
+  They resolve `{ data, error }` and fail open like the rest of the client.
+- Types: `KeyIdentity`, `ProfileMemory`, `FactOut`, `FactHistory`, `ProfileMatch`,
+  `CorrectionRequest`, `ForgetTarget`, `Erasure`, `ExportPackage`, `WhereExpression`.
+
 ## [0.3.0] - 2026-09-25
 
 Ready to publish; not on npm yet. It carries everything in 0.2.0, so if 0.2.0 was never published,

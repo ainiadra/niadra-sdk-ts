@@ -28,3 +28,4 @@ export type {
   VoiceInfo,
 } from "./events.js";
 export { MAX_BATCH_ITEMS, MAX_EVENT_TEXT, MAX_MEDIA_BYTES } from "./events.js";
+export type * from "./admin.js";

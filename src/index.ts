@@ -1,4 +1,6 @@
 export { Niadra } from "./client.js";
+export { Admin } from "./admin.js";
+export type { CorrectParams } from "./admin.js";
 export type { OpenParams, WriteResult } from "./client.js";
 export { Conversation } from "./conversation.js";
 export type { ConversationAction, ConversationEvent, ConversationParams, TurnOptions } from "./conversation.js";
