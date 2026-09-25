@@ -24,8 +24,10 @@ pnpm install --frozen-lockfile && pnpm check && pnpm runtimes && npm publish --a
   - `@niadra/sdk/retell`: Retell AI's inbound webhook (the context as dynamic variables), agent
     webhook (`call_started`, `transfer_started`, `call_ended` with every utterance), custom
     functions with `toolConfigs()`, and a session for the custom LLM websocket that gives the model
-    its messages with the context in place. `X-Retell-Signature` is checked on every request. No
-    Retell package is needed; web APIs only.
+    its messages with the context in place. `X-Retell-Signature` is checked on every request. The
+    websocket is not signed, so its `call_details` never name the customer: the session reads and
+    records only for a call a signed webhook registered, unless `trustCallDetails` says the socket
+    accepts Retell alone. No Retell package is needed; web APIs only.
   - `@niadra/sdk/llamaindex`: `NiadraMemory`, a LlamaIndex.TS `Memory` for agents, multi-agent
     workflows and chat engines; `NiadraMemoryBlock` for a memory built elsewhere; the kit as
     `FunctionTool`s.

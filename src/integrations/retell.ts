@@ -14,7 +14,12 @@
  *   `call_ended` records every utterance of `transcript_object` and ends the conversation.
  * - `llm(callId)`: for a custom LLM, one session per websocket (`/llm-websocket/:call_id`). It asks
  *   for the call details, answers Retell's pings, records each utterance once a response is
- *   required, and gives your model the messages with the context in place.
+ *   required, and gives your model the messages with the context in place. Retell does not sign the
+ *   websocket, so the customer comes from a signed webhook of the same call (`inbound` or
+ *   `call_started`, kept in the store), never from the socket's `call_details`: anyone who reaches
+ *   the socket could name any caller there. Until a signed webhook registers the call, the model gets
+ *   no context and nothing is recorded. Set `trustCallDetails` only when the socket accepts Retell
+ *   alone (an IP allowlist, a secret in its URL).
  *
  * Every request is checked against `X-Retell-Signature` (HMAC-SHA256 of the raw body and its
  * timestamp, keyed with your Retell API key, within five minutes). Utterances carry the same
@@ -89,6 +94,12 @@ export interface RetellOptions {
    * `{{niadra_context}}`), before the pack in the custom LLM's messages, and its memory tools.
    */
   agentMemory?: AgentMemoryOption;
+  /**
+   * Lets the custom LLM websocket open the conversation from its own `call_details` when no signed
+   * webhook registered the call. Retell does not sign the websocket: turn this on only when your
+   * server accepts that socket from Retell alone. Defaults to `false`.
+   */
+  trustCallDetails?: boolean;
 }
 
 /** A chat message in the shape every chat completions API takes. */
@@ -344,7 +355,8 @@ export function retell(options: RetellOptions): RetellHandlers {
         bridge = new Bridge(open(callId, stored), undefined, options.agentMemory);
         return bridge;
       }
-      const started = call ? start(call) : null;
+      // The socket is not signed: its call details never name the customer unless the server said so.
+      const started = call && options.trustCallDetails ? start(call) : null;
       if (!started) return null;
       bridge = started.bridge;
       await bridge.context(readOptions);

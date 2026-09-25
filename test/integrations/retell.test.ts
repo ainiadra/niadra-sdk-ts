@@ -139,7 +139,7 @@ describe("Retell: custom LLM websocket", () => {
   it("asks for the call details, answers pings, and gives the model the messages with the context", async () => {
     const { server, niadra } = setup();
     const events: Record<string, unknown>[] = [];
-    const handlers = retell({ niadra, apiKey: API_KEY, verify: () => attestationProof("B") });
+    const handlers = retell({ niadra, apiKey: API_KEY, verify: () => attestationProof("B"), trustCallDetails: true });
     const session = handlers.llm("call_b8f2", { send: (event) => events.push(event), instructions: "You are Acme's receptionist." });
 
     session.open("Acme Energy, how can I help?");
@@ -195,6 +195,30 @@ describe("Retell: custom LLM websocket", () => {
     expect(events.at(-1)).toMatchObject({ response_id: 2, transfer_number: "+551140028900" });
     expect(server.callsTo("POST /v1/context")[0]!.body).toMatchObject({ verification: "V2" });
     expect(await session.receive("not an event")).toBeNull();
+  });
+});
+
+describe("Retell: the unsigned websocket", () => {
+  it("never takes the customer from its call details, only from a signed webhook of the call", async () => {
+    // Anyone who reaches the socket could name any caller in `call_details` and read their memory,
+    // or write turns into it. Without `trustCallDetails`, the socket's own details name nobody.
+    const { server, niadra } = setup();
+    const store = memoryCallStore();
+    const handlers = retell({ niadra, apiKey: API_KEY, store, verify: () => attestationProof("A") });
+    const events: Record<string, unknown>[] = [];
+    const session = handlers.llm("call_forged", { send: (event) => events.push(event) });
+
+    expect(await session.receive({ interaction_type: "call_details", call: { ...call, call_id: "call_forged" } })).toBeNull();
+    const blind = await session.receive({ interaction_type: "response_required", response_id: 1, transcript: [{ role: "user", content: "What is my address?" }] });
+    expect(blind!.messages).toEqual([{ role: "user", content: "What is my address?" }]);
+    await niadra.flush();
+    expect(server.callsTo("POST /v1/context")).toEqual([]);
+    expect(turns(server)).toEqual([]);
+
+    // A signed webhook of the same call registers it; the next turn has the caller's context.
+    await handlers.webhook(...(await signed({ event: "call_started", call: { ...call, call_id: "call_forged", call_status: "ongoing" } })));
+    const next = await session.receive({ interaction_type: "response_required", response_id: 2, transcript: [{ role: "user", content: "What is my address?" }] });
+    expect(next!.context).toBe(PACK);
   });
 });
 
