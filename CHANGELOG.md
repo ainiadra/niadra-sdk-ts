@@ -31,6 +31,15 @@ All notable changes to this package are documented here. The format follows [Kee
 - The search tool no longer offers the model a `system_event` item kind, and its description names
   business objects instead of system events: a system event is never an item, it changes its object,
   so the filter is `object`. The server still reads `system_event` from 0.1.0 as `object`.
+- `open()` sends `POST /v1/history/open` with the item id, the level and the conversation id in the
+  body, instead of `GET /v1/history/items/{id}` with the conversation id in the query: a
+  conversation id may be a phone number or an e-mail, and a URL reaches access logs.
+- `open()` takes `subject`, the customer the item must belong to; the server opens any other item
+  as 404. The tool kit passes its bound customer, so `open_history_item` opens only that
+  customer's items.
+- `task_id` on `open()` is no longer sent: the server never read it on this route. The field stays
+  in `OpenParams` for code written against 0.1.0.
+- The `excerpt` field of an opened item says the server no longer sends it.
 
 ### Fixed
 

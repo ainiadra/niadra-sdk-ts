@@ -54,16 +54,26 @@ describe("timeline()", () => {
 });
 
 describe("open()", () => {
-  it("reads the item by id with the session scope as query parameters", async () => {
-    const server = new MockServer().on("GET /v1/history/items/ep%2F1", {
-      body: { id: "ep/1", kind: "episode", summary: "Visit missed", promises: [], derived: [], timeline: [] },
+  it("keeps the conversation id out of the URL: the item and the session scope go in the body", async () => {
+    const server = new MockServer().on("POST /v1/history/open", {
+      body: { id: "ep-1", kind: "episode", summary: "Visit missed", promises: [], derived: [], timeline: [] },
     });
-    const result = await makeClient(server).open("ep/1", { verification: "V2", conversation_id: "wa-1" });
+    // A conversation id may be a phone number: it travels in the body of POST /v1/history/open.
+    const result = await makeClient(server).open("ep-1", { verification: "V2", conversation_id: "+5511912345678" });
     const call = server.calls[0]!;
-    expect(call.method).toBe("GET");
-    expect(call.body).toBeUndefined();
-    expect(Object.fromEntries(call.url.searchParams)).toEqual({ verification: "V2", conversation_id: "wa-1" });
+    expect(call.method).toBe("POST");
+    expect(call.url.href).toBe(`${call.url.origin}/v1/history/open`);
+    expect(call.body).toEqual({ item_id: "ep-1", verification: "V2", conversation_id: "+5511912345678" });
     expect(result.data?.summary).toBe("Visit missed");
+  });
+
+  it("sends the customer when given, and never a task id, which the server does not read here", async () => {
+    const server = new MockServer().on("POST /v1/history/open", {
+      body: { id: "ep/1", kind: "episode", summary: "s", promises: [], derived: [], timeline: [] },
+    });
+    await makeClient(server).open("ep/1", { subject: marina, task_id: "t-1" });
+    expect(server.calls[0]!.body).toEqual({ item_id: "ep/1", subject: marina });
+    expect(server.calls[0]!.url.pathname).toBe("/v1/history/open");
   });
 
   it("refuses an empty id", async () => {

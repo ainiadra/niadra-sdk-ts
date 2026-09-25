@@ -46,12 +46,23 @@ describe("tools()", () => {
   it("runs the timeline and open tools with parsed arguments", async () => {
     const server = new MockServer()
       .on("POST /v1/history/timeline", { body: { items: [], withheld: 0 } })
-      .on("GET /v1/history/items/ep-1", { body: { id: "ep-1", kind: "episode", summary: "s", promises: [], derived: [], timeline: [] } });
+      .on("POST /v1/history/open", { body: { id: "ep-1", kind: "episode", summary: "s", promises: [], derived: [], timeline: [] } });
     const kit = makeClient(server).tools(marina, { task_id: "t-1" });
     await kit.call(TOOL_NAMES.timeline, { limit: 500, since: "2026-09-01T00:00:00Z" });
     await kit.call(TOOL_NAMES.open, '{"id":"ep-1"}');
     expect(server.calls[0]!.body).toEqual({ subject: marina, limit: 100, filters: { since: "2026-09-01T00:00:00Z" } });
-    expect(Object.fromEntries(server.calls[1]!.url.searchParams)).toEqual({ task_id: "t-1" });
+    // The bound customer goes in the body, so the server opens only an item of theirs.
+    expect(server.calls[1]!.body).toEqual({ item_id: "ep-1", subject: marina });
+  });
+
+  it("opens an item with the bound customer and the conversation in the body, never in the URL", async () => {
+    const server = new MockServer().on("POST /v1/history/open", {
+      body: { id: "ep-1", kind: "episode", summary: "s", promises: [], derived: [], timeline: [] },
+    });
+    const kit = makeClient(server).tools(marina, { conversation_id: "wa-1", verification: "V1" });
+    expect(JSON.parse(await kit.call(TOOL_NAMES.open, { id: "ep-1" }))).toMatchObject({ kind: "episode" });
+    expect(server.calls[0]!.body).toEqual({ item_id: "ep-1", subject: marina, verification: "V1", conversation_id: "wa-1" });
+    expect(server.calls[0]!.url.search).toBe("");
   });
 
   it("answers the model with a readable error instead of throwing", async () => {

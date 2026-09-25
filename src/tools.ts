@@ -28,7 +28,7 @@ export interface ToolBinding {
 export interface Navigator {
   search(params: SearchRequest, voice: boolean): Promise<Result<SearchResponse>>;
   timeline(params: TimelineRequest, voice: boolean): Promise<Result<TimelineResponse>>;
-  open(id: string, binding: ToolBinding, voice: boolean): Promise<Result<OpenedItem>>;
+  open(id: string, subject: Handle, binding: ToolBinding, voice: boolean): Promise<Result<OpenedItem>>;
 }
 
 /**
@@ -209,7 +209,7 @@ export function bindTools(subject: Handle, binding: ToolBinding, navigator: Navi
       case TOOL_NAMES.open: {
         const id = str(args, "id");
         if (!id) throw new NiadraValidationError("open_history_item needs an id");
-        return navigator.open(id, binding, voice);
+        return navigator.open(id, subject, binding, voice);
       }
       default:
         throw new NiadraValidationError(`unknown tool: ${name}`);

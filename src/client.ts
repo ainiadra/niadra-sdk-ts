@@ -64,6 +64,7 @@ import type {
   ObjectState,
   ObjectTimeline,
   OpenedItem,
+  OpenItemRequest,
   SearchRequest,
   SearchResponse,
   TimelineRequest,
@@ -82,7 +83,13 @@ export type WriteResult =
 export interface OpenParams {
   verification?: Verification;
   conversation_id?: string;
+  /** Kept for callers of 0.1.0; the server never read it on this route, so it is not sent. */
   task_id?: string;
+  /**
+   * The customer the item must belong to: the server opens it only when it is theirs, and answers
+   * 404 otherwise. `tools()` passes the bound customer.
+   */
+  subject?: Handle;
 }
 
 interface Core {
@@ -289,20 +296,17 @@ export class Niadra {
 
   /**
    * Opens one history item from `search()` or `timeline()`: summary, request, commitments,
-   * outcome and resolution. The literal transcript excerpt only comes back to keys with an
-   * elevated scope.
+   * outcome and resolution. Sent as `POST /v1/history/open`: the conversation id and `subject` go
+   * in the body, never in a URL.
    */
   async open(id: string, params: OpenParams = {}, options: RequestOptions = {}): Promise<Result<OpenedItem>> {
     return this.navigate(() => {
       if (!id) throw new NiadraValidationError("open() needs an item id");
-      const path = `/v1/history/items/${encodeURIComponent(id)}`;
-      const spec = this.readSpec("GET", path, undefined, this.timeouts.navigation, options);
-      spec.query = {
-        verification: params.verification,
-        conversation_id: params.conversation_id,
-        task_id: params.task_id,
-      };
-      return spec;
+      const body: OpenItemRequest = { item_id: id };
+      if (params.subject) body.subject = params.subject;
+      if (params.verification) body.verification = params.verification;
+      if (params.conversation_id) body.conversation_id = params.conversation_id;
+      return this.readSpec("POST", "/v1/history/open", body, this.timeouts.navigation, options);
     });
   }
 
@@ -350,11 +354,11 @@ export class Niadra {
     const navigator: Navigator = {
       search: (params, voice) => this.search(params, this.voiceBudget(voice)),
       timeline: (params, voice) => this.timeline(params, this.voiceBudget(voice)),
-      open: (id, bound, voice) => {
-        const scope: OpenParams = {};
+      open: (id, customer, bound, voice) => {
+        // The bound customer goes along, so the server opens only an item of theirs.
+        const scope: OpenParams = { subject: customer };
         if (bound.verification) scope.verification = bound.verification;
         if (bound.conversation_id) scope.conversation_id = bound.conversation_id;
-        if (bound.task_id) scope.task_id = bound.task_id;
         return this.open(id, scope, this.voiceBudget(voice));
       },
     };

@@ -145,6 +145,18 @@ export interface TimelineRequest {
   conversation_id?: string | null;
 }
 
+/**
+ * Body of `POST /v1/history/open`. A conversation id may be a phone number or an e-mail, and the
+ * customer is personal data, so neither goes in a URL.
+ */
+export interface OpenItemRequest {
+  item_id: string;
+  /** The customer the item must belong to; any other item answers 404. */
+  subject?: Handle | null;
+  verification?: Verification;
+  conversation_id?: string | null;
+}
+
 export interface TimelineResponse {
   items: HistoryItem[];
   next_cursor?: string | null;
@@ -171,7 +183,7 @@ export interface OpenedItem {
   resolution?: string | null;
   derived: HistoryItem[];
   timeline: HistoryItem[];
-  /** Literal transcript excerpt. Only returned to keys with an elevated scope. */
+  /** The server no longer sends a transcript excerpt; the field stays for code that reads it. */
   excerpt?: string | null;
   as_of?: string | null;
 }

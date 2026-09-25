@@ -231,6 +231,8 @@ if (first) {
 
 `search()` also reports recurrence: how many times the same kind of issue came back, and how it was last resolved.
 
+The handle, the search and the conversation id go in request bodies, never in a URL: a conversation id may be a phone number or an e-mail. `open()` sends `POST /v1/history/open`, and the tool kit adds the bound customer to it, so the server opens only that customer's items.
+
 ### Business objects
 
 ```ts

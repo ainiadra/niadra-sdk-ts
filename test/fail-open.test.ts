@@ -34,7 +34,7 @@ describe("fail-open", () => {
       .on("POST /v1/context", new TypeError("fetch failed"))
       .on("POST /v1/history/search", new TypeError("fetch failed"))
       .on("POST /v1/history/timeline", new TypeError("fetch failed"))
-      .on("GET /v1/history/items/ep-1", new TypeError("fetch failed"))
+      .on("POST /v1/history/open", new TypeError("fetch failed"))
       .on("POST /v1/subject-tokens", new TypeError("fetch failed"))
       .on("POST /v1/batch", new TypeError("fetch failed"));
     const results = await exercise(makeClient(server, { queue: { retryDelayMs: 1, maxRetryDelayMs: 2 } }));
