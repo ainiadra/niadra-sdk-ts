@@ -70,6 +70,26 @@
         "default": "./dist/vapi.cjs"
       }
     },
+    "./whatsapp": {
+      "import": {
+        "types": "./dist/whatsapp.d.ts",
+        "default": "./dist/whatsapp.js"
+      },
+      "require": {
+        "types": "./dist/whatsapp.d.cts",
+        "default": "./dist/whatsapp.cjs"
+      }
+    },
+    "./twilio": {
+      "import": {
+        "types": "./dist/twilio.d.ts",
+        "default": "./dist/twilio.js"
+      },
+      "require": {
+        "types": "./dist/twilio.d.cts",
+        "default": "./dist/twilio.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -112,6 +132,7 @@
     "hono": "4.13.9",
     "miniflare": "4.20260730.0",
     "tsup": "^8.5.1",
+    "twilio": "6.1.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.70.1",
     "vitest": "^5.0.1",
@@ -128,6 +149,12 @@
       ],
       "vapi": [
         "./dist/vapi.d.ts"
+      ],
+      "whatsapp": [
+        "./dist/whatsapp.d.ts"
+      ],
+      "twilio": [
+        "./dist/twilio.d.ts"
       ]
     }
   },

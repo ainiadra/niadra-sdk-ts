@@ -295,6 +295,8 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/livekit` | LiveKit Agents (Node) | `@livekit/agents` 1.9.0 |
 | `@niadra/sdk/elevenlabs` | ElevenLabs Agents Platform (webhooks and server tools) | recorded payloads; signatures checked against `@elevenlabs/elevenlabs-js` 2.69.0 |
 | `@niadra/sdk/vapi` | Vapi (server URL) | recorded payloads typed with `@vapi-ai/server-sdk` 2.0.1 |
+| `@niadra/sdk/whatsapp` | WhatsApp Cloud API (Meta webhooks) | recorded payloads, signatures computed in the test |
+| `@niadra/sdk/twilio` | Twilio Voice, Messaging and Conversations webhooks | recorded payloads; signatures checked against `twilio` 6.1.1 |
 
 <!-- integrations -->
 
@@ -359,6 +361,42 @@ app.post("/vapi", async (c) => {
 - `end-of-call-report` records every spoken turn with its time and ends the conversation.
 
 The full server is in [`examples/vapi-hono.ts`](examples/vapi-hono.ts).
+
+### WhatsApp Cloud API
+
+Translation only: it never sends a message.
+
+```ts
+import { readWhatsApp, recordInbound, recordOutbound, whatsAppChallenge } from "@niadra/sdk/whatsapp";
+
+app.get("/whatsapp", (c) => c.text(whatsAppChallenge(new URL(c.req.url).searchParams, VERIFY_TOKEN).body));
+app.post("/whatsapp", async (c) => {
+  const { status, messages } = await readWhatsApp(await c.req.text(), c.req.raw.headers, { appSecret: META_APP_SECRET });
+  for (const inbound of messages) {
+    const convo = niadra.conversation({ subject: inbound.subject, channel: "whatsapp", conversation_id: threadIdFor(inbound) });
+    recordInbound(convo, inbound);                        // keyed by the wamid: redeliveries are harmless
+    const ctx = await convo.context();
+    // ... answer with your model, send through the Graph API ...
+    recordOutbound(convo, reply, await sendResponse.json()); // keyed by the wamid Meta returned
+  }
+  return c.body(null, status);
+});
+```
+
+`readWhatsApp` checks `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the app secret) and reads each message with the customer as `wa_id`, the profile name, the business number, the text (or caption, or the title of a button or list reply), the media reference and the message it replies to. For media, download it with the Graph API, pass it to `niadra.uploadMedia()` and hand the result to `recordInbound(convo, inbound, upload)`. See [`examples/whatsapp-cloud.ts`](examples/whatsapp-cloud.ts).
+
+### Twilio
+
+```ts
+import { readTwilio, recordTwilioInbound, verifyTwilio } from "@niadra/sdk/twilio";
+
+const { status, request } = await readTwilio(`${PUBLIC_URL}/twilio/voice`, await c.req.text(), c.req.raw.headers, { authToken });
+const convo = niadra.conversation({ subject: request.subject, channel: request.channel, conversation_id: request.conversationId });
+await verifyTwilio(convo, request);   // StirVerstat: TN-Validation-Passed-A proves V2, B and C prove V1
+recordTwilioInbound(convo, request);  // Body, or SpeechResult with its Confidence
+```
+
+`readTwilio` checks `X-Twilio-Signature` against the exact public URL Twilio called and reads the request: WhatsApp by `WaId`, voice and SMS by the number on the customer's side (`To` on outbound calls), Conversations by `Author`; `CallSid` or `ConversationSid` as the conversation id; `MessageSid` as the idempotency key. Record the attestation once, on the call's first webhook, and open later ones at `request.proof.level`, as [`examples/twilio-voice.ts`](examples/twilio-voice.ts) does.
 
 ## Failure behavior
 

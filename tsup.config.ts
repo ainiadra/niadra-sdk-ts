@@ -5,6 +5,8 @@ const integrations = [
   "livekit",
   "elevenlabs",
   "vapi",
+  "whatsapp",
+  "twilio",
 ];
 
 export default defineConfig({
