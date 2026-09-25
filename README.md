@@ -317,6 +317,7 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/twilio` | Twilio Voice, Messaging and Conversations webhooks | recorded payloads; signatures checked against `twilio` 6.1.1 |
 | `@niadra/sdk/ai-sdk` | Vercel AI SDK 5, 6 and 7 | `ai` 7.0.114 with its mock models (v4 and v3 specifications) |
 | `@niadra/sdk/mastra` | Mastra | `@mastra/core` 1.71.0, a real `Agent` over a mock model |
+| `@niadra/sdk/langchain` | LangChain.js and LangGraph.js | `@langchain/core` 1.2.12, `@langchain/langgraph` 1.4.17, a real graph with `ToolNode` |
 
 <!-- integrations -->
 
@@ -457,6 +458,23 @@ await support.generate(text, { requestContext: new RequestContext([["niadra", co
 ```
 
 `processLLMRequest` rewrites only the prompt sent to the model, not the message list, so the pack and the suffix never land in Mastra's memory: the pack goes after the system messages, the suffix at the end of the last user message, and the customer's newest message is recorded once per turn. `processOutputResult` records the final answer with the usage Mastra summed for the run. The conversation comes from the request context under `niadra` (or pass `niadraProcessor({ session })`). For an agent that cannot take processors, `niadraInstructions(base)` returns dynamic instructions with the context, without recording turns. See [`examples/mastra.ts`](examples/mastra.ts).
+
+### LangChain.js and LangGraph.js
+
+```ts
+import { NiadraCallbackHandler, niadraContext, niadraTools, withNiadraContext } from "@niadra/sdk/langchain";
+
+// LCEL: a runnable before the model
+const chain = niadraContext(convo).pipe(model);
+await chain.invoke(messages, { callbacks: [new NiadraCallbackHandler(convo)] });
+
+// LangGraph: inside the model node, so the context never lands in the graph's state
+const tools = niadraTools(convo);
+graph.addNode("agent", async (state) => ({ messages: [await model.bindTools(tools).invoke(await withNiadraContext(convo, state.messages))] }));
+graph.addNode("tools", new ToolNode(tools));
+```
+
+`niadraContext` and `withNiadraContext` record the newest human message once and return the messages with the pack as a system message after the leading ones and the suffix at the end of the last human message. `NiadraCallbackHandler` records each answer with the usage LangChain standardizes in `usage_metadata` (prompt cache reads and writes included); answers that only call tools record nothing. `niadraTools` returns `DynamicStructuredTool`s bound to the customer. See [`examples/langgraph.ts`](examples/langgraph.ts).
 
 ## Failure behavior
 

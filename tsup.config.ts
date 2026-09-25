@@ -9,6 +9,7 @@ const integrations = [
   "twilio",
   "ai-sdk",
   "mastra",
+  "langchain",
 ];
 
 export default defineConfig({
