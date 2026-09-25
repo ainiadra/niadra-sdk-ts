@@ -13,12 +13,14 @@ All notable changes to this package are documented here. The format follows [Kee
   `contains`, `icontains` and `exists`. It narrows what the policy let through; it never reorders.
 - `feedbackBatch(items)`: up to 500 corrections in one call, each with its own idempotency key
   (minted when missing); per-item errors come back by index.
+- `ingestStatus({ conversation_id } | { task_id })`: whether what was sent became memory yet
+  (`open`, `processing`, `ready`, `failed` or `unknown`), states and times only.
 - `whoami()`: what the key authenticates as (space, source, vendor, scopes, audience, whether agent
   memory is on), for any key.
 - `niadra.admin`, for a key with the `admin` scope: `findProfiles`, `memory`, `factHistory`,
   `correct`, `correctBatch` (item `n` keyed `<key>:<n>`), `forget`, `forgetStatus` and `export`.
   They resolve `{ data, error }` and fail open like the rest of the client.
-- Types: `KeyIdentity`, `ProfileMemory`, `FactOut`, `FactHistory`, `ProfileMatch`,
+- Types: `IngestStatus`, `KeyIdentity`, `ProfileMemory`, `FactOut`, `FactHistory`, `ProfileMatch`,
   `CorrectionRequest`, `ForgetTarget`, `Erasure`, `ExportPackage`, `WhereExpression`.
 
 ## [0.3.0] - 2026-09-25

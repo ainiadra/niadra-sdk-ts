@@ -57,6 +57,19 @@ describe("feedbackBatch() and whoami()", () => {
   });
 });
 
+describe("ingestStatus()", () => {
+  it("sends the thread in the body and refuses two", async () => {
+    const server = new MockServer().on("POST /v1/ingest/status", { body: { state: "ready", extraction: "ok" } });
+    const niadra = makeClient(server);
+    const { data } = await niadra.ingestStatus({ conversation_id: "wa-81" });
+    expect(data?.state).toBe("ready");
+    expect(server.calls[0]!.body).toEqual({ conversation_id: "wa-81" });
+    expect(server.calls[0]!.url.href).not.toContain("wa-81");
+    const both = await niadra.ingestStatus({ conversation_id: "c", task_id: "t" });
+    expect(both.error).toBeInstanceOf(NiadraValidationError);
+  });
+});
+
 describe("admin", () => {
   it("finds a profile, reads its memory and a fact's history", async () => {
     const server = new MockServer()

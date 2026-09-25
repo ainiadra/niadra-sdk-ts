@@ -20,6 +20,17 @@ export interface KeyIdentity {
   agent_memory: boolean;
 }
 
+/** `POST /v1/ingest/status`: whether what was sent for a conversation or task became memory yet. */
+export interface IngestStatus {
+  /** `open`, `processing`, `ready`, `failed` or `unknown`. */
+  state: "open" | "processing" | "ready" | "failed" | "unknown";
+  last_event_at?: string | null;
+  closed_at?: string | null;
+  close_reason?: string | null;
+  /** `ok`, `minimal`, `invalid` or `failed`. */
+  extraction?: string | null;
+}
+
 /** Where an item came from: the event, its source, channel and time. Never its content. */
 export interface Origin {
   event_id?: string | null;

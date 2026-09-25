@@ -73,7 +73,7 @@ import type {
   TimelineRequest,
   TimelineResponse,
 } from "./types/context.js";
-import type { KeyIdentity } from "./types/admin.js";
+import type { IngestStatus, KeyIdentity } from "./types/admin.js";
 import type { BatchItem, BatchResponse, FeedbackRequest, MediaUploadResponse } from "./types/events.js";
 import type {
   AgentMemoryBlock,
@@ -577,6 +577,23 @@ export class Niadra {
       const body: { items: FeedbackRequest[] } = { items: items.map((item) => buildFeedback(item)) };
       const spec = this.writeSpec("/v1/feedback/batch", body, null, options);
       return spec;
+    });
+  }
+
+  /**
+   * Whether what was sent for a conversation or task became memory yet: `open` (still receiving
+   * turns), `processing`, `ready` (memory applies it in seconds), `failed` or `unknown`. States and
+   * times only. Call `flush()` first if the turns went through `track()`.
+   */
+  async ingestStatus(
+    thread: { conversation_id: string } | { task_id: string },
+    options: RequestOptions = {},
+  ): Promise<Result<IngestStatus>> {
+    return this.navigate(() => {
+      if (("conversation_id" in thread) === ("task_id" in thread)) {
+        throw new NiadraValidationError("pass exactly one of conversation_id or task_id");
+      }
+      return this.readSpec("POST", "/v1/ingest/status", thread, this.timeouts.write, options);
     });
   }
 
