@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 /** One entry per integration, so `@niadra/sdk` itself never loads a framework. */
 const integrations = [
   "livekit",
+  "elevenlabs",
 ];
 
 export default defineConfig({

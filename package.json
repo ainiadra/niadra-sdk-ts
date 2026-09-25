@@ -50,6 +50,16 @@
         "default": "./dist/livekit.cjs"
       }
     },
+    "./elevenlabs": {
+      "import": {
+        "types": "./dist/elevenlabs.d.ts",
+        "default": "./dist/elevenlabs.js"
+      },
+      "require": {
+        "types": "./dist/elevenlabs.d.cts",
+        "default": "./dist/elevenlabs.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -89,6 +99,7 @@
     "@vapi-ai/server-sdk": "2.0.1",
     "ai": "7.0.114",
     "eslint": "^10.0.0",
+    "hono": "4.13.9",
     "miniflare": "4.20260730.0",
     "tsup": "^8.5.1",
     "typescript": "~5.9.3",
@@ -101,15 +112,18 @@
     "*": {
       "livekit": [
         "./dist/livekit.d.ts"
+      ],
+      "elevenlabs": [
+        "./dist/elevenlabs.d.ts"
       ]
     }
   },
   "peerDependencies": {
-    "@livekit/agents": "^1.9.0",
-    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
-    "@mastra/core": "^1.0.0",
     "@langchain/core": "^1.0.0",
+    "@livekit/agents": "^1.9.0",
+    "@mastra/core": "^1.0.0",
     "@openai/agents": ">=0.18.0 <1",
+    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
     "zod": "^3.25.0 || ^4.0.0"
   },
   "peerDependenciesMeta": {

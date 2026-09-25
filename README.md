@@ -293,6 +293,7 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | Import | For | Tested with |
 | --- | --- | --- |
 | `@niadra/sdk/livekit` | LiveKit Agents (Node) | `@livekit/agents` 1.9.0 |
+| `@niadra/sdk/elevenlabs` | ElevenLabs Agents Platform (webhooks and server tools) | recorded payloads; signatures checked against `@elevenlabs/elevenlabs-js` 2.69.0 |
 
 <!-- integrations -->
 
@@ -315,6 +316,27 @@ await session.start({ agent: new NiadraAgent({ instructions, memory }), room: ct
 `NiadraAgent` is a LiveKit `Agent` whose `onUserTurnCompleted` records the final transcript (with its STT confidence), then puts the pack in the turn's chat context right after the instructions and the suffix after the new message. LiveKit builds that context for one reply only, so nothing piles up in the agent's history and the prompt prefix stays the same turn after turn. The navigation kit joins the agent's own tools as the `niadra` toolset. With your own `Agent` subclass, call `memory.onUserTurnCompleted(turnCtx, newMessage)` from your hook and add `memory.toolset()` to its tools.
 
 `attach(session)` records the agent's answers from `conversation_item_added` (with the LLM usage LiveKit measured), a handoff for each `AgentHandoffItem` (`session.updateAgent()` or a tool that returns another agent), and the end of the conversation on `close`. Call `memory.handoffToHuman(reason)` right before a SIP transfer to a person. LiveKit's SIP attributes carry no STIR/SHAKEN attestation: map the carrier's header to a participant attribute in the trunk settings and pass it to `attestationProof()` (`A` proves V2, `B` and `C` prove V1).
+
+### ElevenLabs Agents Platform
+
+For calls that reach ElevenLabs by phone, the integration lives on your server, in three webhooks. No ElevenLabs package is needed, and the handlers run on Node, Deno, Bun, Workers and the Edge Runtime.
+
+```ts
+import { elevenLabs } from "@niadra/sdk/elevenlabs";
+
+const handlers = elevenLabs({ niadra, secret: process.env.NIADRA_ELEVENLABS_SECRET, webhookSecret: process.env.ELEVENLABS_WEBHOOK_SECRET });
+const respond = (c, { status, body }) => c.json(body, status);   // Hono here; any framework works
+
+app.post("/elevenlabs/initiation", async (c) => respond(c, await handlers.initiation(await c.req.json(), c.req.raw.headers)));
+app.post("/elevenlabs/tools", async (c) => respond(c, await handlers.tool(await c.req.json(), c.req.raw.headers)));
+app.post("/elevenlabs/post-call", async (c) => respond(c, await handlers.postCall(await c.req.text(), c.req.raw.headers)));
+```
+
+- `initiation` answers the conversation initiation webhook: it opens the conversation by ElevenLabs' `conversation_id`, records what the call proved (`verify: (call) => attestationProof(...)`), reads the voice context and returns it as the dynamic variables `niadra_context` and `niadra_turn`. Put `{{niadra_context}}` in the agent's system prompt. When Niadra is slow or down, the call goes on with empty variables.
+- `tool` serves the navigation kit as server tools. `handlers.toolConfigs({ url, secretId })` writes their configuration with the same descriptions as every other SDK; the conversation id and the caller come from ElevenLabs' system variables (`system__conversation_id`, `system__caller_id`), which the model never fills. The caller and level the initiation webhook saw are kept in a `CallStore`, in memory by default; pass one backed by your key-value store on serverless.
+- `postCall` checks `ElevenLabs-Signature` (HMAC-SHA256 over `timestamp.body`, 30-minute window), records every turn of the transcript with its time in the call and the LLM usage ElevenLabs reports, records `transfer_to_agent` and `transfer_to_number` as handoffs, and ends the conversation.
+
+The initiation and tool endpoints return customer context, so both require `secret` in the `x-niadra-secret` header: keep it as an ElevenLabs workspace secret and reference it in the webhook's and the tools' request headers. The full server is in [`examples/elevenlabs-hono.ts`](examples/elevenlabs-hono.ts).
 
 ## Failure behavior
 

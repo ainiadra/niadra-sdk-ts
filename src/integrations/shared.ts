@@ -6,7 +6,7 @@
  * is logged without content, and the agent keeps working without memory.
  */
 
-import type { ContextResult } from "../context.js";
+import type { ContextOptions, ContextResult } from "../context.js";
 import { emptyResult } from "../context.js";
 import type { Conversation, TurnOptions } from "../conversation.js";
 import type { Logger } from "../logger.js";
@@ -75,6 +75,14 @@ export function isConversation(session: Session): session is Conversation {
   return "customer" in session && typeof session.customer === "function";
 }
 
+/** A phone number as an E.164 handle, or `null` when it does not look like one. */
+export function phoneHandle(value: string | null | undefined): Handle | null {
+  const raw = value?.trim().replace(/^tel:/i, "").replace(/[\s().-]/g, "");
+  if (!raw) return null;
+  const e164 = raw.startsWith("+") ? raw : `+${raw}`;
+  return /^\+[1-9]\d{6,14}$/.test(e164) ? { type: "phone_e164", value: e164 } : null;
+}
+
 export function errorName(error: unknown): string {
   return error instanceof Error ? error.name : typeof error;
 }
@@ -96,10 +104,10 @@ export class Bridge {
   }
 
   /** Verifies once (when a proof was given), then reads the context. Never rejects. */
-  async context(): Promise<ContextResult> {
+  async context(options: ContextOptions = {}): Promise<ContextResult> {
     await this.verifyOnce();
     try {
-      return await this.session.context();
+      return await this.session.context(options);
     } catch (error) {
       this.logger.warn(`could not read context (${errorName(error)})`);
       return emptyResult(null);

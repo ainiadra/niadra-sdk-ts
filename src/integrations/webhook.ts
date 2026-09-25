@@ -4,6 +4,46 @@
  * Workers and the Vercel Edge Runtime alike.
  */
 
+import type { Handle } from "../types/common.js";
+import type { ContextStamp } from "../types/events.js";
+import type { Verification } from "../types/vocabulary.js";
+
+/**
+ * What a call's first webhook learned, for the webhooks that come later in the same call (tool
+ * calls, the end-of-call report): who the caller is, the level they proved and the context stamp.
+ */
+export interface CallRecord {
+  subject: Handle;
+  verification: Verification;
+  stamp?: ContextStamp | null;
+}
+
+/**
+ * Where the webhook adapters keep a `CallRecord` between requests, by the platform's call id.
+ * The default lives in this process's memory; on serverless or several instances, pass one backed
+ * by your key-value store.
+ */
+export interface CallStore {
+  get(id: string): CallRecord | undefined | PromiseLike<CallRecord | undefined>;
+  set(id: string, record: CallRecord): void | PromiseLike<void>;
+}
+
+/** An in-memory `CallStore` that keeps the most recent `max` calls. */
+export function memoryCallStore(max = 10_000): CallStore {
+  const calls = new Map<string, CallRecord>();
+  return {
+    get: (id) => calls.get(id),
+    set: (id, record) => {
+      calls.delete(id);
+      calls.set(id, record);
+      if (calls.size > max) {
+        const oldest = calls.keys().next().value;
+        if (oldest !== undefined) calls.delete(oldest);
+      }
+    },
+  };
+}
+
 /** Request headers as a `Headers` object or a plain record (any case). */
 export type HeadersLike = Headers | Record<string, string | string[] | undefined>;
 
