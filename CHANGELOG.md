@@ -2,6 +2,55 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-09-25
+
+Ready to publish; not on npm yet. It carries everything in 0.2.0, so if 0.2.0 was never published,
+publishing 0.3.0 alone is enough. From a clean checkout of `main`, with the owner's npm passkey:
+
+```sh
+git checkout main && git pull --ff-only
+pnpm install --frozen-lockfile && pnpm check && pnpm runtimes && npm publish --access public
+```
+
+(Or push the tag `v0.3.0` once trusted publishing is configured for `@niadra/sdk`; see
+`.github/workflows/release.yml`.) The n8n and Flowise packages did not change.
+
+### Added
+
+- Seven more integrations as subpath exports, each with its framework as an optional peer
+  dependency and the same five things wired in: context before the model call, the turns with the
+  provider's usage, the kit with the canonical definitions, the verification and the handoffs.
+  All of them fail open.
+  - `@niadra/sdk/retell`: Retell AI's inbound webhook (the context as dynamic variables), agent
+    webhook (`call_started`, `transfer_started`, `call_ended` with every utterance), custom
+    functions with `toolConfigs()`, and a session for the custom LLM websocket that gives the model
+    its messages with the context in place. `X-Retell-Signature` is checked on every request. No
+    Retell package is needed; web APIs only.
+  - `@niadra/sdk/llamaindex`: `NiadraMemory`, a LlamaIndex.TS `Memory` for agents, multi-agent
+    workflows and chat engines; `NiadraMemoryBlock` for a memory built elsewhere; the kit as
+    `FunctionTool`s.
+  - `@niadra/sdk/genkit`: a Genkit model middleware for `generate({ use })` and the kit as
+    unregistered Genkit tools.
+  - `@niadra/sdk/voltagent`: VoltAgent hooks (`onPrepareModelMessages`, `onEnd`, `onHandoff`) and
+    the kit as VoltAgent tools.
+  - `@niadra/sdk/google-adk`: model callbacks and tools for the Agent Development Kit for
+    TypeScript, one Niadra session per ADK session, `transfer_to_agent` as a handoff.
+  - `@niadra/sdk/strands`: `NiadraPlugin` for Strands Agents for TypeScript, through its model
+    middleware, and the kit as Strands tools.
+  - `@niadra/sdk/cloudflare-agents`: `niadraAgent(this, ...)` for an `Agent` of the Cloudflare
+    Agents SDK: the AI SDK middleware that hands the writes to `ctx.waitUntil()`, the kit, and
+    `prepare()`, `record()` and `workersAiUsage()` for models called without the AI SDK.
+- `pnpm runtimes` also runs the Retell handlers on Deno, Bun and workerd, and bundles
+  `@niadra/sdk/cloudflare-agents` with the AI SDK and runs it inside workerd.
+
+### Not added
+
+- Pipecat and Daily: the Pipecat pipeline, where the model call happens, runs in Python (the
+  Python SDK covers it); their JavaScript packages are browser clients, where a Niadra key must
+  never go.
+- A separate LangGraph.js node: `withNiadraContext()` in `@niadra/sdk/langchain` already gives the
+  model node its context without writing it into the graph's checkpointed state.
+
 ## [0.2.0] - 2026-09-25
 
 Ready to publish; not on npm yet. From a clean checkout of `main`, with the owner's npm passkey:

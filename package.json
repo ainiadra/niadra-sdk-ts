@@ -1,6 +1,6 @@
 {
   "name": "@niadra/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TypeScript SDK for Niadra, the shared customer memory for every AI agent in a company: context before the model call, history, tools and MCP.",
   "license": "Apache-2.0",
   "author": "Niadra",
