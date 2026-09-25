@@ -60,6 +60,16 @@
         "default": "./dist/elevenlabs.cjs"
       }
     },
+    "./vapi": {
+      "import": {
+        "types": "./dist/vapi.d.ts",
+        "default": "./dist/vapi.js"
+      },
+      "require": {
+        "types": "./dist/vapi.d.cts",
+        "default": "./dist/vapi.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -115,6 +125,9 @@
       ],
       "elevenlabs": [
         "./dist/elevenlabs.d.ts"
+      ],
+      "vapi": [
+        "./dist/vapi.d.ts"
       ]
     }
   },

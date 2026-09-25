@@ -4,6 +4,7 @@ import { defineConfig } from "tsup";
 const integrations = [
   "livekit",
   "elevenlabs",
+  "vapi",
 ];
 
 export default defineConfig({

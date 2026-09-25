@@ -294,6 +294,7 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | --- | --- | --- |
 | `@niadra/sdk/livekit` | LiveKit Agents (Node) | `@livekit/agents` 1.9.0 |
 | `@niadra/sdk/elevenlabs` | ElevenLabs Agents Platform (webhooks and server tools) | recorded payloads; signatures checked against `@elevenlabs/elevenlabs-js` 2.69.0 |
+| `@niadra/sdk/vapi` | Vapi (server URL) | recorded payloads typed with `@vapi-ai/server-sdk` 2.0.1 |
 
 <!-- integrations -->
 
@@ -337,6 +338,27 @@ app.post("/elevenlabs/post-call", async (c) => respond(c, await handlers.postCal
 - `postCall` checks `ElevenLabs-Signature` (HMAC-SHA256 over `timestamp.body`, 30-minute window), records every turn of the transcript with its time in the call and the LLM usage ElevenLabs reports, records `transfer_to_agent` and `transfer_to_number` as handoffs, and ends the conversation.
 
 The initiation and tool endpoints return customer context, so both require `secret` in the `x-niadra-secret` header: keep it as an ElevenLabs workspace secret and reference it in the webhook's and the tools' request headers. The full server is in [`examples/elevenlabs-hono.ts`](examples/elevenlabs-hono.ts).
+
+### Vapi
+
+One handler for the assistant's server URL takes every server message and answers the ones that matter. It checks the server secret (`x-vapi-secret`, or `Authorization: Bearer`).
+
+```ts
+import { vapi, vapiTools } from "@niadra/sdk/vapi";
+
+const handle = vapi({ niadra, secret: process.env.VAPI_SERVER_SECRET, assistant: "YOUR_ASSISTANT_ID" });
+app.post("/vapi", async (c) => {
+  const { status, body } = await handle(await c.req.json(), c.req.raw.headers);
+  return c.json(body, status);
+});
+```
+
+- `assistant-request` opens the conversation by Vapi's call id with the customer's number as the subject, records what the call proved (`verify`), reads the voice context and answers with your assistant: a saved one gets the context in its variables (`{{niadra_context}}`, `{{niadra_turn}}`); a transient one also gets the pack as a system message right after its own. `assistant` can be a function of the call and its context.
+- `tool-calls` runs the navigation kit for the caller of that call. Add the tools to the assistant with `vapiTools({ url, secret })`, which carries the SDK's descriptions; tool calls that are not Niadra's go to `otherTool(name, args, call)`.
+- `transfer-destination-request` and `transfer-update` record the transfer to a person, once per call, and answer with your `transfer(call)` destination.
+- `end-of-call-report` records every spoken turn with its time and ends the conversation.
+
+The full server is in [`examples/vapi-hono.ts`](examples/vapi-hono.ts).
 
 ## Failure behavior
 
