@@ -2,7 +2,18 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-09-25
+
+Ready to publish; not on npm yet. It carries everything in 0.2.0 and 0.3.0, so since neither was ever
+published, publishing 0.4.0 alone is enough. From a clean checkout of `main`, with the owner's npm passkey:
+
+```sh
+git checkout main && git pull --ff-only
+pnpm install --frozen-lockfile && pnpm check && pnpm runtimes && npm publish --access public
+```
+
+(Or push the tag `v0.4.0` once trusted publishing is configured for `@niadra/sdk`; see
+`.github/workflows/release.yml`.) The n8n and Flowise packages did not change.
 
 ### Added
 
