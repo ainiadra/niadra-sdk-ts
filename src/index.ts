@@ -13,7 +13,7 @@ export type { SessionSource, WrapSession } from "./wrap.js";
 export type { MediaUpload, UploadParams } from "./media.js";
 export type { ObjectTimelineParams } from "./objects.js";
 export { renderLive, renderSuffix } from "./context.js";
-export type { ContextOptions, ContextParams, ContextResult, ContextSource, RequestOptions } from "./context.js";
+export type { ContextOptions, ContextParams, ContextResult, ContextSource, PrefetchParams, RequestOptions } from "./context.js";
 export { handles, toObjectRef } from "./handles.js";
 export { parseApiKey, baseURLFromKey } from "./key.js";
 export type { ParsedApiKey } from "./key.js";

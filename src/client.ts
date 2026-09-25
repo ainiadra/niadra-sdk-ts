@@ -5,13 +5,14 @@ import { ContextCache } from "./cache.js";
 import type { Revalidated } from "./cache.js";
 import {
   buildContextRequest,
+  buildPrefetchRequest,
   cacheKey,
   cacheScope,
   emptyResult,
   mergeNotModified,
   resultFrom,
 } from "./context.js";
-import type { ContextOptions, ContextParams, ContextResult, RequestOptions } from "./context.js";
+import type { ContextOptions, ContextParams, ContextResult, PrefetchParams, RequestOptions } from "./context.js";
 import { Conversation } from "./conversation.js";
 import type { ConversationParams } from "./conversation.js";
 import {
@@ -59,6 +60,7 @@ import type { TaskParams } from "./task.js";
 import { bindTools } from "./tools.js";
 import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./tools.js";
 import { READ_POLICY, Transport } from "./transport.js";
+import { MIN_PREFETCH, MIN_REREAD_MS, NO_PREFETCH, TurnSupport, markUnpinned, turnText } from "./turns.js";
 import type { RequestSpec, RetryPolicy } from "./transport.js";
 import type { Handle, ObjectRef } from "./types/common.js";
 import type {
@@ -68,6 +70,7 @@ import type {
   ObjectTimeline,
   OpenedItem,
   OpenItemRequest,
+  PrefetchRequest,
   SearchRequest,
   SearchResponse,
   TimelineRequest,
@@ -169,6 +172,10 @@ export class Niadra {
    * fact's history, correct, erase and export. See `Admin`.
    */
   readonly admin: Admin;
+  /** What this client learned about its space: whether it reads the customer's turn (memory v2). */
+  private readonly turns: TurnSupport = new TurnSupport();
+  /** Per conversation or task, the prefetch in flight and the newest text waiting behind it. */
+  private readonly prefetching = new Map<string, PrefetchRequest | null>();
 
   constructor(options: ClientOptions = {}) {
     this.strict = options.strict ?? false;
@@ -265,12 +272,67 @@ export class Niadra {
     }
 
     const timeout = options.timeout ?? (request.view === "voice" ? this.timeouts.contextVoice : this.timeouts.context);
-    const cache = options.cache === false ? null : this.core.cache;
+    const query = request.query === undefined && this.turns.wanted() ? turnText(params.turn) : null;
+    if (query !== null) return this.turnContext(this.core, request, query, timeout, options);
+    return this.pinnedContext(this.core, request, timeout, options);
+  }
+
+  /**
+   * Sends a partial transcript of the customer's turn while they are still speaking, to
+   * `POST /v1/context/prefetch`. The server reads it the way it will read the final turn and warms
+   * what that read needs (memory v2), so the `context()` that answers the turn spends less of its
+   * budget. It runs in the background: it returns at once, never rejects and never holds a turn.
+   * `true` when it was sent or queued: while one runs for the same conversation, the newest text
+   * waits and goes when it ends, and older waiting texts are dropped. `false` when there was
+   * nothing worth sending (blank or very short text) or the space does not read turns.
+   */
+  prefetch(params: PrefetchParams, options: RequestOptions = {}): boolean {
+    const core = this.core;
+    const text = turnText(params.text);
+    if (!core || !text || text.length < MIN_PREFETCH || !this.turns.prefetchWanted()) return false;
+    let body: PrefetchRequest;
+    try {
+      body = buildPrefetchRequest({ ...params, text });
+    } catch {
+      return false;
+    }
+    const scope = cacheScope(body) ?? "";
+    if (this.prefetching.has(scope)) {
+      this.prefetching.set(scope, body); // the newest text waits for the one in flight
+      return true;
+    }
+    this.prefetching.set(scope, null);
+    void this.sendPrefetches(core, scope, body, options);
+    return true;
+  }
+
+  /** Sends one prefetch, then the newest text that arrived meanwhile, until none is waiting. */
+  private async sendPrefetches(core: Core, scope: string, first: PrefetchRequest, options: RequestOptions): Promise<void> {
+    let body: PrefetchRequest | null = first;
+    while (body) {
+      try {
+        await core.transport.request<unknown>(this.readSpec("POST", "/v1/context/prefetch", body, this.timeouts.prefetch, options));
+      } catch (error) {
+        if (error instanceof NiadraAPIError && NO_PREFETCH.has(error.status)) this.turns.prefetchRefused();
+        this.logger.debug(`prefetch skipped: ${describe(toNiadraError(error))}`);
+      }
+      body = this.prefetching.get(scope) ?? null;
+      if (body && this.turns.prefetchWanted()) this.prefetching.set(scope, null);
+      else {
+        body = null;
+        this.prefetching.delete(scope);
+      }
+    }
+  }
+
+  /** A read without the turn: the conversation's pinned pack, from the cache when it is fresh. */
+  private async pinnedContext(core: Core, request: ContextRequest, timeout: number, options: ContextOptions): Promise<ContextResult> {
+    const cache = options.cache === false ? null : core.cache;
     const scope = cacheScope(request);
 
     if (!cache || !scope) {
       try {
-        const response = await this.fetchContext(this.core, request, timeout, options.signal, options.headers);
+        const response = await this.fetchContext(core, request, timeout, options.signal, options.headers);
         return resultFrom(response, "network");
       } catch (error) {
         const failure = toNiadraError(error);
@@ -283,14 +345,14 @@ export class Niadra {
     const hit = cache.lookup(key);
     if (hit?.freshness === "fresh") return resultFrom(delivered(hit.response, cache.take(key)), "cache");
     if (hit?.freshness === "stale") {
-      this.revalidate(this.core, cache, key, scope, request, timeout, options.headers).catch((error: unknown) => {
+      this.revalidate(core, cache, key, scope, request, timeout, options.headers).catch((error: unknown) => {
         this.logger.debug(`background context refresh failed: ${describe(toNiadraError(error))}`);
       });
       return resultFrom(delivered(hit.response, cache.take(key)), "stale");
     }
 
     try {
-      const pending = this.revalidate(this.core, cache, key, scope, request, timeout, options.headers);
+      const pending = this.revalidate(core, cache, key, scope, request, timeout, options.headers);
       const { response, source } = await abortable(pending, options.signal);
       return resultFrom(delivered(response, cache.take(key)), source);
     } catch (error) {
@@ -298,6 +360,52 @@ export class Niadra {
       const fallback = cache.lookup(key);
       return this.contextFailure(failure, fallback ? delivered(fallback.response, cache.take(key)) : null);
     }
+  }
+
+  /**
+   * A read that sends the customer's turn: always asked of the API, since the slots are this
+   * turn's. With slots, the pack is the conversation's pinned one: cached as the read without
+   * `query`, and served from there when the read fails; the slots stay on this answer only.
+   */
+  private async turnContext(
+    core: Core,
+    request: ContextRequest,
+    query: string,
+    timeout: number,
+    options: ContextOptions,
+  ): Promise<ContextResult> {
+    const cache = options.cache === false ? null : core.cache;
+    const scope = cacheScope(request);
+    const key = cache && scope ? cacheKey(request) : null;
+    const cached = cache && key ? cache.lookup(key) : null;
+    const generation = cache?.generation ?? 0;
+    // A `not_modified` answer carries no `pack`, so a read as data asks for the whole answer.
+    const known = cached && request.format !== "json" ? { known_etag: cached.response.etag } : {};
+    const started = Date.now();
+    let response: ContextResponse;
+    try {
+      response = await this.fetchContext(core, { ...request, query, ...known }, timeout, options.signal, options.headers);
+    } catch (error) {
+      const failure = toNiadraError(error);
+      this.observeAuth(failure, key);
+      const fallback = cache && key ? cache.lookup(key) : null;
+      return this.contextFailure(failure, cache && key && fallback ? delivered(fallback.response, cache.take(key)) : null);
+    }
+    if (this.turns.observe(response) === false && !response.not_modified) {
+      // This space compiled the pack for the turn and did not pin it: the conversation reads its
+      // pinned pack as before, within what is left of the budget, and stops sending the turn.
+      const left = timeout - (Date.now() - started);
+      if (left >= MIN_REREAD_MS) return this.pinnedContext(core, request, left, options);
+      return markUnpinned(resultFrom(response, "network"));
+    }
+    if (!cache || !key || !scope) return resultFrom(response, "network");
+    if (response.degraded && !response.not_modified && cached) {
+      // A degraded answer never replaces a good pack; the good one is served, with this turn's slots.
+      return resultFrom(delivered({ ...cached.response, slots: response.slots ?? null }, cache.take(key)), "fallback");
+    }
+    const merged = response.not_modified && cached ? mergeNotModified(cached.response, response) : response;
+    cache.store(key, scope, withoutSlots(merged), generation);
+    return resultFrom(delivered(merged, cache.take(key)), "network");
   }
 
   /**
@@ -953,12 +1061,20 @@ function normalizeContext(data: unknown): ContextResponse {
     timing: body.timing ?? {},
     withheld: body.withheld ?? 0,
     degraded: body.degraded ?? false,
+    // A pack of the earlier version (`context-pack.v0`) has no slots.
+    ...(body.pack ? { pack: { ...body.pack, slots: Array.isArray(body.pack.slots) ? body.pack.slots : [] } } : {}),
   };
 }
 
 /** Exactly what the signature covers; a server that names nothing still signs the content type. */
 function uploadHeaders(named: Record<string, string> | undefined, contentType: string): Record<string, string> {
   return named && Object.keys(named).length > 0 ? { ...named } : { "content-type": contentType };
+}
+
+/** What the cache keeps of an answer: never the slots, which belong to the turn that asked. */
+function withoutSlots(response: ContextResponse): ContextResponse {
+  const pack = response.pack ? { ...response.pack, slots: [] } : response.pack;
+  return { ...response, slots: null, ...(pack === undefined ? {} : { pack }) };
 }
 
 /** `response` with the deltas the cache handed out for it; as is when the key is not cached. */

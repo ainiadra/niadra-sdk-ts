@@ -14,7 +14,10 @@
  *   `call_ended` records every utterance of `transcript_object` and ends the conversation.
  * - `llm(callId)`: for a custom LLM, one session per websocket (`/llm-websocket/:call_id`). It asks
  *   for the call details, answers Retell's pings, records each utterance once a response is
- *   required, and gives your model the messages with the context in place. Retell does not sign the
+ *   required, and gives your model the messages with the context in place. The read sends the
+ *   caller's last utterance along, and each `update_only` event whose transcript ends with the
+ *   caller speaking sends that utterance so far with `prefetch()`, in the background, so the read
+ *   that answers the turn finds the caller's memory warm; a prefetch never holds or fails a turn. Retell does not sign the
  *   websocket, so the customer comes from a signed webhook of the same call (`inbound` or
  *   `call_started`, kept in the store), never from the socket's `call_details`: anyone who reaches
  *   the socket could name any caller there. Until a signed webhook registers the call, the model gets
@@ -125,7 +128,7 @@ export interface RetellTurn {
   messages: RetellMessage[];
   /** The pack, or an empty string. */
   context: string;
-  /** Deltas and live turns from other channels, or an empty string. */
+  /** Live turns from other channels, the turn's slots and deltas, or an empty string. */
   suffix: string;
   /** Sends a response event to Retell for this turn. */
   respond(content: string, options?: RetellRespondOptions): void;
@@ -375,6 +378,9 @@ export function retell(options: RetellOptions): RetellHandlers {
           case "call_details":
             await ensure(callOf(event.call));
             return null;
+          case "update_only":
+            await prefetchFor(event);
+            return null;
           case "response_required":
           case "reminder_required":
             return await turnFor(event, event.interaction_type);
@@ -385,6 +391,15 @@ export function retell(options: RetellOptions): RetellHandlers {
         logger.warn(`could not handle a Retell event (${errorName(error)})`);
         return null;
       }
+    }
+
+    /** While the caller speaks, the transcript ends with their utterance so far: prefetch it. */
+    async function prefetchFor(event: Record<PropertyKey, unknown>): Promise<void> {
+      const transcript = Array.isArray(event.transcript) ? (event.transcript as unknown[]) : [];
+      const last = transcript[transcript.length - 1];
+      if (!isRecord(last) || last.role !== "user" || typeof last.content !== "string") return;
+      const current = await ensure(null);
+      current?.prefetch(last.content);
     }
 
     async function turnFor(event: Record<PropertyKey, unknown>, interactionType: RetellTurn["interactionType"]): Promise<RetellTurn> {

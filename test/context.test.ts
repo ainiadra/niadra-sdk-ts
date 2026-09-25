@@ -88,10 +88,10 @@ describe("context()", () => {
     });
     const { suffix } = await makeClient(server).context({ subject: marina });
     expect(suffix).toBe(
-      "[New] Credit of R$ 40 on the August invoice\n\n" +
-        '<live_turns source="niadra" complete="false">\n' +
+      '<live_turns source="niadra" complete="false">\n' +
         "[2026-09-22T17:07:02Z] voice · customer: The technician did not come\n" +
-        "</live_turns>",
+        "</live_turns>\n\n" +
+        "[New] Credit of R$ 40 on the August invoice",
     );
   });
 

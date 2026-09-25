@@ -3,14 +3,17 @@
  *
  * The same hook as LiveKit's own RAG recipe: `onUserTurnCompleted(turnCtx, newMessage)`. There
  * the customer's final transcript is recorded, the conversation's pack goes into the turn's chat
- * context as a system message right after the agent's instructions, and the suffix (deltas and
- * live turns from other channels) goes after the new message. The turn context is a copy LiveKit
- * builds for this reply only, so nothing piles up in the agent's history and the prompt prefix
+ * context as a system message right after the agent's instructions, and the suffix (live turns
+ * from other channels, what the caller's turn needs from memory in a space with memory v2, and
+ * deltas) goes after the new message. The read sends the caller's turn along. The turn context is
+ * a copy LiveKit builds for this reply only, so nothing piles up in the agent's history and the prompt prefix
  * stays byte-identical turn after turn. Session events record the agent's answers (with the
  * LLM usage LiveKit measured), handoffs between agents and the end of the call.
  *
  * Voice reads use the 150 ms budget; a read that misses it leaves the context out and the agent
- * answers anyway.
+ * answers anyway. While the caller is still speaking, each `user_input_transcribed` event (interim
+ * or final) sends the turn so far with `prefetch()`, in the background, so the read that answers
+ * the turn finds the caller's memory warm; a prefetch never holds or fails a turn.
  *
  * @example
  * const caller = ctx.room.remoteParticipants.values().next().value;
@@ -94,6 +97,8 @@ export class NiadraMemory {
   private readonly recordAgent: boolean;
   private readonly customerTurns = new Set<string>();
   private usage: ModelUsage | null = null;
+  /** The final transcript segments of the turn the caller is still speaking. */
+  private heard: string[] = [];
 
   constructor(options: NiadraMemoryOptions) {
     this.conversation = options.conversation;
@@ -145,12 +150,17 @@ export class NiadraMemory {
     const onClose = (): void => {
       void this.bridge.end();
     };
+    const onTranscribed = (event: voice.UserInputTranscribedEvent): void => {
+      this.bridge.prefetch(this.hearing(event.transcript, event.isFinal));
+    };
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, onItem);
     session.on(voice.AgentSessionEventTypes.MetricsCollected, onMetrics);
+    session.on(voice.AgentSessionEventTypes.UserInputTranscribed, onTranscribed);
     session.on(voice.AgentSessionEventTypes.Close, onClose);
     return () => {
       session.off(voice.AgentSessionEventTypes.ConversationItemAdded, onItem);
       session.off(voice.AgentSessionEventTypes.MetricsCollected, onMetrics);
+      session.off(voice.AgentSessionEventTypes.UserInputTranscribed, onTranscribed);
       session.off(voice.AgentSessionEventTypes.Close, onClose);
     };
   }
@@ -198,9 +208,20 @@ export class NiadraMemory {
     this.bridge.agent(text, usage ? { usage, idempotency_key: item.id } : { idempotency_key: item.id });
   }
 
+  /** The turn so far: its final segments and, when `transcript` is interim, that one too. */
+  private hearing(transcript: string, isFinal: boolean): string {
+    const text = transcript.trim();
+    if (isFinal && text) {
+      this.heard.push(text);
+      return this.heard.join(" ");
+    }
+    return (text ? [...this.heard, text] : this.heard).join(" ");
+  }
+
   private recordCustomer(message: llm.ChatMessage): void {
     if (this.customerTurns.has(message.id)) return;
     this.customerTurns.add(message.id);
+    this.heard = [];
     const confidence = message.transcriptConfidence;
     this.bridge.customer(message.textContent ?? "", {
       idempotency_key: message.id,

@@ -24,6 +24,8 @@ export interface Timeouts {
   token: number;
   /** The whole of sending media bytes to storage in `uploadMedia()`, retries included. */
   upload: number;
+  /** `prefetch()`, which runs in the background and never holds a turn. */
+  prefetch: number;
 }
 
 export const DEFAULT_TIMEOUTS: Timeouts = {
@@ -34,6 +36,7 @@ export const DEFAULT_TIMEOUTS: Timeouts = {
   write: 5_000,
   token: 2_000,
   upload: 60_000,
+  prefetch: 1_000,
 };
 
 /** How `context()` reuses packs inside a conversation. */

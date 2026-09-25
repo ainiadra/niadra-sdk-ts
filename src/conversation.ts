@@ -72,8 +72,13 @@ export interface ConversationHooks {
  * prefix stays byte-identical and the model provider's prompt cache keeps hitting. After the
  * first pack, each read also asks for the delta, what changed since this agent last looked
  * (a new open item, an action another agent took). The server sends each delta once, so the
- * conversation keeps them, in order, in `suffix`, with the live turns, for the end of the
+ * conversation keeps them, in order, in `suffix`, after the live turns, for the end of the
  * prompt. A successful `verify()` starts over from the pack the server pins for the new level.
+ *
+ * Every read sends the customer's last turn along (the text of the last `customer()`). In a space
+ * with memory v2 the server picks from memory what that turn needs and the answer carries it as
+ * `slots`, in `suffix` between the live turns and the delta; the pinned pack does not change. `prefetch()` sends a partial
+ * transcript while the customer is still speaking.
  *
  * Call `markInjected()` when the pack goes into the prompt; the agent's later turns and actions
  * carry that moment and the pack's etag as `context_stamp`. `wrap()` does it for you.
@@ -94,6 +99,8 @@ export class Conversation {
   private readonly view: View;
   private readonly state = new SessionState();
   private ending: Promise<WriteResult> | null = null;
+  private turnText: string | null = null;
+  private prefetched: string | null = null;
 
   constructor(
     private readonly client: Niadra,
@@ -130,18 +137,25 @@ export class Conversation {
     return this.state.lastContext;
   }
 
+  /** The text of the last `customer()` turn, which the next `context()` sends. */
+  get lastTurn(): string | null {
+    return this.turnText;
+  }
+
   /** Where `wrap()` reports what it swallowed: the client's logger. */
   get logger(): Logger {
     return this.client.logger;
   }
 
   /**
-   * The pack for this turn: the pinned `text`, and a `suffix` with every delta since the pin
-   * and the current live turns. A read with `query` is compiled for that query and never
+   * The pack for this turn: the pinned `text`, and a `suffix` with every delta since the pin,
+   * the current live turns and, in a space with memory v2, what the customer's last turn
+   * selected from memory. `turn` passes the customer's turn when `customer()` has not recorded it
+   * yet (`null` reads without one). A read with `query` is compiled for that query and never
    * pinned, so it leaves the conversation's deltas alone.
    */
-  async context(options: ContextOptions & { query?: string } = {}): Promise<ContextResult> {
-    const { query, format, ...requestOptions } = options;
+  async context(options: ContextOptions & { query?: string; turn?: string | null } = {}): Promise<ContextResult> {
+    const { query, turn, format, ...requestOptions } = options;
     const params: ContextParams = {
       subject: this.subject,
       view: this.view,
@@ -153,7 +167,25 @@ export class Conversation {
     };
     if (query) return this.client.context({ ...params, query }, requestOptions);
     if (this.state.wantsDelta) params.delta = true;
+    params.turn = turn === undefined ? this.turnText : turn;
     return this.state.absorb(await this.client.context(params, requestOptions));
+  }
+
+  /**
+   * Sends a partial transcript of the customer's turn while they speak, so the read that answers
+   * the turn finds their memory warm. In the background; never rejects. See `niadra.prefetch()`.
+   */
+  prefetch(text: string): boolean {
+    if (text === this.prefetched) return false;
+    this.prefetched = text;
+    return this.client.prefetch({
+      subject: this.subject,
+      view: this.view,
+      verification: this.level,
+      conversation_id: this.id,
+      ...(this.params.about ? { about: this.params.about } : {}),
+      text,
+    });
   }
 
   /**
@@ -172,8 +204,9 @@ export class Conversation {
     this.state.markInjected(context, at);
   }
 
-  /** Captures what the customer said. */
+  /** Captures what the customer said. The text is also the turn the next `context()` sends. */
   customer(text: string, options: TurnOptions = {}): string | null {
+    if (text.trim()) this.turnText = text;
     return this.turn("customer", text, options);
   }
 

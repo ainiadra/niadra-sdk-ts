@@ -27,7 +27,7 @@ describe("conversation()", () => {
     expect(first.suffix).toBe("");
     expect(second.text).toBe(first.text);
     expect(second.suffix).toBe(
-      '[New] credit of R$ 40\n\n<live_turns source="niadra">\n[2026-09-22T17:07:02Z] voice · customer: called\n</live_turns>',
+      '<live_turns source="niadra">\n[2026-09-22T17:07:02Z] voice · customer: called\n</live_turns>\n\n[New] credit of R$ 40',
     );
     expect(third.suffix).toBe("[New] credit of R$ 40\n\n[New] visit rescheduled");
     expect(third.response?.delta).toBe("[New] credit of R$ 40\n\n[New] visit rescheduled");

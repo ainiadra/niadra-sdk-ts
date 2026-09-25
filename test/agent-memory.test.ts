@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AGENT_MEMORY_TOOL_DEFINITIONS, PERSONAL_DATA_TOOL_ERROR, TOOL_DEFINITIONS, TOOL_NAMES } from "../src/index.js";
+import type { ContextResponse } from "../src/index.js";
 import { MockServer, batchOk, contextBody, makeClient, marina, problem } from "./helpers.js";
 
 const note = {
@@ -170,11 +171,13 @@ describe("context({ format: \"json\" }), valid_until and versions", () => {
   };
 
   it("asks for the pack as data and hands it back typed, cached apart from the text", async () => {
-    const server = new MockServer().on("POST /v1/context", (request) => ({ body: contextBody(request.body.format === "json" ? { pack } : {}) }));
+    // A pack of the earlier version (`context-pack.v0`), as a server without memory v2 sends it.
+    const earlier = { pack } as unknown as Partial<ContextResponse>;
+    const server = new MockServer().on("POST /v1/context", (request) => ({ body: contextBody(request.body.format === "json" ? earlier : {}) }));
     const convo = makeClient(server).conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-1" });
     const json = await convo.context({ format: "json" });
     expect(server.calls[0]!.body.format).toBe("json");
-    expect(json.pack).toEqual(pack);
+    expect(json.pack).toEqual({ ...pack, slots: [] });
     const text = await makeClient(server).context({ subject: marina, conversation_id: "wa-1" });
     expect(text.pack).toBeNull();
     expect(server.calls[1]!.body.format).toBeUndefined();

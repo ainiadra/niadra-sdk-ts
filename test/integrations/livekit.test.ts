@@ -1,5 +1,5 @@
 import { initializeLogger, llm, voice } from "@livekit/agents";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   NiadraAgent,
   NiadraMemory,
@@ -181,6 +181,50 @@ describe("LiveKit: a real AgentSession", () => {
       ["agent", "triage to billing"],
       ["human", "customer asked for a person"],
     ]);
+  });
+});
+
+describe("LiveKit: the caller's turn", () => {
+  it("prefetches the turn so far while the caller speaks, and reads with the final turn", async () => {
+    const { server, niadra } = setup();
+    server.on("POST /v1/context/prefetch", { status: 202, body: {} });
+    const convo = niadra.conversation({ subject: marina, channel: "voice", conversation_id: "call-9" });
+    const memory = new NiadraMemory({ conversation: convo });
+    const session = new voice.AgentSession({});
+    memory.attach(session);
+    const heard = (transcript: string, isFinal: boolean): void => {
+      session.emit(voice.AgentSessionEventTypes.UserInputTranscribed, {
+        type: "user_input_transcribed", transcript, isFinal, itemId: null, speakerId: null, createdAt: Date.now(), language: null,
+      });
+    };
+    heard("what about", false);
+    heard("what about my refund", true);
+    heard("it never", false);
+    // One at a time per call: the first goes at once, the newest when it ends.
+    await vi.waitFor(() => {
+      expect(server.callsTo("POST /v1/context/prefetch")).toHaveLength(2);
+    });
+    expect(server.callsTo("POST /v1/context/prefetch").map((call) => [call.body.query, call.body.conversation_id])).toEqual([
+      ["what about", "call-9"],
+      ["what about my refund it never", "call-9"],
+    ]);
+
+    await memory.onUserTurnCompleted(turnContext(), llm.ChatMessage.create({ role: "user", content: "what about my refund it never came" }));
+    expect(server.callsTo("POST /v1/context")[0]!.body.query).toBe("what about my refund it never came");
+  });
+
+  it("goes on with the turn when the prefetch fails", async () => {
+    const { server, niadra } = setup();
+    server.on("POST /v1/context/prefetch", problem(503, "unavailable"));
+    const memory = new NiadraMemory({ conversation: niadra.conversation({ subject: marina, channel: "voice" }) });
+    const session = new voice.AgentSession({});
+    memory.attach(session);
+    session.emit(voice.AgentSessionEventTypes.UserInputTranscribed, {
+      type: "user_input_transcribed", transcript: "what about my refund", isFinal: false, itemId: null, speakerId: null, createdAt: Date.now(), language: null,
+    });
+    const ctx = turnContext();
+    await memory.onUserTurnCompleted(ctx, llm.ChatMessage.create({ role: "user", content: "what about my refund" }));
+    expect(contents(ctx)[1]).toEqual(["system", PACK]);
   });
 });
 

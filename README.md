@@ -131,11 +131,13 @@ const messages = [...history, { role: "user", content: `${ctx.suffix}\n\n${userT
 ```
 
 - `text` is the pack. Inside a conversation the server pins it: the same bytes on every turn, so your model provider's prompt cache keeps hitting.
-- `suffix` holds what changes turn by turn: the delta and the live turns from other channels that the pack has not absorbed yet. It belongs at the end of the prompt, after the conversation.
+- `suffix` holds what changes turn by turn: the live turns from other channels that the pack has not absorbed yet, this turn's slots and the delta, in that order. It belongs at the end of the prompt, after the conversation.
+- `turn` is the customer's last turn; a conversation sends it for you. In a space with memory v2 it goes as `query`, and the answer adds `response.slots`: what that turn needs from memory that the pinned pack left out (the protocol number the customer asks for, the earlier conversations on the same topic with their dates, or a line saying memory has no record of it), in `suffix` after the live turns and before the delta. The pack itself stays the pinned one. A space without memory v2 would compile a read with `query` for that query and not pin it, so there the client reads the pinned pack instead and stops sending the turn for ten minutes.
+- `niadra.prefetch({ subject, conversation_id, text })` sends a partial transcript while the customer is still speaking, so the read that answers the turn finds their memory warm. It runs in the background, one at a time per conversation (the newest text waits), and never rejects.
 - `delta: true` asks for what changed since this agent last read the subject. The server sends each change once, so the SDK hands each delta out once too, even one fetched by a background refresh; `conversation()` keeps them for you.
 - `source` says where the result came from (`network`, `cache`, `stale`, `fallback` or `none`), and `error` says what went wrong when something did.
 - Pass `object: "invoice:erp:0823"` instead of `subject` when the task is about a business object, and `about` for the account a person acts for.
-- `format: "json"` also returns `pack`: the same pack as typed sections (`context-pack.v0`: `preamble`, `sections` with a stable `name`, a `layer` and their `lines`, `variables` and the `stamp`), for programs that build their own prompt. `convo.context({ format: "json" })` works the same way.
+- `format: "json"` also returns `pack`: the same pack as typed sections (`context-pack.v1`: `preamble`, `sections` with a stable `name`, a `layer` and their `lines`, `variables`, the `stamp` and this turn's `slots`, each with its `section`, `derived` kind, `channels` and `text`), for programs that build their own prompt. `convo.context({ format: "json" })` works the same way.
 
 ### Conversations
 
@@ -155,7 +157,9 @@ await convo.handoff({ target: "human", reason: "asked for a person" });
 await convo.end();
 ```
 
-After the first pack, each read also asks for the delta, and the conversation keeps every delta it receives, in order, in `suffix`, ahead of the live turns. When the server pins a new pack, after `verify()` for instance, the kept deltas are dropped: the new pack already has them. A read with `query` is a one-off and leaves them alone.
+After the first pack, each read also asks for the delta, and the conversation keeps every delta it receives, in order, in `suffix`, after the live turns. When the server pins a new pack, after `verify()` for instance, the kept deltas are dropped: the new pack already has them. A read with `query` is a one-off and leaves them alone.
+
+Every read sends the customer's last turn, the text of the last `customer()`, so a space with memory v2 answers it with slots in `suffix`. Pass `turn` when the platform has the turn before `customer()` recorded it, or `turn: null` to read without one. In a voice call, `convo.prefetch(partialTranscript)` sends the turn so far while the customer speaks.
 
 Call `markInjected()` each time you put the pack in a prompt. The agent's turns and actions that follow carry it as `context_stamp`, with the pack's etag, which is how Niadra tells a context that arrived after the agent spoke from one the agent had and did not use. `timings` keeps the first injection and the first agent turn, for your own checks.
 
@@ -300,7 +304,7 @@ const { data } = await niadra.subjectToken({ subject: marina, conversation_id: "
 
 Each integration is a subpath of this package, with its framework as an optional peer dependency: `@niadra/sdk` itself loads no framework, and you install only the one you use. Every adapter wires the same five things into the framework's own lifecycle:
 
-1. **Context before the model call**: the pack after your instructions, the suffix (deltas and live turns) at the end, within the read budget (150 ms on voice).
+1. **Context before the model call**: the pack after your instructions, the suffix (live turns, the turn's slots and deltas) at the end, within the read budget (150 ms on voice).
 2. **Turns**: what the customer said and what the agent answered, with the provider's usage when the framework exposes it, and the end of the conversation.
 3. **Tools**: `search_customer_history`, `get_customer_timeline` and `open_history_item` in the framework's tool format, bound to the customer outside the model's reach. No tool has a parameter that names a customer.
 4. **Verification**: what the framework or the carrier proved, recorded with `verify()` before the first context read.
@@ -350,7 +354,7 @@ memory.attach(session);                                          // answers, han
 await session.start({ agent: new NiadraAgent({ instructions, memory }), room: ctx.room });
 ```
 
-`NiadraAgent` is a LiveKit `Agent` whose `onUserTurnCompleted` records the final transcript (with its STT confidence), then puts the pack in the turn's chat context right after the instructions and the suffix after the new message. LiveKit builds that context for one reply only, so nothing piles up in the agent's history and the prompt prefix stays the same turn after turn. The navigation kit joins the agent's own tools as the `niadra` toolset. With your own `Agent` subclass, call `memory.onUserTurnCompleted(turnCtx, newMessage)` from your hook and add `memory.toolset()` to its tools.
+`NiadraAgent` is a LiveKit `Agent` whose `onUserTurnCompleted` records the final transcript (with its STT confidence), then puts the pack in the turn's chat context right after the instructions and the suffix after the new message. LiveKit builds that context for one reply only, so nothing piles up in the agent's history and the prompt prefix stays the same turn after turn. The navigation kit joins the agent's own tools as the `niadra` toolset. With your own `Agent` subclass, call `memory.onUserTurnCompleted(turnCtx, newMessage)` from your hook and add `memory.toolset()` to its tools. While the caller is still speaking, `attach(session)` also listens to `user_input_transcribed` (interim and final) and sends the turn so far with `prefetch()`, in the background; a prefetch never holds or fails a turn.
 
 `attach(session)` records the agent's answers from `conversation_item_added` (with the LLM usage LiveKit measured), a handoff for each `AgentHandoffItem` (`session.updateAgent()` or a tool that returns another agent), and the end of the conversation on `close`. Call `memory.handoffToHuman(reason)` right before a SIP transfer to a person. LiveKit's SIP attributes carry no STIR/SHAKEN attestation: map the carrier's header to a participant attribute in the trunk settings and pass it to `attestationProof()` (`A` proves V2, `B` and `C` prove V1).
 
@@ -414,7 +418,7 @@ app.post("/retell/tools", async (c) => respond(c, await handlers.tool(await c.re
 - `inbound` answers the phone number's inbound webhook: it opens the conversation by `call_inbound.call_id`, records what the call proved (`verify`), reads the voice context and returns it as the dynamic variables `niadra_context` and `niadra_turn` (plus your `inboundFields(call)`, such as `override_agent_id`). Put `{{niadra_context}}` in the agent's prompt.
 - `tool` serves the navigation kit as custom functions; `handlers.toolConfigs({ url })` writes them for the LLM's `general_tools`. The customer comes from the call Retell sends with each function call, never from the arguments; other functions go to `otherTool(name, args, call)`.
 - `webhook` takes the agent webhook: `call_started` keeps the customer of outbound and web calls (the callee on outbound calls), `transfer_started` records the transfer to a person once, and `call_ended` records every utterance of `transcript_object` with its time in the call and ends the conversation.
-- `llm(callId, { send, instructions })` serves a custom LLM websocket: `open()` asks for the call details (and speaks your greeting), `receive(event)` answers pings, records the utterances once a response is required and resolves to a turn whose `messages` carry your instructions, the pack and the call so far with the suffix at the end; `turn.respond(text)` sends the response (streamed with `{ complete: false }`, with `endCall` or `transferNumber`). Utterances carry the same idempotency key on the websocket and in `call_ended`, so recording both ways stores them once.
+- `llm(callId, { send, instructions })` serves a custom LLM websocket: `open()` asks for the call details (and speaks your greeting), `receive(event)` answers pings, records the utterances once a response is required and resolves to a turn whose `messages` carry your instructions, the pack and the call so far with the suffix at the end; `turn.respond(text)` sends the response (streamed with `{ complete: false }`, with `endCall` or `transferNumber`). Utterances carry the same idempotency key on the websocket and in `call_ended`, so recording both ways stores them once. Each `update_only` event whose transcript ends with the caller speaking sends that utterance so far with `prefetch()`, in the background.
 
 ### WhatsApp Cloud API
 

@@ -23,8 +23,24 @@ export interface ContextRequest {
   delta?: boolean;
   target?: TargetModel | null;
   known_etag?: string | null;
-  /** `json` also returns `pack`: the same pack as typed sections (`context-pack.v0`). Defaults to `text`. */
+  /** `json` also returns `pack`: the same pack as typed sections (`context-pack.v1`). Defaults to `text`. */
   format?: ContextFormat;
+}
+
+/**
+ * Body of `POST /v1/context/prefetch`: a partial transcript of the customer's turn, sent while
+ * they are still speaking, so the server warms what the read that answers the turn will need.
+ */
+export interface PrefetchRequest {
+  subject?: Handle | null;
+  object?: ObjectRef | null;
+  about?: Handle | null;
+  view?: View;
+  verification?: Verification;
+  conversation_id?: string | null;
+  task_id?: string | null;
+  /** The turn so far, 1 to 2,000 characters. */
+  query: string;
 }
 
 /** `text` returns the pack as prompt text; `json` returns it as typed sections too. */
@@ -50,9 +66,31 @@ export interface PackStamp {
   manifest_hash?: string | null;
 }
 
-/** The pack as data (`context-pack.v0`), for programs that build their own prompt. */
+/** What a derived line of the slots says: a count, no record, or items withheld until verification. */
+export type PackSlotDerived = "count" | "no_record" | "withheld";
+
+/**
+ * One line of this turn's slots (memory v2): an item the customer's last turn selected, or a
+ * line the server derived. The same line as in `ContextResponse.slots`.
+ */
+export interface PackSlot {
+  /** The pack section the item comes from (`episodes`, `objects`...), or `derived`. */
+  section: string;
+  /** On a derived line: `count`, `no_record` or `withheld`; otherwise `null`. */
+  derived?: PackSlotDerived | null;
+  /** How the item was found: `exact`, `lexical`, `temporal`, `values`, `semantic`. */
+  channels: string[];
+  /** The line as `slots` prints it. */
+  text: string;
+}
+
+/**
+ * The pack as data (`context-pack.v1`), for programs that build their own prompt: the same
+ * content as `text`, and this turn's `slots`, which are never part of `text`. A server of the
+ * earlier version answers `context-pack.v0` and no slots; the SDK gives an empty list then.
+ */
 export interface ContextPack {
-  spec: "context-pack.v0";
+  spec: "context-pack.v1" | "context-pack.v0";
   view: string;
   /** The effective level. */
   verification: Verification;
@@ -63,6 +101,8 @@ export interface ContextPack {
   sections: PackSection[];
   variables: Record<string, string>;
   stamp: PackStamp;
+  /** This turn's slots, typed; empty when there are none. */
+  slots: PackSlot[];
 }
 
 export interface VerificationResult {
@@ -111,6 +151,12 @@ export interface ContextResponse {
   live: LiveTurn[];
   live_complete: boolean;
   delta?: string | null;
+  /**
+   * Memory v2, on a read with `query`: what the customer's last turn selected from memory for
+   * this turn, a tagged block for the end of the prompt. Never part of `text`. Servers without
+   * memory v2 do not send it.
+   */
+  slots?: string | null;
   cache?: CacheDirectives | null;
   timing: Record<string, number>;
   path: DeliveryPath;

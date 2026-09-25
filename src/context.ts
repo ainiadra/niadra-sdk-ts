@@ -2,7 +2,15 @@ import { NiadraValidationError } from "./errors.js";
 import type { NiadraError } from "./errors.js";
 import { toObjectRef } from "./handles.js";
 import type { Handle, ObjectRef } from "./types/common.js";
-import type { ContextFormat, ContextPack, ContextRequest, ContextResponse, LiveTurn, TargetModel } from "./types/context.js";
+import type {
+  ContextFormat,
+  ContextPack,
+  ContextRequest,
+  ContextResponse,
+  LiveTurn,
+  PrefetchRequest,
+  TargetModel,
+} from "./types/context.js";
 import type { Verification, View } from "./types/vocabulary.js";
 
 /** Arguments of `context()`. Pass exactly one of `subject` or `object`. */
@@ -24,14 +32,37 @@ export interface ContextParams {
   conversation_id?: string;
   /** For internal agents: the task plays the role of the conversation. */
   task_id?: string;
-  /** What the turn is about, so selection can favour relevant history. Up to 2,000 characters. */
+  /**
+   * A read focused on this text, compiled for it. Up to 2,000 characters. Wins over `turn`.
+   */
   query?: string;
+  /**
+   * The customer's last turn; a conversation passes it for you. In a space with memory v2 it goes
+   * as `query` and the answer adds `slots`, what the turn selected from memory, in `suffix`, while the pack stays the conversation's pinned one (and is cached as without it). A
+   * space without memory v2 compiles a read with `query` for it and does not pin it, so after one
+   * such answer the client reads the pinned pack instead and stops sending the turn for ten minutes.
+   */
+  turn?: string | null;
   /** Ask only for what changed since this source last read the subject. */
   delta?: boolean;
   /** The model that will read the pack, so the server can size it for that model's prompt cache. */
   target?: TargetModel;
-  /** `json` also returns the pack as typed sections in `pack` (`context-pack.v0`). Defaults to `text`. */
+  /** `json` also returns the pack as typed sections in `pack` (`context-pack.v1`). Defaults to `text`. */
   format?: ContextFormat;
+}
+
+/** Arguments of `prefetch()`: who the turn is about, as in `context()`, and the turn so far. */
+export interface PrefetchParams {
+  subject?: Handle;
+  object?: ObjectRef | string;
+  about?: Handle;
+  /** Defaults to `voice`, where partial transcripts come from. */
+  view?: View;
+  verification?: Verification;
+  conversation_id?: string;
+  task_id?: string;
+  /** The partial transcript of the customer's turn. */
+  text: string;
 }
 
 /** Per-call options shared by every read method. */
@@ -68,7 +99,9 @@ export interface ContextResult {
   text: string;
   /**
    * The parts that change turn by turn and belong at the end of the prompt, after the
-   * conversation: the delta and the live turns from other channels. Empty when there are none.
+   * conversation: the live turns from other channels, this turn's slots (what the customer's last
+   * turn selected from memory, in a space with memory v2) and the delta, in that order, as the API
+   * places them. Empty when there are none.
    */
   suffix: string;
   /** Named values from the pack, for templates that place them individually. */
@@ -116,8 +149,31 @@ export function buildContextRequest(params: ContextParams): ContextRequest {
   return request;
 }
 
+/** Validates the arguments of `prefetch()` and builds the wire request. */
+export function buildPrefetchRequest(params: PrefetchParams): PrefetchRequest {
+  if ((params.subject === undefined) === (params.object === undefined)) {
+    throw new NiadraValidationError("pass exactly one of `subject` or `object`");
+  }
+  if (params.conversation_id && params.task_id) {
+    throw new NiadraValidationError("pass `conversation_id` or `task_id`, not both");
+  }
+  if (params.view !== undefined && !VIEW.test(params.view)) {
+    throw new NiadraValidationError("unknown view; task views look like `task:billing`");
+  }
+  const text = params.text.trim();
+  if (!text || text.length > MAX_QUERY) throw new NiadraValidationError(`text must be 1 to ${MAX_QUERY} characters`);
+  const request: PrefetchRequest = { view: params.view ?? "voice", query: text };
+  if (params.subject) request.subject = params.subject;
+  if (params.object !== undefined) request.object = toObjectRef(params.object);
+  if (params.about) request.about = params.about;
+  if (params.verification) request.verification = params.verification;
+  if (params.conversation_id) request.conversation_id = params.conversation_id;
+  if (params.task_id) request.task_id = params.task_id;
+  return request;
+}
+
 /** Packs are only cached inside a conversation or task, the unit the server pins them to. */
-export function cacheScope(request: ContextRequest): string | null {
+export function cacheScope(request: Pick<ContextRequest, "conversation_id" | "task_id">): string | null {
   if (request.conversation_id) return `conversation:${request.conversation_id}`;
   if (request.task_id) return `task:${request.task_id}`;
   return null;
@@ -179,13 +235,13 @@ export function emptyResult(error: NiadraError | null): ContextResult {
 }
 
 /**
- * Renders the delta and the live turns for the end of the prompt. Kept outside the pinned
- * pack so that the prompt prefix stays byte-identical across turns and the model provider's
- * prompt cache keeps hitting. Returns an empty string when there is nothing to add.
+ * Renders the live turns, the slots and the delta for the end of the prompt, in that order. Kept
+ * outside the pinned pack so that the prompt prefix stays byte-identical across turns and the
+ * model provider's prompt cache keeps hitting. Returns an empty string when there is nothing to add.
  */
 export function renderSuffix(response: ContextResponse): string {
   if (response.path === "holdout") return "";
-  return [response.delta ?? "", renderLive(response)].filter(Boolean).join("\n\n");
+  return [renderLive(response), response.slots ?? "", response.delta ?? ""].filter(Boolean).join("\n\n");
 }
 
 /**

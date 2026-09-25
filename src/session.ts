@@ -1,4 +1,5 @@
 import { renderSuffix } from "./context.js";
+import { isUnpinned } from "./turns.js";
 import type { ContextResult } from "./context.js";
 import type { ContextResponse } from "./types/context.js";
 import type { ContextStamp, SpeakerRef } from "./types/events.js";
@@ -48,6 +49,8 @@ export class SessionState {
 
   /** Folds one `context()` result into the session and returns it with every delta since the pin. */
   absorb(result: ContextResult): ContextResult {
+    // An answer compiled for the turn by a space without memory v2 is not the pinned pack.
+    if (isUnpinned(result)) return result;
     const response = result.response;
     if (result.source === "none" || !response) {
       // Nothing is being served, not even the last good pack (a 401 or 403 lands here):

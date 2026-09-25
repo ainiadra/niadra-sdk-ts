@@ -1,6 +1,6 @@
 import type { Retell } from "retell-sdk";
 import { sign } from "retell-sdk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TOOL_DEFINITIONS } from "../../src/index.js";
 import { attestationProof, memoryCallStore, retell, validRetellSignature } from "../../src/integrations/retell.js";
 import { problem } from "../helpers.js";
@@ -195,6 +195,38 @@ describe("Retell: custom LLM websocket", () => {
     expect(events.at(-1)).toMatchObject({ response_id: 2, transfer_number: "+551140028900" });
     expect(server.callsTo("POST /v1/context")[0]!.body).toMatchObject({ verification: "V2" });
     expect(await session.receive("not an event")).toBeNull();
+  });
+});
+
+describe("Retell: the caller's turn", () => {
+  it("prefetches the caller's utterance on update_only, and reads with it", async () => {
+    const { server, niadra } = setup();
+    server.on("POST /v1/context/prefetch", { status: 202, body: {} });
+    const store = memoryCallStore();
+    store.set("call_b8f2", { subject: marina, verification: "V1" });
+    const session = retell({ niadra, apiKey: API_KEY, store }).llm("call_b8f2", { send: () => undefined });
+    const update = (transcript: { role: string; content: string }[]): Promise<unknown> =>
+      session.receive({ interaction_type: "update_only", transcript });
+
+    expect(await update([{ role: "agent", content: "Acme Energy, how can I help?" }])).toBeNull();
+    expect(await update([{ role: "agent", content: "Acme Energy, how can I help?" }, { role: "user", content: "My bill doubled this" }])).toBeNull();
+    await vi.waitFor(() => {
+      expect(server.callsTo("POST /v1/context/prefetch")).toHaveLength(1);
+    });
+    expect(server.callsTo("POST /v1/context/prefetch")[0]!.body).toMatchObject({
+      subject: marina,
+      conversation_id: "call_b8f2",
+      view: "voice",
+      verification: "V1",
+      query: "My bill doubled this",
+    });
+
+    await session.receive({
+      interaction_type: "response_required",
+      response_id: 1,
+      transcript: [{ role: "agent", content: "Acme Energy, how can I help?" }, { role: "user", content: "My bill doubled this month." }],
+    });
+    expect(server.callsTo("POST /v1/context")[0]!.body.query).toBe("My bill doubled this month.");
   });
 });
 

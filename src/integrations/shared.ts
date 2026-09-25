@@ -51,7 +51,7 @@ export interface Read {
   memory: string;
   /** What goes after the instructions: the notes, then the customer's pack. */
   prefix: string;
-  /** What goes at the end: deltas and live turns. */
+  /** What goes at the end: live turns, the turn's slots and deltas. */
   suffix: string;
 }
 
@@ -159,6 +159,13 @@ export class Bridge {
     const session = this.session;
     if (!text.trim() || !isConversation(session)) return;
     this.safe("record the customer's turn", () => session.customer(text, options));
+  }
+
+  /** Sends the customer's turn so far, while they speak. In the background; never throws. */
+  prefetch(text: string): void {
+    const session = this.session;
+    if (!text.trim() || !isConversation(session)) return;
+    this.safe("prefetch the turn", () => session.prefetch(text));
   }
 
   agent(text: string, options: TurnOptions = {}): void {
