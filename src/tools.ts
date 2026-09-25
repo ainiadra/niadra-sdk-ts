@@ -452,7 +452,7 @@ export function bindTools(
         if (binding.conversation_id) scope.conversation_id = binding.conversation_id;
         else if (binding.task_id) scope.task_id = binding.task_id;
         const result = await navigator.searchAgentMemory(query, scope, voice);
-        return result.error ? result : { data: { notes: result.data }, error: null };
+        return result.error ? result : { data: { notes: result.data.map(compactNote) }, error: null };
       }
       case AGENT_MEMORY_TOOL_NAMES.remember: {
         const kind = str(args, "kind");
@@ -466,7 +466,8 @@ export function bindTools(
         if (tags) note.tags = tags;
         if (binding.conversation_id) note.evidence = { conversation_id: binding.conversation_id };
         else if (binding.task_id) note.evidence = { task_id: binding.task_id };
-        return navigator.remember(note);
+        const result = await navigator.remember(note);
+        return result.error ? result : { data: remembered(result.data), error: null };
       }
       default:
         throw new NiadraValidationError(`unknown tool: ${name}`);
@@ -497,6 +498,18 @@ export function bindTools(
       return JSON.stringify(result.data);
     },
   };
+}
+
+/** What the model needs of a note: the id, the kind, the title, the body and the tags. */
+function compactNote(note: AgentNote): Partial<AgentNote> {
+  const { note_id, kind, title, body, tags } = note;
+  return tags === undefined ? { note_id, kind, title, body } : { note_id, kind, title, body, tags };
+}
+
+/** A saved note, or a proposal a person still has to approve, as the model reads it. */
+function remembered(result: RememberResult): Record<string, unknown> {
+  if (result.note) return { saved: true, note_id: result.note.note_id, version: result.note.version };
+  return { saved: false, proposal_id: result.proposal_id ?? null, status: "waiting for review" };
 }
 
 /** The server refused a note with personal data: an answer for the model, not a failure. */

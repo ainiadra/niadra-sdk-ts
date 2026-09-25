@@ -122,4 +122,15 @@ describe("task()", () => {
     await task.tools()!.call("search_customer_history", { query: "credit" });
     expect(server.calls[0]!.body).toMatchObject({ subject: marina, task_id: "t-1" });
   });
+
+  it("takes more handles and a content for the agent's answer", async () => {
+    const server = new MockServer().on("POST /v1/batch", batchOk());
+    const niadra = makeClient(server);
+    const task = niadra.task({ channel: "billing-agent", subject: marina, task_id: "t-1" });
+    const email = { type: "email" as const, value: "marina@example.com" };
+    task.agent("Credit applied.", { handles: [email], content: { type: "file", media_ref: "med_9", text: "Credit note" } });
+    await niadra.flush();
+    const item = server.callsTo("POST /v1/batch")[0]!.body.items[0];
+    expect(item).toMatchObject({ task_id: "t-1", handles: [marina, email], content: { type: "file", media_ref: "med_9", text: "Credit note" } });
+  });
 });

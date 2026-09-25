@@ -44,6 +44,13 @@ export interface TurnOptions {
   /** Overrides the stamp an agent turn would carry from `markInjected()`. */
   context_stamp?: ContextStamp;
   /**
+   * More ids of the same person, such as a BSUID next to the `wa_id`. They go along with the
+   * subject, which always comes first.
+   */
+  handles?: Handle[];
+  /** Replaces the text content, such as a voice note or an image by reference (`media_ref`). */
+  content?: Content;
+  /**
    * Agent turns only: what the model provider reported for the call behind the answer, as the
    * provider's response (OpenAI or Anthropic) or a `ModelUsage`. `wrap()` passes it for you. A
    * response without usage is left out; the turn is recorded either way.
@@ -260,13 +267,13 @@ export class Conversation {
 
   private turn(role: Speaker, text: string, options: TurnOptions): string | null {
     const transcript = options.stt_confidence !== undefined;
-    const content: Content = transcript
-      ? { type: "audio", transcript: text, stt_confidence: options.stt_confidence ?? null }
-      : { type: "text", text };
+    const content: Content =
+      options.content ??
+      (transcript ? { type: "audio", transcript: text, stt_confidence: options.stt_confidence ?? null } : { type: "text", text });
     const event: TrackEvent = {
       channel: this.channel,
       conversation_id: this.id,
-      handles: [this.subject],
+      handles: withHandles([this.subject], options.handles),
       speaker: options.speaker_id ? { role, id: options.speaker_id } : { role },
       content,
     };
@@ -279,4 +286,13 @@ export class Conversation {
     if (usage) event.usage = usage;
     return this.client.track(event);
   }
+}
+
+/** `base` and the extra handles, without repeating one. */
+export function withHandles(base: Handle[], extra: Handle[] | undefined): Handle[] {
+  const all = [...base];
+  for (const handle of extra ?? []) {
+    if (!all.some((known) => known.type === handle.type && known.value === handle.value && known.scope === handle.scope)) all.push(handle);
+  }
+  return all;
 }

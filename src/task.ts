@@ -2,6 +2,7 @@ import type { Niadra, WriteResult } from "./client.js";
 import type { AgentMemoryParams, AgentMemoryResult } from "./agent-memory.js";
 import type { ContextOptions, ContextParams, ContextResult, RequestOptions } from "./context.js";
 import type { TurnOptions } from "./conversation.js";
+import { withHandles } from "./conversation.js";
 import { uuidv7 } from "./ids.js";
 import { hasTarget } from "./items.js";
 import type { ActionEvent, TrackEvent, VerifyParams } from "./items.js";
@@ -122,10 +123,13 @@ export class Task {
   /** Captures what the agent answered, stamped with the context its prompt carried. */
   agent(text: string, options: TurnOptions = {}): string | null {
     const stamp = this.state.agentTurn();
+    const bound = this.bind({});
+    const extra = withHandles(bound.handles ?? [], options.handles);
     const event: TaskEvent = {
-      ...this.bind({}),
+      ...bound,
+      ...(extra.length ? { handles: extra } : {}),
       speaker: options.speaker_id ? { role: "ai_agent", id: options.speaker_id } : "ai_agent",
-      text,
+      ...(options.content ? { content: options.content } : { text }),
     };
     const context_stamp = options.context_stamp ?? stamp;
     if (context_stamp) event.context_stamp = context_stamp;

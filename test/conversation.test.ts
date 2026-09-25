@@ -212,4 +212,19 @@ describe("conversation()", () => {
     const convo = makeClient(new MockServer()).conversation({ subject: marina, channel: "app" });
     expect(convo.id).toMatch(/^[0-9a-f-]{36}$/);
   });
+
+  it("adds more ids of the same person to a turn and takes a content in place of the text", async () => {
+    const server = new MockServer().on("POST /v1/batch", batchOk());
+    const niadra = makeClient(server);
+    const convo = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-1" });
+    const bsuid = { type: "wa_bsuid" as const, value: "BR.1234", scope: "waba-1" };
+    convo.customer("voice note", { handles: [bsuid, marina], content: { type: "audio", media_ref: "med_1", transcript: "voice note" } });
+    convo.customer("it broke", { stt_confidence: 0.8 });
+    convo.agent("Sorry to hear that.", { handles: [bsuid] });
+    await niadra.flush();
+    const items = server.callsTo("POST /v1/batch").flatMap((call) => call.body.items);
+    expect(items[0]).toMatchObject({ handles: [marina, bsuid], content: { type: "audio", media_ref: "med_1", transcript: "voice note" } });
+    expect(items[1].content).toEqual({ type: "audio", transcript: "it broke", stt_confidence: 0.8 });
+    expect(items[2]).toMatchObject({ handles: [marina, bsuid], content: { type: "text", text: "Sorry to hear that." } });
+  });
 });

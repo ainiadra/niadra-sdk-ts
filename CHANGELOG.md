@@ -42,8 +42,13 @@ cd packages/n8n-nodes-niadra && pnpm check && npm publish --access public
   `enabled: false` when the space has it off), `searchAgentMemory()` and `remember()`, and
   `conversation.agentMemory()` / `task.agentMemory()` with the session's view.
   `tools({ agentMemory: true, writeAgentMemory: true })` adds `search_agent_memory` and `remember`; a
-  note refused for personal data reaches the model as a request to rewrite it. Every integration
-  takes `agentMemory`.
+  note refused for personal data reaches the model as a request to rewrite it; a saved one as
+  `{"saved":true,"note_id":...,"version":...}`, and one held for a person's approval as
+  `{"saved":false,"proposal_id":...,"status":"waiting for review"}`. `search_agent_memory` gives the
+  model each note's id, kind, title, body and tags. Every integration takes `agentMemory`.
+- `customer()` and `agent()` on conversations (and `agent()` on tasks) take `handles`, more ids of
+  the same person that go along with the subject, and `content`, which replaces the text (a voice
+  note or an image by reference); `customer()` already took `stt_confidence`.
 - `context({ format: "json" })` (and on conversations and tasks) returns `pack`, the pack as typed
   sections (`context-pack.v0`).
 - History filters take `when` (the period in the customer's words, in Portuguese, English or Spanish)

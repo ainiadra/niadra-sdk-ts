@@ -67,7 +67,8 @@ describe("the agent's memory tools", () => {
     const kit = makeClient(server).tools(marina, { conversation_id: "wa-1" }, { agentMemory: true });
     const output = await kit.call("search_agent_memory", { query: "credit on invoice", tags: ["erp"] });
     expect(server.calls[0]!.body).toEqual({ query: "credit on invoice", tags: ["erp"], conversation_id: "wa-1" });
-    expect(JSON.parse(output)).toEqual({ notes: [note] });
+    // Only what the model needs of each note, as the Python SDK renders it.
+    expect(JSON.parse(output)).toEqual({ notes: [{ note_id: note.note_id, kind: "procedure", title: note.title, body: note.body, tags: ["erp", "credit"] }] });
   });
 
   it("remember a note with the task as evidence", async () => {
@@ -75,7 +76,14 @@ describe("the agent's memory tools", () => {
     const kit = makeClient(server).tools(marina, { task_id: "t-9" }, { agentMemory: true, writeAgentMemory: true });
     const output = await kit.call("remember", JSON.stringify({ kind: "procedure", title: note.title, body: note.body, tags: ["erp"] }));
     expect(server.calls[0]!.body).toEqual({ kind: "procedure", title: note.title, body: note.body, tags: ["erp"], evidence: { task_id: "t-9" } });
-    expect(JSON.parse(output)).toEqual({ note });
+    expect(JSON.parse(output)).toEqual({ saved: true, note_id: note.note_id, version: 1 });
+  });
+
+  it("tell the model a note is waiting for review when the space holds agent writes for a person", async () => {
+    const server = new MockServer().on("POST /v1/agent-memory/notes", { status: 201, body: { proposal_id: "0192f0c1-0000-7000-8000-0000000000ff" } });
+    const kit = makeClient(server).tools(marina, {}, { agentMemory: true, writeAgentMemory: true });
+    const output = await kit.call("remember", { kind: "pitfall", title: "Dates need a zone", body: "The scheduling API refuses dates without one." });
+    expect(JSON.parse(output)).toEqual({ saved: false, proposal_id: "0192f0c1-0000-7000-8000-0000000000ff", status: "waiting for review" });
   });
 
   it("tell the model to rewrite a note with personal data, even on a strict client", async () => {
