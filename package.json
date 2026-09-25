@@ -21,6 +21,13 @@
     "function-calling",
     "whatsapp",
     "voice-ai",
+    "llamaindex",
+    "genkit",
+    "cloudflare-agents",
+    "voltagent",
+    "google-adk",
+    "strands-agents",
+    "retell",
     "customer-support",
     "lgpd",
     "gdpr"
@@ -160,6 +167,76 @@
         "default": "./dist/bedrock.cjs"
       }
     },
+    "./llamaindex": {
+      "import": {
+        "types": "./dist/llamaindex.d.ts",
+        "default": "./dist/llamaindex.js"
+      },
+      "require": {
+        "types": "./dist/llamaindex.d.cts",
+        "default": "./dist/llamaindex.cjs"
+      }
+    },
+    "./retell": {
+      "import": {
+        "types": "./dist/retell.d.ts",
+        "default": "./dist/retell.js"
+      },
+      "require": {
+        "types": "./dist/retell.d.cts",
+        "default": "./dist/retell.cjs"
+      }
+    },
+    "./genkit": {
+      "import": {
+        "types": "./dist/genkit.d.ts",
+        "default": "./dist/genkit.js"
+      },
+      "require": {
+        "types": "./dist/genkit.d.cts",
+        "default": "./dist/genkit.cjs"
+      }
+    },
+    "./cloudflare-agents": {
+      "import": {
+        "types": "./dist/cloudflare-agents.d.ts",
+        "default": "./dist/cloudflare-agents.js"
+      },
+      "require": {
+        "types": "./dist/cloudflare-agents.d.cts",
+        "default": "./dist/cloudflare-agents.cjs"
+      }
+    },
+    "./voltagent": {
+      "import": {
+        "types": "./dist/voltagent.d.ts",
+        "default": "./dist/voltagent.js"
+      },
+      "require": {
+        "types": "./dist/voltagent.d.cts",
+        "default": "./dist/voltagent.cjs"
+      }
+    },
+    "./google-adk": {
+      "import": {
+        "types": "./dist/google-adk.d.ts",
+        "default": "./dist/google-adk.js"
+      },
+      "require": {
+        "types": "./dist/google-adk.d.cts",
+        "default": "./dist/google-adk.cjs"
+      }
+    },
+    "./strands": {
+      "import": {
+        "types": "./dist/strands.d.ts",
+        "default": "./dist/strands.js"
+      },
+      "require": {
+        "types": "./dist/strands.d.cts",
+        "default": "./dist/strands.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -190,19 +267,29 @@
     "@edge-runtime/vm": "5.0.0",
     "@elevenlabs/elevenlabs-js": "2.69.0",
     "@eslint/js": "^10.0.1",
+    "@google/adk": "2.1.0",
     "@google/genai": "2.24.0",
     "@langchain/core": "1.2.12",
     "@langchain/langgraph": "1.4.17",
     "@langchain/openai": "1.5.13",
     "@livekit/agents": "1.9.0",
+    "@llamaindex/core": "0.6.23",
+    "@llamaindex/env": "0.1.31",
+    "@llamaindex/workflow": "1.1.25",
     "@mastra/core": "1.71.0",
     "@openai/agents": "0.18.0",
+    "@strands-agents/sdk": "1.19.0",
     "@types/node": "^24.13.6",
     "@vapi-ai/server-sdk": "2.0.1",
+    "@voltagent/core": "2.10.0",
+    "agents": "0.24.0",
     "ai": "7.0.114",
+    "esbuild": "0.27.7",
     "eslint": "^10.0.0",
+    "genkit": "1.42.0",
     "hono": "4.13.9",
     "miniflare": "4.20260730.0",
+    "retell-sdk": "6.0.1",
     "tsup": "^8.5.1",
     "twilio": "6.1.1",
     "typescript": "~5.9.3",
@@ -248,15 +335,42 @@
       ],
       "bedrock": [
         "./dist/bedrock.d.ts"
+      ],
+      "llamaindex": [
+        "./dist/llamaindex.d.ts"
+      ],
+      "retell": [
+        "./dist/retell.d.ts"
+      ],
+      "genkit": [
+        "./dist/genkit.d.ts"
+      ],
+      "cloudflare-agents": [
+        "./dist/cloudflare-agents.d.ts"
+      ],
+      "voltagent": [
+        "./dist/voltagent.d.ts"
+      ],
+      "google-adk": [
+        "./dist/google-adk.d.ts"
+      ],
+      "strands": [
+        "./dist/strands.d.ts"
       ]
     }
   },
   "peerDependencies": {
+    "@google/adk": "^2.1.0",
     "@langchain/core": "^1.0.0",
     "@livekit/agents": "^1.9.0",
+    "@llamaindex/core": "^0.6.23",
     "@mastra/core": "^1.0.0",
     "@openai/agents": ">=0.18.0 <1",
-    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0"
+    "@strands-agents/sdk": "^1.19.0",
+    "@voltagent/core": "^2.10.0",
+    "agents": ">=0.24.0 <1",
+    "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
+    "genkit": "^1.42.0"
   },
   "peerDependenciesMeta": {
     "@livekit/agents": {
@@ -272,6 +386,24 @@
       "optional": true
     },
     "@openai/agents": {
+      "optional": true
+    },
+    "@google/adk": {
+      "optional": true
+    },
+    "@llamaindex/core": {
+      "optional": true
+    },
+    "@strands-agents/sdk": {
+      "optional": true
+    },
+    "@voltagent/core": {
+      "optional": true
+    },
+    "agents": {
+      "optional": true
+    },
+    "genkit": {
       "optional": true
     }
   }

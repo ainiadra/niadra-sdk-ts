@@ -33,6 +33,7 @@ describe("entries", () => {
   });
 
   it("lets each integration load only its own framework, and the webhook adapters none", () => {
+    const listed = readFileSync(resolve(SRC, "../tsup.config.ts"), "utf8");
     const expected: Record<string, string[]> = {
       livekit: ["@livekit/agents"],
       elevenlabs: [],
@@ -46,8 +47,17 @@ describe("entries", () => {
       anthropic: [],
       "google-genai": [],
       bedrock: [],
+      llamaindex: ["@llamaindex/core/memory", "@llamaindex/core/tools"],
+      retell: [],
+      genkit: ["genkit/tool"],
+      // Runs on Workers: the AI SDK (which `agents` requires) and nothing else.
+      "cloudflare-agents": ["ai"],
+      voltagent: ["@voltagent/core", "ai"],
+      "google-adk": ["@google/adk"],
+      strands: ["@strands-agents/sdk"],
     };
     for (const [name, packages] of Object.entries(expected)) {
+      expect(listed, `${name} is built`).toContain(`"${name}"`);
       expect([...runtimeGraph(resolve(SRC, `integrations/${name}.ts`)).packages].sort(), name).toEqual(packages);
     }
   });

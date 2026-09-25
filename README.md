@@ -322,6 +322,15 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/anthropic` | Anthropic SDK (`messages.create`, streaming or not) | `@anthropic-ai/sdk` 0.128.0 over recorded API answers |
 | `@niadra/sdk/google-genai` | Google Gen AI SDK (`generateContent`, `generateContentStream`) | `@google/genai` 2.24.0 over recorded API answers |
 | `@niadra/sdk/bedrock` | Amazon Bedrock Converse (`ConverseCommand`, `ConverseStreamCommand`) | `@aws-sdk/client-bedrock-runtime` 3.1140.0 with a recorded service answer |
+| `@niadra/sdk/retell` | Retell AI (inbound and agent webhooks, custom functions, custom LLM websocket) | recorded payloads; signatures made by `retell-sdk` 6.0.1 and tool configurations typed with it |
+| `@niadra/sdk/llamaindex` | LlamaIndex.TS (agents, multi-agent workflows, chat engines) | `@llamaindex/core` 0.6.23 and `@llamaindex/workflow` 1.1.25, real agents over a scripted LLM |
+| `@niadra/sdk/genkit` | Genkit (Firebase Genkit for JavaScript) | `genkit` 1.42.0 with its own mock model, tool loop included |
+| `@niadra/sdk/voltagent` | VoltAgent | `@voltagent/core` 2.10.0 on AI SDK 6.0.291 (its peer range), a real `Agent` over a mock model |
+| `@niadra/sdk/google-adk` | Agent Development Kit for TypeScript (Google ADK) | `@google/adk` 2.1.0, a real `InMemoryRunner` with sub-agents over a scripted model |
+| `@niadra/sdk/strands` | Strands Agents for TypeScript (AWS), Node 22+ | `@strands-agents/sdk` 1.19.0, a real `Agent` through its AI SDK model adapter |
+| `@niadra/sdk/cloudflare-agents` | Cloudflare Agents SDK (`Agent`, `AIChatAgent`, voice agents, the Workers AI binding) | `agents` 0.24.0 types; run inside workerd by `pnpm runtimes` |
+
+Pipecat has no subpath here: its pipeline, where the model call happens, runs in Python (the Python SDK has `niadra[pipecat]`), and its JavaScript packages are browser clients and transports, where a Niadra key must never go. Daily's JavaScript SDK is a browser call client too. LangGraph.js is covered by `@niadra/sdk/langchain`: `withNiadraContext()` inside the model node gives the context without writing it into the graph's checkpointed state.
 
 Two more live in [`packages/`](packages), each with its own `package.json`, tests and README, apart from `@niadra/sdk`: [`n8n-nodes-niadra`](packages/n8n-nodes-niadra) (an n8n community node: Get Context, Track Turn, Search History, Verify, Handoff, End) and [`flowise-nodes-niadra`](packages/flowise-nodes-niadra) (a Flowise memory node that puts the context before every model call and records the turns, and a tool node with the kit).
 
@@ -386,6 +395,26 @@ app.post("/vapi", async (c) => {
 - `end-of-call-report` records every spoken turn with its time and ends the conversation.
 
 The full server is in [`examples/vapi-hono.ts`](examples/vapi-hono.ts).
+
+### Retell AI
+
+The same design as ElevenLabs and Vapi, on your server. Every request is checked against `X-Retell-Signature` (HMAC-SHA256 of the raw body and its timestamp, keyed with the Retell API key that signs webhooks, five-minute window), so the handlers take the raw body.
+
+```ts
+import { retell } from "@niadra/sdk/retell";
+
+const handlers = retell({ niadra, apiKey: process.env.RETELL_API_KEY });
+const respond = (c, { status, body }) => c.json(body, status);
+
+app.post("/retell/inbound", async (c) => respond(c, await handlers.inbound(await c.req.text(), c.req.raw.headers)));
+app.post("/retell/webhook", async (c) => respond(c, await handlers.webhook(await c.req.text(), c.req.raw.headers)));
+app.post("/retell/tools", async (c) => respond(c, await handlers.tool(await c.req.text(), c.req.raw.headers)));
+```
+
+- `inbound` answers the phone number's inbound webhook: it opens the conversation by `call_inbound.call_id`, records what the call proved (`verify`), reads the voice context and returns it as the dynamic variables `niadra_context` and `niadra_turn` (plus your `inboundFields(call)`, such as `override_agent_id`). Put `{{niadra_context}}` in the agent's prompt.
+- `tool` serves the navigation kit as custom functions; `handlers.toolConfigs({ url })` writes them for the LLM's `general_tools`. The customer comes from the call Retell sends with each function call, never from the arguments; other functions go to `otherTool(name, args, call)`.
+- `webhook` takes the agent webhook: `call_started` keeps the customer of outbound and web calls (the callee on outbound calls), `transfer_started` records the transfer to a person once, and `call_ended` records every utterance of `transcript_object` with its time in the call and ends the conversation.
+- `llm(callId, { send, instructions })` serves a custom LLM websocket: `open()` asks for the call details (and speaks your greeting), `receive(event)` answers pings, records the utterances once a response is required and resolves to a turn whose `messages` carry your instructions, the pack and the call so far with the suffix at the end; `turn.respond(text)` sends the response (streamed with `{ complete: false }`, with `endCall` or `transferNumber`). Utterances carry the same idempotency key on the websocket and in `call_ended`, so recording both ways stores them once.
 
 ### WhatsApp Cloud API
 
@@ -496,6 +525,91 @@ await runner.run(agent, text, { session: new NiadraSession(convo) });
 
 `niadraInstructions` makes the instructions dynamic: your text, then the pack, then the suffix (the SDK builds the system prompt from the instructions alone). `NiadraSession` is a `Session` that keeps the run's items in another session (`MemorySession` by default, or yours as `inner`) and records the customer's messages and the agent's answers. `niadraTools` returns non-strict function tools bound to the customer, since the canonical schemas have optional fields. `niadraRunHooks` records each `agent_handoff`. See [`examples/openai-agents.ts`](examples/openai-agents.ts).
 
+### LlamaIndex.TS
+
+```ts
+import { agent } from "@llamaindex/workflow";
+import { NiadraMemory, niadraTools } from "@niadra/sdk/llamaindex";
+
+const support = agent({ llm, systemPrompt: "You are Acme's support agent.", tools: niadraTools(convo), memory: new NiadraMemory(convo) });
+await support.run(text);
+```
+
+`NiadraMemory` is a LlamaIndex `Memory` (it takes the same messages and options as `createMemory()`), so it serves agents, multi-agent workflows and chat engines alike. In `getLLM()`, which every model call goes through, it records the customer's newest message once and returns a copy of the messages with the pack after the leading system messages and the suffix at the end of the last user message; the stored history keeps only what was said. `add()` records the final answer and a `handOff` between agents. For a memory you build yourself, `NiadraMemoryBlock` gives the same context as a fixed block (priority 0). `niadraTools` returns `FunctionTool`s with the canonical JSON Schemas.
+
+### Genkit
+
+```ts
+import { niadraMiddleware, niadraTools } from "@niadra/sdk/genkit";
+
+const { text } = await ai.generate({
+  model: googleAI.model("gemini-2.5-flash"),
+  system: "You are Acme's support agent.",
+  prompt: text,
+  tools: niadraTools(convo),
+  use: [niadraMiddleware(convo, { model: "googleai/gemini-2.5-flash" })],
+});
+```
+
+The middleware runs around every model call of the request, tool loop included: the pack joins your system message as a text part (several providers read only one system message), the suffix joins the last user message, the customer's newest message is recorded once and the answer with Genkit's usage (`inputTokens`, `cachedContentTokens`) when you name the model, which a model middleware does not see. The tools are unregistered Genkit tools, so each request carries the ones bound to its own customer.
+
+### VoltAgent
+
+```ts
+import { niadraHooks, niadraTools } from "@niadra/sdk/voltagent";
+
+const support = new Agent({ name: "support", instructions: "You are Acme's support agent.", model: openai("gpt-4.1"), hooks: niadraHooks() });
+await support.generateText(text, { context: { niadra: convo }, tools: niadraTools(convo) });
+```
+
+`onPrepareModelMessages` puts the pack after your instructions and the suffix at the end of the last user message only in what goes to the model, so VoltAgent's own memory keeps what was said; `onEnd` records the answer with the operation's usage; `onHandoff` records delegations to sub-agents when the hooks are built for one conversation. The conversation comes from the operation context under `niadra`. VoltAgent 2.x runs on AI SDK 6.
+
+### Google ADK
+
+```ts
+import { niadraAdk } from "@niadra/sdk/google-adk";
+
+const memory = niadraAdk({
+  session: (context) => niadra.conversation({ subject: handles.appUserId(context.userId), channel: "web_chat", conversation_id: context.sessionId }),
+});
+const support = new LlmAgent({ name: "support", model: "gemini-2.5-flash", instruction: "You are Acme's support agent.", ...memory });
+```
+
+One agent definition serves every ADK session: `session` is called once per ADK session id. `beforeModelCallback` records the user's message of each invocation once and adds the pack after your instruction in `systemInstruction` and the suffix to the last user content; ADK rebuilds the request from the session's events on every call, so nothing lands in the session. `afterModelCallback` records the final answer with `usageMetadata` and `transfer_to_agent` as a handoff. The tools declare the canonical JSON Schemas (`parametersJsonSchema`) and find the customer from the tool's context. Give the same `...memory` to sub-agents.
+
+### Strands Agents
+
+```ts
+import { NiadraPlugin } from "@niadra/sdk/strands";
+
+const support = new Agent({ model, systemPrompt: "You are Acme's support agent.", plugins: [new NiadraPlugin(convo)] });
+await support.invoke(text);
+```
+
+A Strands plugin: an input middleware of `InvokeModelStage` adds the pack after your system prompt and folds the suffix into the last user message (keeping the cache point before it, as Strands' own context injector does) without touching `agent.messages`; an output middleware records the answer with the model's usage (Bedrock and Anthropic count cached tokens apart, the others inside); `getTools()` adds the kit. Strands for TypeScript needs Node 22 or later.
+
+### Cloudflare Agents SDK
+
+```ts
+import { niadraAgent } from "@niadra/sdk/cloudflare-agents";
+
+export class Support extends AIChatAgent<Env> {
+  async onChatMessage() {
+    niadra ??= new Niadra({ apiKey: this.env.NIADRA_API_KEY });
+    const memory = niadraAgent(this, { niadra, subject: handles.appUserId(this.name) });
+    const result = streamText({
+      model: wrapLanguageModel({ model: workersAI("@cf/openai/gpt-oss-120b"), middleware: memory.middleware }),
+      system: "You are Acme's support agent.",
+      messages: await convertToModelMessages(this.messages),
+      tools: { ...memory.tools(), ...yourTools },
+    });
+    return result.toUIMessageStreamResponse();
+  }
+}
+```
+
+`niadraAgent(this, ...)` returns one helper per agent instance (a Durable Object), bound to a conversation whose id is the agent's name unless you give another. `middleware` is the AI SDK middleware with one addition: after each answer it hands the queued writes to `ctx.waitUntil()`. For a model called without the AI SDK (the Workers AI binding, a voice agent's `onTurn()`), `prepare(messages)` returns the messages with the context in place and `record(text, { usage: workersAiUsage(answer, model) })` records the answer. Only web APIs and the AI SDK: `pnpm runtimes` bundles it and runs it inside workerd.
+
 ### Anthropic, Google Gen AI and Amazon Bedrock
 
 The same idea as `wrap()` for OpenAI, one wrapper per SDK. The client itself is never modified.
@@ -603,6 +717,8 @@ pnpm build     # ESM and CommonJS into dist/, one entry per integration
 pnpm runtimes  # the build on Deno, Bun, workerd and the Edge Runtime
 pnpm --filter "./packages/*" check   # the n8n and Flowise nodes
 ```
+
+VoltAgent 2.x runs on AI SDK 6 while every other test runs on AI SDK 7; `.pnpmfile.cjs` gives VoltAgent its own copy at install. The Strands tests run on Node 22 and later and skip on Node 20.
 
 ## Documentation in Portuguese
 

@@ -14,6 +14,13 @@ const integrations = [
   "anthropic",
   "google-genai",
   "bedrock",
+  "llamaindex",
+  "retell",
+  "genkit",
+  "cloudflare-agents",
+  "voltagent",
+  "google-adk",
+  "strands",
 ];
 
 export default defineConfig({

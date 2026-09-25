@@ -2,8 +2,9 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  // The packages under packages/ have their own checks (pnpm --filter "./packages/*" check).
-  { ignores: ["dist", "coverage", "packages"] },
+  // The packages under packages/ have their own checks (pnpm --filter "./packages/*" check);
+  // .pnpmfile.cjs is install configuration read by pnpm alone.
+  { ignores: ["dist", "coverage", "packages", ".pnpmfile.cjs"] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
