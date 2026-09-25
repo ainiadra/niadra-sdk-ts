@@ -318,6 +318,7 @@ All of it is fail-open: when Niadra is slow or down, the agent answers without m
 | `@niadra/sdk/ai-sdk` | Vercel AI SDK 5, 6 and 7 | `ai` 7.0.114 with its mock models (v4 and v3 specifications) |
 | `@niadra/sdk/mastra` | Mastra | `@mastra/core` 1.71.0, a real `Agent` over a mock model |
 | `@niadra/sdk/langchain` | LangChain.js and LangGraph.js | `@langchain/core` 1.2.12, `@langchain/langgraph` 1.4.17, a real graph with `ToolNode` |
+| `@niadra/sdk/openai-agents` | OpenAI Agents SDK (JavaScript) | `@openai/agents` 0.18.0, a real `Runner` over a scripted model |
 
 <!-- integrations -->
 
@@ -475,6 +476,22 @@ graph.addNode("tools", new ToolNode(tools));
 ```
 
 `niadraContext` and `withNiadraContext` record the newest human message once and return the messages with the pack as a system message after the leading ones and the suffix at the end of the last human message. `NiadraCallbackHandler` records each answer with the usage LangChain standardizes in `usage_metadata` (prompt cache reads and writes included); answers that only call tools record nothing. `niadraTools` returns `DynamicStructuredTool`s bound to the customer. See [`examples/langgraph.ts`](examples/langgraph.ts).
+
+### OpenAI Agents SDK
+
+```ts
+import { NiadraSession, niadraInstructions, niadraRunHooks, niadraTools } from "@niadra/sdk/openai-agents";
+
+const agent = new Agent({
+  name: "Support",
+  instructions: niadraInstructions("You are Acme's support agent.", convo),
+  tools: niadraTools(convo),
+});
+niadraRunHooks(runner, convo);                                  // handoffs between agents
+await runner.run(agent, text, { session: new NiadraSession(convo) });
+```
+
+`niadraInstructions` makes the instructions dynamic: your text, then the pack, then the suffix (the SDK builds the system prompt from the instructions alone). `NiadraSession` is a `Session` that keeps the run's items in another session (`MemorySession` by default, or yours as `inner`) and records the customer's messages and the agent's answers. `niadraTools` returns non-strict function tools bound to the customer, since the canonical schemas have optional fields. `niadraRunHooks` records each `agent_handoff`. See [`examples/openai-agents.ts`](examples/openai-agents.ts).
 
 ## Failure behavior
 

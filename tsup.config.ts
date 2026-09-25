@@ -10,6 +10,7 @@ const integrations = [
   "ai-sdk",
   "mastra",
   "langchain",
+  "openai-agents",
 ];
 
 export default defineConfig({

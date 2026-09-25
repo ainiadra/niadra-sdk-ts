@@ -120,6 +120,16 @@
         "default": "./dist/langchain.cjs"
       }
     },
+    "./openai-agents": {
+      "import": {
+        "types": "./dist/openai-agents.d.ts",
+        "default": "./dist/openai-agents.js"
+      },
+      "require": {
+        "types": "./dist/openai-agents.d.cts",
+        "default": "./dist/openai-agents.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -196,6 +206,9 @@
       ],
       "langchain": [
         "./dist/langchain.d.ts"
+      ],
+      "openai-agents": [
+        "./dist/openai-agents.d.ts"
       ]
     }
   },
