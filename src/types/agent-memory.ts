@@ -98,7 +98,11 @@ export interface AgentNoteProposal {
   status: ProposalStatus;
   /** The note an approval created. */
   note_id?: string | null;
-  /** Why a distillation failed: `nothing_to_propose`, `personal_data`, `no_turns`. */
+  /**
+   * Why a distillation failed: `nothing_to_propose`, `personal_data`, `no_turns`, or `unconfirmed_link`
+   * (the conversation spoke only through a link a claim made and nobody confirmed yet; ask again once it is
+   * confirmed).
+   */
   problem?: string | null;
   created_at: string;
   decided_at?: string | null;
