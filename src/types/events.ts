@@ -219,6 +219,11 @@ export interface BatchResponse {
   accepted: number;
   duplicates: number;
   errors: ItemError[];
+  /**
+   * Values held back from the accepted items before storage, by type (`card`, `cvv`, `password`,
+   * `secret`): the stored text says `[retido:cartão ****1234]` where the value was.
+   */
+  masked: Record<string, number>;
 }
 
 /** Body of `POST /v1/media/uploads`. */

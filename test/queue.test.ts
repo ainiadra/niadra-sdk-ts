@@ -197,7 +197,7 @@ describe("retries", () => {
 describe("partial failures and heartbeats", () => {
   it("settles each item with its own error from a 207", async () => {
     const send = vi.fn(
-      async (): Promise<BatchResponse> => ({ accepted: 1, duplicates: 0, errors: [{ index: 1, code: "invalid_input", detail: "channel" }] }),
+      async (): Promise<BatchResponse> => ({ accepted: 1, duplicates: 0, errors: [{ index: 1, code: "invalid_input", detail: "channel" }], masked: {} }),
     );
     const queue = new EventQueue(send, { ...DEFAULT_QUEUE, flushAt: 100 }, spyLogger());
     const outcomes: (string | null)[] = [];
@@ -213,7 +213,7 @@ describe("partial failures and heartbeats", () => {
     const batches: BatchItem[][] = [];
     const send = vi.fn(async (items: BatchItem[]): Promise<BatchResponse> => {
       batches.push(items);
-      return { accepted: items.length, duplicates: 0, errors: [] };
+      return { accepted: items.length, duplicates: 0, errors: [], masked: {} };
     });
     const queue = new EventQueue(send, { ...DEFAULT_QUEUE, flushAt: 100 }, spyLogger(), () => now);
     const item = (key: string): BatchItem => ({ type: "task.ended", idempotency_key: key, task_id: "t", occurred_at: "x" });
@@ -231,7 +231,7 @@ describe("partial failures and heartbeats", () => {
   });
 
   it("refuses items after close()", async () => {
-    const send = vi.fn(async (): Promise<BatchResponse> => ({ accepted: 0, duplicates: 0, errors: [] }));
+    const send = vi.fn(async (): Promise<BatchResponse> => ({ accepted: 0, duplicates: 0, errors: [], masked: {} }));
     const queue = new EventQueue(send, DEFAULT_QUEUE, spyLogger());
     await queue.close();
     const settle = vi.fn();

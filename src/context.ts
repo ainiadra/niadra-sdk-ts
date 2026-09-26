@@ -49,6 +49,13 @@ export interface ContextParams {
   target?: TargetModel;
   /** `json` also returns the pack as typed sections in `pack` (`context-pack.v1`). Defaults to `text`. */
   format?: ContextFormat;
+  /**
+   * With memory v2: adds `why` to each of `pack.slots`, naming the retrieval channels that
+   * ranked it, the fused score, the weights version and, for a derived line, the rule behind it.
+   * Requires `format: "json"`. It changes nothing else: the pinned text, the slots chosen and the
+   * receipt are the same bytes with or without it.
+   */
+  explain?: boolean;
 }
 
 /** Arguments of `prefetch()`: who the turn is about, as in `context()`, and the turn so far. */
@@ -80,6 +87,11 @@ export interface ContextOptions extends RequestOptions {
   cache?: boolean | undefined;
   /** For `conversation.context()` and `task.context()`: `json` also returns `pack`. */
   format?: ContextFormat | undefined;
+  /**
+   * For `conversation.context()` and `task.context()`: adds `why` to each of `pack.slots`.
+   * Requires `format: "json"`.
+   */
+  explain?: boolean | undefined;
 }
 
 /**
@@ -146,6 +158,10 @@ export function buildContextRequest(params: ContextParams): ContextRequest {
   const format: string = params.format ?? "text";
   if (format !== "text" && format !== "json") throw new NiadraValidationError("format is `text` or `json`");
   if (format === "json") request.format = "json";
+  if (params.explain) {
+    if (format !== "json") throw new NiadraValidationError('explain requires format: "json"');
+    request.explain = true;
+  }
   return request;
 }
 
@@ -196,6 +212,7 @@ export function cacheKey(request: ContextRequest): string {
     request.query ?? null,
     request.target ?? null,
     request.format ?? "text",
+    request.explain ?? false,
   ]);
 }
 

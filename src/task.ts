@@ -91,7 +91,7 @@ export class Task {
    * Resolves with an empty result, never rejects, unless the client is strict.
    */
   async context(options: ContextOptions & { query?: string } = {}): Promise<ContextResult> {
-    const { query, format, ...requestOptions } = options;
+    const { query, format, explain, ...requestOptions } = options;
     const target = this.object ? { object: this.object } : this.params.subject ? { subject: this.params.subject } : {};
     const params: ContextParams = {
       ...target,
@@ -101,6 +101,7 @@ export class Task {
       ...(this.level ? { verification: this.level } : {}),
       ...(this.params.target ? { target: this.params.target } : {}),
       ...(format === "json" ? { format } : {}),
+      ...(explain ? { explain } : {}),
     };
     if (query) return this.client.context({ ...params, query }, requestOptions);
     if (this.state.wantsDelta) params.delta = true;

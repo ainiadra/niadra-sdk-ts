@@ -4,7 +4,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderSuffix } from "../src/index.js";
-import type { ContextPack, ContextResponse, PackLayer, PackSection, PackSlot, PackSlotDerived, PackStamp } from "../src/index.js";
+import type {
+  ContextPack,
+  ContextResponse,
+  PackLayer,
+  PackSection,
+  PackSlot,
+  PackSlotDerived,
+  PackStamp,
+  SlotChannelRank,
+  SlotWhy,
+} from "../src/index.js";
 
 const read = (path: string): unknown => JSON.parse(readFileSync(new URL(`../spec/${path}`, import.meta.url), "utf8"));
 
@@ -38,9 +48,25 @@ const packKeys: Record<keyof ContextPack, true> = {
 };
 const sectionKeys: Record<keyof PackSection, true> = { name: true, label: true, layer: true, lines: true };
 const stampKeys: Record<keyof PackStamp, true> = { etag: true, version: true, as_of: true, manifest_hash: true };
-const slotKeys: Record<keyof PackSlot, true> = { section: true, derived: true, channels: true, text: true };
+const slotKeys: Record<keyof PackSlot, true> = { section: true, derived: true, channels: true, text: true, why: true };
 const layers: Record<PackLayer, true> = { account: true, stable: true, volatile: true };
 const derived: Record<PackSlotDerived, true> = { count: true, no_record: true, withheld: true };
+const slotWhyKeys: Record<keyof SlotWhy, true> = {
+  item_id: true,
+  score: true,
+  channels: true,
+  weights_version: true,
+  via: true,
+  excerpt: true,
+  rule: true,
+  basis: true,
+};
+const slotChannelRankKeys: Record<keyof SlotChannelRank, true> = {
+  channel: true,
+  position: true,
+  weight: true,
+  contribution: true,
+};
 
 describe("the Context Pack specification", () => {
   it("is the v1 schema, with the pack as data and the turn's slots", () => {
@@ -57,6 +83,8 @@ describe("the Context Pack specification", () => {
     expect(Object.keys(slotKeys).sort()).toEqual(fields("PackSlot"));
     expect(Object.keys(layers).sort()).toEqual([...schema.$defs.PackSection!.properties.layer!.enum!].sort());
     expect(Object.keys(derived).sort()).toEqual([...schema.$defs.PackSlot!.properties.derived!.anyOf![0]!.enum!].sort());
+    expect(Object.keys(slotWhyKeys).sort()).toEqual(fields("SlotWhy"));
+    expect(Object.keys(slotChannelRankKeys).sort()).toEqual(fields("SlotChannelRank"));
   });
 
   it("gives an example the SDK reads as a typed answer, the slots between the live turns and the delta", () => {

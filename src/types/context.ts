@@ -25,6 +25,14 @@ export interface ContextRequest {
   known_etag?: string | null;
   /** `json` also returns `pack`: the same pack as typed sections (`context-pack.v1`). Defaults to `text`. */
   format?: ContextFormat;
+  /**
+   * Memory v2, with `format: "json"` and `query`: each of `pack.slots` also says `why` it was
+   * chosen (its position in each retrieval channel, each channel's weighted share of the fused
+   * score, the weights version, the rule of a derived line). Requires `format: "json"`. It changes
+   * nothing else: the pinned text, the slots chosen and the receipt are the same bytes with or
+   * without it.
+   */
+  explain?: boolean;
 }
 
 /**
@@ -69,6 +77,42 @@ export interface PackStamp {
 /** What a derived line of the slots says: a count, no record, or items withheld until verification. */
 export type PackSlotDerived = "count" | "no_record" | "withheld";
 
+/** One retrieval channel's part in a slot's fused score (weighted reciprocal rank fusion). */
+export interface SlotChannelRank {
+  /** `exact`, `values`, `lexical`, `temporal`, `semantic` or `linked`. */
+  channel: string;
+  /** 1-based, in that channel's own ranking for the turn. */
+  position: number;
+  /** The channel's weight in this fusion. */
+  weight: number;
+  /** `weight / (60 + position)`: what the channel added to `score`. */
+  contribution: number;
+}
+
+/** Why a line took a slot (`explain`). Ids, positions and numbers; never a line or a value. */
+export interface SlotWhy {
+  /** The item, as manifests and context-use name it; absent for a derived line. */
+  item_id?: string | null;
+  /** The fused score: the sum of the channels' contributions. */
+  score?: number | null;
+  /** Each channel that ranked the item, in fusion order. */
+  channels: SlotChannelRank[];
+  /** The space's learned fusion weights used; absent for the defaults. */
+  weights_version?: number | null;
+  /** For an item the `linked` channel brought: the exact match it is tied to, as `item_id`. */
+  via?: string | null;
+  /** The line was cut to the sentences that answer the turn. */
+  excerpt?: boolean;
+  /** For a derived line: `count_complaints`, `count_conversations`, `no_record` or `withheld_may_hold`. */
+  rule?: string | null;
+  /**
+   * For a derived line, what the rule counted or missed: `basis` (the conversation that chose
+   * the category), `category`, `counted`, `window_days`; `asked_types`, `identifiers` (how many
+   * numbers the turn named, never which), `withheld`.
+   */
+  basis: Record<string, unknown>;
+}
+
 /**
  * One line of this turn's slots (memory v2): an item the customer's last turn selected, or a
  * line the server derived. The same line as in `ContextResponse.slots`.
@@ -78,10 +122,12 @@ export interface PackSlot {
   section: string;
   /** On a derived line: `count`, `no_record` or `withheld`; otherwise `null`. */
   derived?: PackSlotDerived | null;
-  /** How the item was found: `exact`, `lexical`, `temporal`, `values`, `semantic`. */
+  /** How the item was found: `exact`, `lexical`, `temporal`, `values`, `semantic`, `linked`. */
   channels: string[];
   /** The line as `slots` prints it. */
   text: string;
+  /** With `explain`: why this line was chosen. */
+  why?: SlotWhy | null;
 }
 
 /**

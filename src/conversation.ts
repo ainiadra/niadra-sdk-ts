@@ -155,7 +155,7 @@ export class Conversation {
    * pinned, so it leaves the conversation's deltas alone.
    */
   async context(options: ContextOptions & { query?: string; turn?: string | null } = {}): Promise<ContextResult> {
-    const { query, turn, format, ...requestOptions } = options;
+    const { query, turn, format, explain, ...requestOptions } = options;
     const params: ContextParams = {
       subject: this.subject,
       view: this.view,
@@ -164,6 +164,7 @@ export class Conversation {
       ...(this.params.about ? { about: this.params.about } : {}),
       ...(this.params.target ? { target: this.params.target } : {}),
       ...(format === "json" ? { format } : {}),
+      ...(explain ? { explain } : {}),
     };
     if (query) return this.client.context({ ...params, query }, requestOptions);
     if (this.state.wantsDelta) params.delta = true;

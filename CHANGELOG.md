@@ -2,6 +2,22 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 0.5.0
+
+### Added
+
+- `explain` on `ContextRequest`, `ContextParams` and `ContextOptions` (`niadra.context()`,
+  `conversation.context()` and `task.context()`), memory v2 only: requires `format: "json"`
+  (throws `NiadraValidationError` otherwise) and adds `why` to each of `pack.slots`, a `SlotWhy`
+  naming the retrieval channels that ranked the item (`SlotChannelRank`: `channel`, `position`,
+  `weight`, `contribution`), the fused `score`, the `weights_version` used and, for a derived
+  line, the `rule` and `basis` behind it. It changes nothing else: the pinned text, the slots
+  chosen and the receipt are the same bytes with or without it.
+- Types: `SlotChannelRank`, `SlotWhy`, `PackSlot.why`, and `ContextUseEntry` (with `slots`), the
+  server's per-delivery measurement, ids public.
+- `BatchResponse.masked` and `IngestStatus.masked`: values held back from storage before it, by
+  type (`card`, `cvv`, `password`, `secret`), counts only, never the values.
+
 ## [0.4.0] - 2026-09-25
 
 Ready to publish; not on npm yet. It carries everything in 0.2.0 and 0.3.0, so since neither was ever
