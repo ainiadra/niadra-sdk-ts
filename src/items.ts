@@ -11,6 +11,7 @@ import type { Handle, ObjectRef, Subject } from "./types/common.js";
 import {
   MAX_EVENT_TEXT,
   type ActionInfo,
+  type Backing,
   type Closes,
   type Content,
   type ContextStamp,
@@ -90,6 +91,8 @@ export interface TrackEvent extends EventBase {
   action?: ActionInfo | null;
   /** What the provider reported for the model call behind an `ai_agent` message; only valid there. */
   usage?: ModelUsage | null;
+  /** What the backing check found in an agent's message; only valid there. `agent()` sets it. */
+  backing?: Backing | null;
 }
 
 /** An agent action for `action()`: what an agent did in a system of record. */
@@ -206,6 +209,12 @@ function checkCloses(closes: Closes | null | undefined): void {
   if (byId === byObject) fail("closes takes either item_id, or object and operation");
 }
 
+function checkBacking(backing: Backing): void {
+  if (!Number.isInteger(backing.checked) || backing.checked < 0 || backing.checked > 500) fail("backing.checked is 0 to 500");
+  if (backing.unbacked_values.length > backing.checked) fail("unbacked_values cannot outnumber the values checked");
+  if (!backing.guard_violations.every((id) => /^[0-9a-f]{8}$/.test(id))) fail("guard_violations are short ids");
+}
+
 function checkUsage(usage: ModelUsage): void {
   if (!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(usage.provider)) fail("usage.provider must be lowercase, like `openai`");
   if (!/^[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,127}$/.test(usage.model)) fail("usage.model is not a model name");
@@ -254,6 +263,12 @@ export function buildEvent(input: TrackEvent): EventItem {
     if (kind !== "message" || speaker.role !== "ai_agent") fail("`usage` is only valid on a message of the `ai_agent`");
     checkUsage(input.usage);
   }
+  if (input.backing) {
+    if (kind !== "message" || !["ai_agent", "human_agent"].includes(speaker.role)) {
+      fail("`backing` is only valid on a message of an agent");
+    }
+    checkBacking(input.backing);
+  }
 
   const event: EventItem = {
     type: "event",
@@ -271,6 +286,7 @@ export function buildEvent(input: TrackEvent): EventItem {
   if (input.fields) event.fields = input.fields;
   if (input.action) event.action = input.action;
   if (input.usage) event.usage = input.usage;
+  if (input.backing) event.backing = input.backing;
   copyOptional(event, input);
   assertSerializable(event);
   return event;

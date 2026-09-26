@@ -7,6 +7,7 @@ import { renderSuffix } from "../src/index.js";
 import type {
   ContextPack,
   ContextResponse,
+  PackGuard,
   PackLayer,
   PackSection,
   PackSlot,
@@ -48,7 +49,8 @@ const packKeys: Record<keyof ContextPack, true> = {
 };
 const sectionKeys: Record<keyof PackSection, true> = { name: true, label: true, layer: true, lines: true };
 const stampKeys: Record<keyof PackStamp, true> = { etag: true, version: true, as_of: true, manifest_hash: true };
-const slotKeys: Record<keyof PackSlot, true> = { section: true, derived: true, channels: true, text: true, why: true };
+const slotKeys: Record<keyof PackSlot, true> = { section: true, id: true, derived: true, channels: true, text: true, why: true };
+const guardKeys: Record<keyof PackGuard, true> = { id: true, value_type: true, value: true };
 const layers: Record<PackLayer, true> = { account: true, stable: true, volatile: true };
 const derived: Record<PackSlotDerived, true> = { count: true, no_record: true, withheld: true };
 const slotWhyKeys: Record<keyof SlotWhy, true> = {
@@ -85,6 +87,15 @@ describe("the Context Pack specification", () => {
     expect(Object.keys(derived).sort()).toEqual([...schema.$defs.PackSlot!.properties.derived!.anyOf![0]!.enum!].sort());
     expect(Object.keys(slotWhyKeys).sort()).toEqual(fields("SlotWhy"));
     expect(Object.keys(slotChannelRankKeys).sort()).toEqual(fields("SlotChannelRank"));
+    expect(Object.keys(guardKeys).sort()).toEqual(fields("PackGuard"));
+    expect(Object.keys(schema.properties)).toContain("guards");
+  });
+
+  it("types each guard line beside the slots, named by the short id of its value", () => {
+    const answer = read("examples/context-pack-v1-turn-as-data.json") as ContextResponse;
+    const lines = answer.pack!.slots.filter((slot) => slot.section === "guard");
+    expect(lines.map((slot) => slot.id)).toEqual(answer.guards!.map((guard) => guard.id));
+    expect(lines[0]!.text).toContain(answer.guards![0]!.value);
   });
 
   it("gives an example the SDK reads as a typed answer, the slots between the live turns and the delta", () => {

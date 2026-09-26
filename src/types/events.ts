@@ -102,6 +102,22 @@ export interface ModelUsage {
   cache_write_tokens?: number;
 }
 
+/** The kinds of value the backing check reads: an amount, a date, a number of three or more digits, a code. */
+export type ValueKind = "amount" | "date" | "number" | "code";
+
+/**
+ * What the backing check found in an agent's turn: kinds, counts and short ids, never a value.
+ * `Conversation.agent()` and `Task.agent()` set it for you.
+ */
+export interface Backing {
+  /** Values the check read in the turn, up to 500. */
+  checked: number;
+  /** One entry per value with no source, in the order said: its kind only. */
+  unbacked_values: { kind: ValueKind }[];
+  /** Short ids of the guard lines (`PackGuard.id`) the turn went against. */
+  guard_violations: string[];
+}
+
 /** A message, a system event or an agent action, exactly as sent on the wire. */
 export interface EventItem {
   type: "event";
@@ -135,6 +151,8 @@ export interface EventItem {
    * facts the event gave leave the pack and the history unless a read asks for expired items.
    */
   valid_until?: string | null;
+  /** An agent's message: which values it states have no source, and which guards it went against. */
+  backing?: Backing | null;
 }
 
 /** States that several handles belong to the same subject. */

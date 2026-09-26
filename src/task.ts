@@ -1,7 +1,8 @@
 import type { Niadra, WriteResult } from "./client.js";
 import type { AgentMemoryParams, AgentMemoryResult } from "./agent-memory.js";
 import type { ContextOptions, ContextParams, ContextResult, RequestOptions } from "./context.js";
-import type { TurnOptions } from "./conversation.js";
+import type { BackingReport, UnbackedValue } from "./backing.js";
+import type { AgentTurnOptions, TurnOptions } from "./conversation.js";
 import { withHandles } from "./conversation.js";
 import { uuidv7 } from "./ids.js";
 import { hasTarget } from "./items.js";
@@ -12,7 +13,7 @@ import type { Timings } from "./session.js";
 import type { BoundTools, ToolBinding, ToolOptions } from "./tools.js";
 import type { Handle, ObjectRef } from "./types/common.js";
 import type { TargetModel } from "./types/context.js";
-import type { ContextStamp } from "./types/events.js";
+import type { Backing, ContextStamp } from "./types/events.js";
 import type { Verification, VerifyMethod, View } from "./types/vocabulary.js";
 import { asModelUsage } from "./usage.js";
 
@@ -103,9 +104,9 @@ export class Task {
       ...(format === "json" ? { format } : {}),
       ...(explain ? { explain } : {}),
     };
-    if (query) return this.client.context({ ...params, query }, requestOptions);
+    if (query) return this.state.observe(await this.client.context({ ...params, query }, requestOptions));
     if (this.state.wantsDelta) params.delta = true;
-    return this.state.absorb(await this.client.context(params, requestOptions));
+    return this.state.observe(this.state.absorb(await this.client.context(params, requestOptions)));
   }
 
   /**
@@ -121,8 +122,35 @@ export class Task {
     this.state.markInjected(context, at);
   }
 
-  /** Captures what the agent answered, stamped with the context its prompt carried. */
-  agent(text: string, options: TurnOptions = {}): string | null {
+  /**
+   * Captures what the agent answered, stamped with the context its prompt carried and with what the
+   * backing check found in it. With `strict: true` an answer with a value no source backs, or one
+   * against a guard line, is not sent: its values come back instead. See `Conversation.agent()`.
+   */
+  agent(text: string, options?: AgentTurnOptions & { strict?: false }): string | null;
+  agent(text: string, options: AgentTurnOptions & { strict: true }): UnbackedValue[];
+  agent(text: string, allOptions: AgentTurnOptions = {}): string | null | UnbackedValue[] {
+    const { strict, ...options } = allOptions;
+    const checked = this.state.checkAnswer(text);
+    if (strict && checked?.problems.length) return checked.problems;
+    const key = this.agentTurn(text, options, checked?.backing);
+    return strict ? [] : key;
+  }
+
+  /** The last backing check of an agent's answer: the values with no source, as said. */
+  get lastBacking(): BackingReport | null {
+    return this.state.lastBacking;
+  }
+
+  /**
+   * Records what a tool the agent called returned (text, or anything JSON can write), so the values
+   * in it back the agent's answers. Nothing is sent.
+   */
+  toolResult(result: unknown): void {
+    this.state.toolResult(result);
+  }
+
+  private agentTurn(text: string, options: TurnOptions, backing?: Backing): string | null {
     const stamp = this.state.agentTurn();
     const bound = this.bind({});
     const extra = withHandles(bound.handles ?? [], options.handles);
@@ -139,6 +167,7 @@ export class Task {
     if (options.visibility) event.visibility = options.visibility;
     const usage = asModelUsage(options.usage);
     if (usage) event.usage = usage;
+    if (backing) event.backing = backing;
     return this.track(event);
   }
 
@@ -164,6 +193,8 @@ export class Task {
   /** Records an action taken in a system of record, such as `credit` on an invoice, stamped like its turns. */
   action(event: TaskAction): string | null {
     const stamp = this.state.actionStamp(event.speaker);
+    // What the system of record answered backs the agent's next words.
+    if (event.result) this.state.sources.add(event.result);
     return this.client.action({
       ...this.bind(event),
       ...(stamp ? { context_stamp: stamp } : {}),
@@ -189,7 +220,7 @@ export class Task {
       },
     };
     if (this.params.about) binding.about = this.params.about;
-    return this.client.tools(subject, binding, options);
+    return this.state.observeTools(this.client.tools(subject, binding, options));
   }
 
   /** Emits `task.ended` and drops the task's cached packs. Safe to call twice. */

@@ -1,8 +1,10 @@
+import { Sources, backingOf, check, problems } from "./backing.js";
+import type { BackingReport, UnbackedValue } from "./backing.js";
 import { renderSuffix } from "./context.js";
 import { isUnpinned } from "./turns.js";
 import type { ContextResult } from "./context.js";
-import type { ContextResponse } from "./types/context.js";
-import type { ContextStamp, SpeakerRef } from "./types/events.js";
+import type { ContextResponse, PackGuard } from "./types/context.js";
+import type { Backing, ContextStamp, SpeakerRef } from "./types/events.js";
 import type { Speaker } from "./types/vocabulary.js";
 
 /** Bounds the suffix of a very long conversation; the oldest deltas go first. */
@@ -29,6 +31,11 @@ export class SessionState {
   private firstInjection: Date | null = null;
   private firstAgentTurn: Date | null = null;
   private last: ContextResult | null = null;
+  /** What the agent had in this session, for the backing check of its answers. */
+  readonly sources = new Sources();
+  /** The guards of the last read: they hold the answers to the turn they were written for. */
+  private guards = new Map<string, PackGuard>();
+  private lastReport: BackingReport | null = null;
 
   /** After the first pack, every read also asks what changed since. */
   get wantsDelta(): boolean {
@@ -65,6 +72,56 @@ export class SessionState {
     const absorbed = response ? withDeltas(result, response, this.deltas) : result;
     this.last = absorbed;
     return absorbed;
+  }
+
+  /** The last backing check of an agent's answer. */
+  get lastBacking(): BackingReport | null {
+    return this.lastReport;
+  }
+
+  /** What a read gave the agent: the pack, the turn block and the guards back its answers. */
+  observe(result: ContextResult): ContextResult {
+    this.sources.add(result.text);
+    this.sources.add(result.suffix);
+    this.guards = new Map((result.response?.guards ?? []).map((guard) => [guard.value_type, guard]));
+    return result;
+  }
+
+  /**
+   * The backing check of an agent's answer, which never fails the turn: what the turn carries,
+   * and what `strict` returns (the values with no source or against a guard), or `null`.
+   */
+  checkAnswer(text: string): { backing: Backing; problems: UnbackedValue[] } | null {
+    try {
+      const report = check(text, this.sources, this.guards.values());
+      this.lastReport = report;
+      return { backing: backingOf(report), problems: problems(report) };
+    } catch {
+      this.lastReport = null;
+      return null;
+    }
+  }
+
+  /** Records a tool's result as a source of the agent's answers; never throws. */
+  toolResult(result: unknown): void {
+    try {
+      this.sources.add(typeof result === "string" ? result : JSON.stringify(result));
+    } catch {
+      // A result JSON cannot write backs nothing; the turn goes on.
+    }
+  }
+
+  /** The kit, with each tool result recorded as a source of the agent's answers. */
+  observeTools<T extends { call(name: string, args: string | Record<string, unknown>): Promise<string> }>(kit: T): T {
+    const call = kit.call.bind(kit);
+    return {
+      ...kit,
+      call: async (name: string, args: string | Record<string, unknown>) => {
+        const result = await call(name, args);
+        this.toolResult(result);
+        return result;
+      },
+    };
   }
 
   /** Starts over from the next pack the server pins, as after a raised verification level. */

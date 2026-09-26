@@ -17,6 +17,25 @@ All notable changes to this package are documented here. The format follows [Kee
   server's per-delivery measurement, ids public.
 - `BatchResponse.masked` and `IngestStatus.masked`: values held back from storage before it, by
   type (`card`, `cvv`, `password`, `secret`), counts only, never the values.
+- Backed answers. `conversation.agent()` and `task.agent()` now read every number, date, code and
+  amount the answer states (amounts with a currency or a money word, dates in PT, EN and ES, codes
+  with three or more digits, numbers of three or more digits; never words, one or two digits, times
+  or a year on its own) and look each up in what the agent had: the packs and suffixes it read, the
+  customer's words, a human attendant's, the results of `action({ result })`, the history tools of
+  `tools()`, and `toolResult()` for tools of your own. A sum or difference of two backed amounts, a
+  sum of three, or a backed amount times a count are backed too. The turn carries the result as
+  `backing` (`checked`, `unbacked_values` by kind, `guard_violations` by short id), never a value;
+  `lastBacking` keeps the full `BackingReport`. `agent(text, { strict: true })` returns the values
+  with no source (`UnbackedValue[]`, a card or document number masked) instead of sending the
+  turn, and an empty array when it sent it. The check never fails a turn and costs well under
+  5 ms an answer. `checkBacking()` and `BackingSources` run it on their own.
+- Guard lines (memory v2): `ContextResponse.guards` (`PackGuard`: `id`, `value_type`, `value`),
+  `PackSlot.id` (the short id of the item a slot line states) and `section: "guard"` for a guard
+  line. `agent()` checks the answer against the guards of the read before it and names the ones it
+  went against on the turn, which the server turns into a `guard.violated` webhook at once; with
+  `strict: true` the conflicting values come back too.
+- Types: `Backing`, `ValueKind`, `EventItem.backing`, `TrackEvent.backing` (validated: only on an
+  agent's message), `PackGuard`, `AgentTurnOptions`, `BackingReport`, `UnbackedValue`, `GuardLike`.
 
 ## [0.4.0] - 2026-09-25
 

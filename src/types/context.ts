@@ -103,7 +103,10 @@ export interface SlotWhy {
   via?: string | null;
   /** The line was cut to the sentences that answer the turn. */
   excerpt?: boolean;
-  /** For a derived line: `count_complaints`, `count_conversations`, `no_record` or `withheld_may_hold`. */
+  /**
+   * For a derived line: `guard_<value type>` (a guard line), `count_complaints`,
+   * `count_conversations`, `no_record` or `withheld_may_hold`.
+   */
   rule?: string | null;
   /**
    * For a derived line, what the rule counted or missed: `basis` (the conversation that chose
@@ -118,8 +121,13 @@ export interface SlotWhy {
  * line the server derived. The same line as in `ContextResponse.slots`.
  */
 export interface PackSlot {
-  /** The pack section the item comes from (`episodes`, `objects`...), or `derived`. */
+  /** The pack section the item comes from (`episodes`, `objects`...), `guard` for a guard line, or `derived`. */
   section: string;
+  /**
+   * The short id of the item the line states: the last eight hex digits of its public id. A guard
+   * line's names its guard in `Backing.guard_violations`. `null` on a derived line.
+   */
+  id?: string | null;
   /** On a derived line: `count`, `no_record` or `withheld`; otherwise `null`. */
   derived?: PackSlotDerived | null;
   /** How the item was found: `exact`, `lexical`, `temporal`, `values`, `semantic`, `linked`. */
@@ -128,6 +136,20 @@ export interface PackSlot {
   text: string;
   /** With `explain`: why this line was chosen. */
   why?: SlotWhy | null;
+}
+
+/**
+ * What one guard line states (memory v2): the value memory holds for a kind the customer's turn
+ * asked about, by the precedence of who stated it (the system of record, then a human agent). The
+ * agent must not state another; `agent()` checks its answer against it.
+ */
+export interface PackGuard {
+  /** The value's short id, as the guard line's `PackSlot.id`. */
+  id: string;
+  /** `protocol`, `ticket`, `order`, `record`, `receipt`, `postal_code`, `amount`, `date` or `code`. */
+  value_type: string;
+  /** The value as the line writes it. */
+  value: string;
 }
 
 /**
@@ -203,6 +225,11 @@ export interface ContextResponse {
    * memory v2 do not send it.
    */
   slots?: string | null;
+  /**
+   * Memory v2: what the guard lines among `slots` state, typed. `agent()` checks the answer against
+   * them and names a guard it went against on the turn.
+   */
+  guards?: PackGuard[];
   cache?: CacheDirectives | null;
   timing: Record<string, number>;
   path: DeliveryPath;

@@ -5,6 +5,7 @@ export type * from "./agent-memory.js";
 export type * from "./tokens.js";
 export type {
   ActionInfo,
+  Backing,
   BatchItem,
   BatchRequest,
   BatchResponse,
@@ -24,6 +25,7 @@ export type {
   ModelUsage,
   SpeakerRef,
   TaskEndedItem,
+  ValueKind,
   VerifyItem,
   VoiceInfo,
 } from "./events.js";

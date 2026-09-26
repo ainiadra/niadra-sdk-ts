@@ -5,12 +5,13 @@ import { uuidv7 } from "./ids.js";
 import { hasTarget } from "./items.js";
 import type { ActionEvent, Timestamp, TrackEvent } from "./items.js";
 import type { Logger } from "./logger.js";
+import type { BackingReport, UnbackedValue } from "./backing.js";
 import { SessionState } from "./session.js";
 import type { Timings } from "./session.js";
 import type { BoundTools, ToolBinding, ToolOptions } from "./tools.js";
 import type { Handle } from "./types/common.js";
 import type { TargetModel } from "./types/context.js";
-import type { Content, ContextStamp, ModelUsage, VoiceInfo } from "./types/events.js";
+import type { Backing, Content, ContextStamp, ModelUsage, VoiceInfo } from "./types/events.js";
 import { asModelUsage } from "./usage.js";
 import type { Speaker, Verification, VerifyMethod, View, Visibility } from "./types/vocabulary.js";
 
@@ -58,6 +59,15 @@ export interface TurnOptions {
   usage?: ModelUsage | object | null;
 }
 
+/**
+ * Agent turns only: with `strict: true`, an answer stating a value no source backs, or one that
+ * goes against a guard line, is not sent; `agent()` returns those values instead (a card or
+ * document number masked), and an empty array when the turn was sent.
+ */
+export interface AgentTurnOptions extends TurnOptions {
+  strict?: boolean;
+}
+
 export type ConversationEvent = Omit<TrackEvent, "channel" | "conversation_id"> & { channel?: string };
 export type ConversationAction = Omit<ActionEvent, "channel" | "conversation_id"> & { channel?: string };
 
@@ -82,6 +92,12 @@ export interface ConversationHooks {
  *
  * Call `markInjected()` when the pack goes into the prompt; the agent's later turns and actions
  * carry that moment and the pack's etag as `context_stamp`. `wrap()` does it for you.
+ *
+ * `agent()` checks the answer first: every number, date, code and amount it states is looked up in
+ * what the agent had in this conversation (the packs and suffixes it read, the customer's words, a
+ * human attendant's, the results of actions and tools), and against the pack's guard lines. The
+ * turn carries what was found as `backing`, kinds and counts only; `strict: true` returns the values
+ * with no source instead of sending. `toolResult()` records what a tool of your own returned.
  *
  * @example
  * const convo = niadra.conversation({ subject: handles.waId("5511987654321"), channel: "whatsapp" });
@@ -142,6 +158,11 @@ export class Conversation {
     return this.turnText;
   }
 
+  /** The last backing check of an agent's answer: the values with no source, as said. */
+  get lastBacking(): BackingReport | null {
+    return this.state.lastBacking;
+  }
+
   /** Where `wrap()` reports what it swallowed: the client's logger. */
   get logger(): Logger {
     return this.client.logger;
@@ -166,10 +187,10 @@ export class Conversation {
       ...(format === "json" ? { format } : {}),
       ...(explain ? { explain } : {}),
     };
-    if (query) return this.client.context({ ...params, query }, requestOptions);
+    if (query) return this.state.observe(await this.client.context({ ...params, query }, requestOptions));
     if (this.state.wantsDelta) params.delta = true;
     params.turn = turn === undefined ? this.turnText : turn;
-    return this.state.absorb(await this.client.context(params, requestOptions));
+    return this.state.observe(this.state.absorb(await this.client.context(params, requestOptions)));
   }
 
   /**
@@ -207,19 +228,43 @@ export class Conversation {
 
   /** Captures what the customer said. The text is also the turn the next `context()` sends. */
   customer(text: string, options: TurnOptions = {}): string | null {
-    if (text.trim()) this.turnText = text;
+    if (text.trim()) {
+      this.turnText = text;
+      this.state.sources.add(text);
+    }
     return this.turn("customer", text, options);
   }
 
-  /** Captures what the AI agent said, stamped with the context its prompt carried. */
-  agent(text: string, options: TurnOptions = {}): string | null {
+  /**
+   * Captures what the AI agent said, stamped with the context its prompt carried and with what the
+   * backing check found in it (`backing`: kinds and counts, never a value). With `strict: true` an
+   * answer with a value no source backs, or one against a guard line, is not sent: its values come
+   * back instead, and an empty array means it was sent.
+   */
+  agent(text: string, options?: AgentTurnOptions & { strict?: false }): string | null;
+  agent(text: string, options: AgentTurnOptions & { strict: true }): UnbackedValue[];
+  agent(text: string, options: AgentTurnOptions = {}): string | null | UnbackedValue[] {
+    const { strict, ...turnOptions } = options;
+    const checked = this.state.checkAnswer(text);
+    if (strict && checked?.problems.length) return checked.problems;
     const stamp = this.state.agentTurn();
-    return this.turn("ai_agent", text, stamp ? { context_stamp: stamp, ...options } : options);
+    const key = this.turn("ai_agent", text, stamp ? { context_stamp: stamp, ...turnOptions } : turnOptions, checked?.backing);
+    return strict ? [] : key;
   }
 
-  /** Captures what a human attendant said, for example after a handoff. */
+  /** Captures what a human attendant said, for example after a handoff. It backs the agent's answers. */
   human(text: string, options: TurnOptions = {}): string | null {
+    this.state.sources.add(text);
     return this.turn("human_agent", text, options);
+  }
+
+  /**
+   * Records what a tool the agent called returned (text, or anything JSON can write), so the values
+   * in it back the agent's answers. Nothing is sent; the history tools of `tools()` are recorded
+   * for you.
+   */
+  toolResult(result: unknown): void {
+    this.state.toolResult(result);
   }
 
   /** Records any event in this conversation. The customer's handle is attached unless you pass your own. */
@@ -230,6 +275,8 @@ export class Conversation {
   /** Records an action the agent took during this conversation, stamped like its turns. */
   action(event: ConversationAction): string | null {
     const stamp = this.state.actionStamp(event.speaker);
+    // What the system of record answered backs the agent's next words.
+    if (event.result) this.state.sources.add(event.result);
     return this.client.action({
       ...this.bind(event),
       ...(stamp ? { context_stamp: stamp } : {}),
@@ -282,7 +329,7 @@ export class Conversation {
       },
     };
     if (this.params.about) binding.about = this.params.about;
-    return this.client.tools(this.subject, binding, options);
+    return this.state.observeTools(this.client.tools(this.subject, binding, options));
   }
 
   /** Emits `conversation.ended` and drops the conversation's cached packs. Safe to call twice. */
@@ -299,7 +346,7 @@ export class Conversation {
     return own ? { conversation_id: this.id } : { conversation_id: this.id, handles: [this.subject] };
   }
 
-  private turn(role: Speaker, text: string, options: TurnOptions): string | null {
+  private turn(role: Speaker, text: string, options: TurnOptions, backing?: Backing): string | null {
     const transcript = options.stt_confidence !== undefined;
     const content: Content =
       options.content ??
@@ -318,6 +365,7 @@ export class Conversation {
     if (options.context_stamp) event.context_stamp = options.context_stamp;
     const usage = role === "ai_agent" ? asModelUsage(options.usage) : null;
     if (usage) event.usage = usage;
+    if (backing) event.backing = backing;
     return this.client.track(event);
   }
 }
