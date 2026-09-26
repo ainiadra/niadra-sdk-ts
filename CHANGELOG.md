@@ -2,7 +2,17 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] - 0.5.0
+## [0.5.0] - 2026-09-26
+
+Ready to publish; npm still has 0.1.1, so 0.5.0 carries 0.2.0 through 0.5.0.
+
+```sh
+git checkout main && git pull --ff-only
+pnpm install --frozen-lockfile && pnpm check && pnpm runtimes && npm publish --access public
+```
+
+(Or push the tag `v0.5.0` once trusted publishing is configured for `@niadra/sdk`; see
+`.github/workflows/release.yml`.) The n8n and Flowise packages did not change.
 
 ### Added
 
