@@ -1,15 +1,15 @@
 import { MockServer, batchOk, contextBody, makeClient, marina } from "../helpers.js";
 import type { Niadra } from "../../src/index.js";
 
-export { MockServer, batchOk, contextBody, makeClient, marina };
+export { marina };
 
 export const PACK = "<context>Marina · customer since 2021</context>";
-export const LIVE = [
+const LIVE = [
   { at: "2026-09-22T17:07:02Z", channel: "whatsapp", kind: "message" as const, speaker: "customer", text: "sent the photo", source_id: "s" },
 ];
 export const SUFFIX = '<live_turns source="niadra">\n[2026-09-22T17:07:02Z] whatsapp · customer: sent the photo\n</live_turns>';
 
-export const SEARCH = {
+const SEARCH = {
   items: [{ id: "ep_1", kind: "episode", at: "2026-09-01T10:00:00Z", channel: "voice", summary: "Asked for a refund" }],
   withheld: 0,
   tokens_used: 40,
