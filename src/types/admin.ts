@@ -29,6 +29,11 @@ export interface IngestStatus {
   close_reason?: string | null;
   /** `ok`, `minimal`, `invalid` or `failed`. */
   extraction?: string | null;
+  /**
+   * Values held back from this conversation's or task's events before storage, by type (`card`,
+   * `cvv`, `password`, `secret`); absent when none was.
+   */
+  masked?: Record<string, number> | null;
 }
 
 /** Where an item came from: the event, its source, channel and time. Never its content. */
@@ -188,4 +193,36 @@ export interface ExportPackage {
   /** File name inside the zip to SHA-256. */
   files: Record<string, string>;
   sha256: string;
+}
+
+/**
+ * One measured delivery of context (`GET /v1/context-use/{conversation_id}`): what it carried,
+ * whether the conversation used it, and, with `explain`, why each slot was chosen.
+ */
+export interface ContextUseEntry {
+  manifest_hash: string;
+  source_id: string;
+  measure_version: string;
+  channel: string;
+  view: string;
+  experiment_group: string;
+  items: Record<string, unknown>[];
+  questions: number;
+  repeated: number;
+  used: number;
+  contradicted: number;
+  late: boolean;
+  measured_at: string;
+  not_measured_reason?: string | null;
+  transfer_unread?: boolean | null;
+  /** Tokens this delivery's pack left out for lack of use. */
+  tokens_saved: number;
+  /**
+   * Memory v2: one entry per read of this delivery that carried slots: `channels` (hits per
+   * retrieval channel, `skipped`), `items` (per slot: `id`, `kind`, `channels`, `position`,
+   * `used`, `repeated`, `contradicted`, and `why`: `score`, per channel its `position`, `weight`
+   * and `contribution`, `via` for a linked item), `derived` (the rule of each derived line) and
+   * `weights_version`. The same numbers as the slots receipt, never a line.
+   */
+  slots: Record<string, unknown>[];
 }

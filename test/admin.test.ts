@@ -68,6 +68,14 @@ describe("ingestStatus()", () => {
     const both = await niadra.ingestStatus({ conversation_id: "c", task_id: "t" });
     expect(both.error).toBeInstanceOf(NiadraValidationError);
   });
+
+  it("reads masked counts, absent when none was held back", async () => {
+    const server = new MockServer().on("POST /v1/ingest/status", {
+      body: { state: "ready", masked: { card: 1, cvv: 1 } },
+    });
+    const { data } = await makeClient(server).ingestStatus({ conversation_id: "wa-81" });
+    expect(data?.masked).toEqual({ card: 1, cvv: 1 });
+  });
 });
 
 describe("admin", () => {

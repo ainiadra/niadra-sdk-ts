@@ -1028,7 +1028,12 @@ export class Niadra {
         retry: { kind: "write", maxAttempts, baseDelayMs: backoff.retryDelayMs, maxDelayMs: backoff.maxRetryDelayMs },
       });
       const data = response.data as Partial<BatchResponse> | null;
-      return { accepted: data?.accepted ?? items.length, duplicates: data?.duplicates ?? 0, errors: data?.errors ?? [] };
+      return {
+        accepted: data?.accepted ?? items.length,
+        duplicates: data?.duplicates ?? 0,
+        errors: data?.errors ?? [],
+        masked: data?.masked ?? {},
+      };
     } catch (error) {
       const failure = toNiadraError(error);
       this.observeAuth(failure, null);
