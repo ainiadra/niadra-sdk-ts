@@ -33,10 +33,8 @@
 
 import type { Backing, ValueKind } from "./types/events.js";
 
-export type { ValueKind };
-
 /** Values read per answer at most; past them, the rest of a pasted table is not checked. */
-export const MAX_VALUES = 100;
+const MAX_VALUES = 100;
 /** Amounts combined into sums at most: the newest of the sources, enough for a bill and its lines. */
 const MAX_SUM_TERMS = 64;
 /** A count an amount is multiplied by at most (installments). */
@@ -153,7 +151,7 @@ function alnumUpper(text: string): string {
 }
 
 /** An amount in cents, in either convention: `1.234,56`, `1,234.56`, `249,90`, `249.90`, `30`. */
-export function cents(raw: string): number | null {
+function cents(raw: string): number | null {
   const text = raw.trim().replace(/^[.,/-]+|[.,/-]+$/g, "");
   if (!text || !/^\d/.test(text)) return null;
   const last = Math.max(text.lastIndexOf(","), text.lastIndexOf("."));
