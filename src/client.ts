@@ -52,7 +52,7 @@ import type {
 import { baseURLFromKey, parseApiKey } from "./key.js";
 import { consoleLogger } from "./logger.js";
 import type { Logger } from "./logger.js";
-import { DEFAULT_CACHE, DEFAULT_QUEUE, DEFAULT_TIMEOUTS } from "./options.js";
+import { DEFAULT_CACHE, DEFAULT_QUEUE, DEFAULT_TIMEOUTS, DEFAULT_VOICE } from "./options.js";
 import type { ClientOptions, Timeouts } from "./options.js";
 import { EventQueue } from "./queue.js";
 import { Task } from "./task.js";
@@ -61,6 +61,8 @@ import { bindTools } from "./tools.js";
 import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./tools.js";
 import { READ_POLICY, Transport } from "./transport.js";
 import { MIN_PREFETCH, NO_PREFETCH, PrefetchSupport, turnText } from "./turns.js";
+import { VoiceLines, compose, rttWarnings, wordsOf } from "./voice.js";
+import type { TurnRead, VoiceLine } from "./voice.js";
 import type { RequestSpec, RetryPolicy } from "./transport.js";
 import type { Handle, ObjectRef } from "./types/common.js";
 import type {
@@ -176,11 +178,16 @@ export class Niadra {
   private readonly turns: PrefetchSupport = new PrefetchSupport();
   /** Per conversation or task, the prefetch in flight and the newest text waiting behind it. */
   private readonly prefetching = new Map<string, PrefetchRequest | null>();
+  /** The voice read path's lines, by conversation or task (`voice.ts`). */
+  private readonly voice: VoiceLines;
 
   constructor(options: ClientOptions = {}) {
     this.strict = options.strict ?? false;
     this.logger = options.logger ?? consoleLogger;
     this.timeouts = { ...DEFAULT_TIMEOUTS, ...options.timeouts };
+    this.voice = new VoiceLines(
+      options.voice === false ? { ...DEFAULT_VOICE, enabled: false } : { ...DEFAULT_VOICE, ...options.voice },
+    );
     this.admin = new Admin({
       send: (build) => this.navigate(build),
       read: (method, path, body, opts) => this.readSpec(method, path, body, this.timeouts.write, opts),
@@ -275,8 +282,58 @@ export class Niadra {
     // The read's own `query`, else the customer's turn: either picks the slots, never the pack.
     const { query: own, ...pinned } = request;
     const query = turnText(own ?? params.turn);
+    const voiceCache = this.voiceCache(this.core, pinned, options.cache);
+    if (voiceCache) return this.voiceContext(this.core, voiceCache, pinned, query, timeout, options);
     if (query !== null) return this.turnContext(this.core, pinned, query, timeout, options);
     return this.pinnedContext(this.core, pinned, timeout, options);
+  }
+
+  /**
+   * Starts a voice conversation's first read now, in the background: call it when the call starts
+   * (ringing, the inbound webhook, the caller joining), so the read runs while the call is set up.
+   * It is bounded by `timeouts.contextVoiceStart`. The `context()` calls that follow, with the same
+   * arguments, take its pack instead of starting their own read; a turn that finds it still
+   * running waits for it only within its own budget. `true` when the read runs or its pack is
+   * already here; `false` outside the voice read path (another view, no conversation or task id,
+   * the cache or `voice` off). Never throws, unless `strict` is set.
+   */
+  begin(params: Omit<ContextParams, "query" | "turn" | "delta">): boolean {
+    const core = this.core;
+    if (!core) return false;
+    let request: ContextRequest;
+    try {
+      request = buildContextRequest({ view: "voice", ...params });
+    } catch (error) {
+      const failure = toNiadraError(error);
+      if (this.strict) throw failure;
+      this.logger.warn(`begin failed: ${describe(failure)}`);
+      return false;
+    }
+    const cache = this.voiceCache(core, request, undefined);
+    if (!cache) return false;
+    const key = cacheKey(request);
+    const line = this.voice.line(cacheScope(request) ?? "");
+    this.probe(core);
+    line.request = request;
+    if (!cache.has(key) && line.inFlight().length === 0) {
+      this.voiceRead(core, cache, line, key, request, null, this.timeouts.contextVoiceStart);
+    }
+    return true;
+  }
+
+  /**
+   * What is left of `timeouts.contextVoiceStart` for the first read of a conversation's voice line,
+   * for `ready()`; `undefined` without one.
+   */
+  startBudget(scope: string): number | undefined {
+    const first = this.voice.find(scope)?.reads[0];
+    if (!first) return undefined;
+    return Math.max(0, this.timeouts.contextVoiceStart - (Date.now() - first.startedAt));
+  }
+
+  /** The round trip to the region in milliseconds, measured once with the first voice read; `null` before. */
+  get rtt(): number | null {
+    return this.voice.rtt;
   }
 
   /**
@@ -299,6 +356,7 @@ export class Niadra {
       return false;
     }
     const scope = cacheScope(body) ?? "";
+    this.heard(core, scope, text);
     if (this.prefetching.has(scope)) {
       this.prefetching.set(scope, body); // the newest text waits for the one in flight
       return true;
@@ -802,6 +860,7 @@ export class Niadra {
     if (!this.core) return;
     const report = await this.core.queue.close();
     this.core.cache?.clear();
+    this.voice.clear();
     const [first] = report.errors;
     if (this.strict && first) throw first;
   }
@@ -809,8 +868,8 @@ export class Niadra {
   private async verifyWith(params: Omit<VerifyParams, "handle"> & { handle: Handle | undefined }): Promise<WriteResult> {
     const result = await this.sendNow(() => buildVerify(params));
     if (result.ok) {
-      if (params.conversation_id) this.forgetScope(`conversation:${params.conversation_id}`);
-      if (params.task_id) this.forgetScope(`task:${params.task_id}`);
+      if (params.conversation_id) this.forgetScope(`conversation:${params.conversation_id}`, false);
+      if (params.task_id) this.forgetScope(`task:${params.task_id}`, false);
     }
     return result;
   }
@@ -944,8 +1003,212 @@ export class Niadra {
     else if (error instanceof NiadraPermissionError && key) cache.delete(key);
   }
 
-  private forgetScope(scope: string): void {
+  /**
+   * Drops a conversation's packs; when it `ended`, its voice line too, else only the line's reads
+   * (they were made for the pack being dropped).
+   */
+  private forgetScope(scope: string, ended = true): void {
     this.core?.cache?.deleteScope(scope);
+    if (ended) this.voice.drop(scope);
+    else this.voice.find(scope)?.reset();
+  }
+
+  // The voice read path (voice.ts).
+
+  /** The cache a read goes through on the voice read path, or `null` when it does not take that path. */
+  private voiceCache(core: Core, request: ContextRequest, cache: boolean | undefined): ContextCache | null {
+    const onPath = this.voice.options.enabled && request.view === "voice" && cache !== false && cacheScope(request) !== null;
+    return onPath ? core.cache : null;
+  }
+
+  /** Measures the round trip to the region once per client, in the background. */
+  private probe(core: Core): void {
+    if (!this.voice.claimProbe()) return;
+    void (async () => {
+      const samples: number[] = [];
+      // The first may pay for the connection; the second is the round trip.
+      for (let i = 0; i < 2; i++) {
+        const started = Date.now();
+        try {
+          await core.transport.request<unknown>({
+            method: "GET",
+            path: "/healthz",
+            timeoutMs: 2_000,
+            retry: { kind: "read", maxAttempts: 1 },
+          });
+        } catch (error) {
+          this.logger.debug(`round trip probe failed: ${describe(toNiadraError(error))}`);
+          return;
+        }
+        samples.push(Date.now() - started);
+      }
+      const rtt = Math.min(...samples);
+      this.voice.rtt = rtt;
+      this.logger.debug(`round trip to the region ${Math.round(rtt)} ms`);
+      for (const warning of rttWarnings(rtt, this.timeouts)) this.logger.warn(warning);
+    })();
+  }
+
+  /**
+   * A voice turn: the pinned body from memory, and the slots of the read of its words when that
+   * read lands within `timeout`. See `voice.ts`.
+   */
+  private async voiceContext(
+    core: Core,
+    cache: ContextCache,
+    request: ContextRequest,
+    query: string | null,
+    timeout: number,
+    options: ContextOptions,
+  ): Promise<ContextResult> {
+    const scope = cacheScope(request) ?? "";
+    const key = cacheKey(request);
+    const deadline = Date.now() + timeout;
+    const line = this.voice.line(scope);
+    this.probe(core);
+    line.request = request;
+    const words = wordsOf(query);
+    const background = this.timeouts.prefetch;
+    try {
+      let opening: TurnRead[] = [];
+      if (!cache.has(key)) {
+        opening = line.inFlight();
+        if (opening.length === 0) opening = [this.voiceRead(core, cache, line, key, request, query, background)];
+        await waitFor(opening, deadline, options.signal, () => cache.has(key));
+        if (!cache.has(key)) {
+          const failed = opening.find((read) => read.failed)?.failed ?? new NiadraTimeoutError(timeout);
+          return this.contextFailure(failed, null);
+        }
+      }
+      let chosen: TurnRead | null = null;
+      let asked = opening.length > 0;
+      if (words.length > 0) {
+        let candidates = line.covering(words, this.voice.options.minCoverage);
+        if (candidates.length === 0) {
+          candidates = [this.voiceRead(core, cache, line, key, request, query, background)];
+          asked = true;
+        }
+        const [newest] = candidates;
+        if (newest && !newest.done) await waitFor([newest], deadline, options.signal);
+        chosen = candidates.find((read) => read.done && read.result) ?? null;
+        if (!chosen && newest?.failed && this.strict) throw newest.failed;
+      }
+      const hit = cache.lookup(key);
+      if (!hit) return this.contextFailure(new NiadraTimeoutError(timeout), null);
+      // A read this turn started revalidates the body; without one, an old body is revalidated now.
+      if (hit.freshness !== "fresh" && !asked && line.inFlight().length === 0) {
+        this.revalidate(core, cache, key, scope, request, background, options.headers).catch((error: unknown) => {
+          this.logger.debug(`background context refresh failed: ${describe(toNiadraError(error))}`);
+        });
+      }
+      const response = compose(delivered(hit.response, cache.take(key)), chosen);
+      // A body this call waited for came over the network; otherwise it was already in memory.
+      return resultFrom(response, opening.length > 0 ? "network" : hit.freshness === "fresh" ? "cache" : "stale");
+    } catch (error) {
+      const failure = toNiadraError(error);
+      const fallback = cache.lookup(key);
+      return this.contextFailure(failure, fallback ? delivered(fallback.response, cache.take(key)) : null);
+    }
+  }
+
+  /** Starts one read of a line in the background. */
+  private voiceRead(
+    core: Core,
+    cache: ContextCache,
+    line: VoiceLine,
+    key: string,
+    request: ContextRequest,
+    query: string | null,
+    timeout: number,
+    speculative = false,
+  ): TurnRead {
+    const text = turnText(query);
+    const etag = cache.etag(key);
+    // A `not_modified` answer carries no `pack`, so a read as data asks for the whole answer.
+    const known = etag && request.format !== "json" ? { known_etag: etag } : {};
+    const body: ContextRequest = { ...request, ...(text ? { query: text } : {}), ...known };
+    const generation = cache.generation;
+    const scopeEpoch = cache.scopeEpoch(line.scope);
+    const read: TurnRead = {
+      words: wordsOf(text),
+      startedAt: Date.now(),
+      speculative,
+      settled: Promise.resolve(),
+      result: null,
+      failed: null,
+      done: false,
+    };
+    line.add(read);
+    read.settled = (async () => {
+      try {
+        const response = await this.fetchContext(core, body, timeout, undefined, undefined);
+        const cached = cache.lookup(key);
+        // A degraded answer never replaces a good pack.
+        if (!(response.degraded && !response.not_modified && cached)) {
+          const merged = response.not_modified && cached ? mergeNotModified(cached.response, response) : response;
+          cache.store(key, line.scope, { ...withoutSlots(merged), guards: [] }, generation, scopeEpoch);
+        }
+        read.result = response;
+      } catch (error) {
+        const failure = toNiadraError(error);
+        this.observeAuth(failure, key);
+        read.failed = failure;
+        this.logger.debug(`voice read failed: ${describe(failure)}`);
+      } finally {
+        read.done = true;
+        if (line.speculating === read) {
+          line.speculating = null;
+          const following = line.waiting;
+          line.waiting = null;
+          if (following !== null && !line.closed) this.speculate(core, line, following);
+        }
+      }
+    })();
+    return read;
+  }
+
+  /** A partial transcript of a voice line: read the turn with it once it has settled. */
+  private heard(core: Core, scope: string, text: string): void {
+    const line = this.voice.find(scope);
+    if (!line || line.closed || !line.request) return;
+    if (text !== line.heard) {
+      line.heard = text;
+      line.heardAt = Date.now();
+    }
+    if (!line.timer) this.arm(core, line, this.voice.options.settleMs);
+  }
+
+  private arm(core: Core, line: VoiceLine, delay: number): void {
+    line.timer = setTimeout(() => {
+      line.timer = null;
+      this.settle(core, line);
+    }, Math.max(0, delay));
+    unref(line.timer);
+  }
+
+  private settle(core: Core, line: VoiceLine): void {
+    if (line.closed || line.heard === null) return;
+    const left = line.heardAt + this.voice.options.settleMs - Date.now();
+    if (left > 0) {
+      this.arm(core, line, left);
+      return;
+    }
+    const text = line.heard;
+    line.heard = null;
+    this.speculate(core, line, text);
+  }
+
+  /** Reads the turn with a settled partial: one such read in flight per line, the newest text next. */
+  private speculate(core: Core, line: VoiceLine, text: string): void {
+    const words = wordsOf(text);
+    const request = line.request;
+    const cache = core.cache;
+    if (line.closed || !request || !cache || words.length === 0 || line.alreadyRead(words)) return;
+    if (line.speculating && !line.speculating.done) {
+      line.waiting = text;
+      return;
+    }
+    line.speculating = this.voiceRead(core, cache, line, cacheKey(request), request, text, this.timeouts.prefetch, true);
   }
 
   private disabledError(): NiadraError {
@@ -1002,9 +1265,9 @@ export class Niadra {
   }
 
   private async endScope(item: BatchItem & { idempotency_key: string }, scope: string): Promise<WriteResult> {
-    const result = await this.sendNow(() => item);
+    // What the SDK kept for the conversation goes now, not once the server confirmed the end.
     this.forgetScope(scope);
-    return result;
+    return this.sendNow(() => item);
   }
 
   private async sendBatch(
@@ -1101,4 +1364,37 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Pro
       },
     );
   });
+}
+
+/**
+ * Resolves when one of `reads` is done (with `until`, once it holds), at `deadline`, or rejects
+ * when `signal` aborts. The reads go on either way.
+ */
+async function waitFor(
+  reads: TurnRead[],
+  deadline: number,
+  signal: AbortSignal | undefined,
+  until?: () => boolean,
+): Promise<void> {
+  for (;;) {
+    const pending = reads.filter((read) => !read.done);
+    const left = deadline - Date.now();
+    if (pending.length === 0 || left <= 0 || until?.()) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expiry = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, left);
+    });
+    try {
+      await abortable(Promise.race([...pending.map((read) => read.settled), expiry]), signal);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!until) return;
+  }
+}
+
+function unref(timer: unknown): void {
+  if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
+    (timer as { unref(): void }).unref();
+  }
 }

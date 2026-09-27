@@ -112,6 +112,9 @@ export function errorName(error: unknown): string {
  */
 export class Bridge {
   private proving: Promise<void> | null = null;
+  /** `begin()` started the first read of a call: the first `context()` waits for it with `ready()`. */
+  private begun = false;
+  private opened = false;
 
   constructor(
     readonly session: Session,
@@ -136,10 +139,34 @@ export class Bridge {
     return this.session.logger;
   }
 
+  /**
+   * Starts the first read of a call now, in the background, after the proof when one was given (the
+   * pack depends on the level it proves): at call start, so the read runs while the call is set up.
+   * The first `context()` then waits for it within `timeouts.contextVoiceStart`. Never throws.
+   */
+  begin(): void {
+    const session = this.session;
+    if (!isConversation(session)) return;
+    const start = (): void => {
+      this.safe("start the first read", () => {
+        // False off the voice read path (a chat view, the cache off): reads go on as before.
+        this.begun = session.begin();
+      });
+    };
+    if (this.proof === undefined || this.proof === null) start();
+    else void this.verifyOnce().then(start);
+  }
+
   /** Verifies once (when a proof was given), then reads the context. Never rejects. */
   async context(options: ContextOptions = {}): Promise<ContextResult> {
     await this.verifyOnce();
     try {
+      const session = this.session;
+      if (this.begun && !this.opened && isConversation(session)) {
+        this.opened = true;
+        // The call's first read, begun at call start: waited for within its own, longer budget.
+        await session.ready(options.timeout === undefined ? {} : { timeout: options.timeout });
+      }
       return await this.session.context(options);
     } catch (error) {
       this.logger.warn(`could not read context (${errorName(error)})`);

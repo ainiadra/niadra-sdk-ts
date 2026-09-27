@@ -8,8 +8,24 @@ import type { Logger } from "./logger.js";
 export interface Timeouts {
   /** `context()` for every view except `voice`. */
   context: number;
-  /** `context()` with `view: "voice"`, where the budget is a fraction of a spoken turn. */
+  /**
+   * `context()` with `view: "voice"`, where the budget is a fraction of a spoken turn. In a voice
+   * conversation the pinned pack is read once and then served from memory, so this is not a round
+   * trip: it is the most a turn waits for the read of its own words that a prefetch already
+   * started (see `voice.ts`). That read starts when the partial transcript has been still for
+   * `VoiceOptions.settleMs` (200 ms) and the platform ends the turn later (LiveKit waits at least
+   * 500 ms of silence): about 300 ms of head start. With 200 ms of wait on top, the turn gets its
+   * slots while round trip plus server time stay under 500 ms, a round trip of up to about 400 ms
+   * at the server's p95. A longer wait would be heard: 200 ms is the usual gap between two
+   * people's turns.
+   */
   contextVoice: number;
+  /**
+   * The first read of a voice call, made while the phone rings or the inbound webhook runs
+   * (`begin()`, `ready()`). A cold connection costs three round trips (TCP, TLS, the request)
+   * plus the server's first compile: 3 x 400 ms + 300 ms at a 400 ms round trip.
+   */
+  contextVoiceStart: number;
   /** `search()`, `timeline()` and `open()`. */
   navigation: number;
   /** Navigation calls made through a voice conversation or voice-bound tools. */
@@ -24,13 +40,17 @@ export interface Timeouts {
   token: number;
   /** The whole of sending media bytes to storage in `uploadMedia()`, retries included. */
   upload: number;
-  /** `prefetch()`, which runs in the background and never holds a turn. */
+  /**
+   * `prefetch()`, which runs in the background and never holds a turn, and a voice read that goes
+   * on after its turn's budget.
+   */
   prefetch: number;
 }
 
 export const DEFAULT_TIMEOUTS: Timeouts = {
   context: 300,
-  contextVoice: 150,
+  contextVoice: 200,
+  contextVoiceStart: 1_500,
   navigation: 600,
   navigationVoice: 300,
   write: 5_000,
@@ -62,6 +82,33 @@ export const DEFAULT_CACHE: CacheOptions = {
   staleWhileRevalidateMs: 10 * 60_000,
   maxStaleMs: 30 * 60_000,
   maxEntries: 1_000,
+};
+
+/**
+ * The voice read path of a conversation in the `voice` view (see `voice.ts`).
+ */
+export interface VoiceOptions {
+  /** `false` sends every voice turn to the API as the other views do. */
+  enabled: boolean;
+  /** How long a partial transcript must stay the same before the SDK reads the turn with it. */
+  settleMs: number;
+  /**
+   * A read's slots answer the final turn when the final words start with the partial's and the
+   * partial carries at least this share of them.
+   */
+  minCoverage: number;
+  /**
+   * Measure the round trip to the region once, with `GET /healthz`, and log a warning when the
+   * voice budgets cannot hold it.
+   */
+  probe: boolean;
+}
+
+export const DEFAULT_VOICE: VoiceOptions = {
+  enabled: true,
+  settleMs: 200,
+  minCoverage: 0.75,
+  probe: true,
 };
 
 /** How `track()` and the other write methods batch events on their way to `POST /v1/batch`. */
@@ -113,6 +160,8 @@ export interface ClientOptions {
   /** Pass `false` to send every `context()` call to the server. */
   cache?: Partial<CacheOptions> | false;
   queue?: Partial<QueueOptions>;
+  /** The voice read path of conversations in the `voice` view. `false` turns it off. */
+  voice?: Partial<VoiceOptions> | false;
   /**
    * Throw errors instead of logging them and resolving with an empty result. Meant for tests
    * and development, where a silent failure hides a broken integration.

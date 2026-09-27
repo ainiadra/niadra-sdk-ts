@@ -3,7 +3,7 @@ import { sign } from "retell-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { TOOL_DEFINITIONS } from "../../src/index.js";
 import { attestationProof, memoryCallStore, retell, validRetellSignature } from "../../src/integrations/retell.js";
-import { problem } from "../helpers.js";
+import { MockServer, batchOk, contextBody, makeClient, problem } from "../helpers.js";
 import { PACK, SUFFIX, marina, sent, sequence, setup, turns } from "./support.js";
 
 const API_KEY = "key_retell_webhook_test";
@@ -51,6 +51,13 @@ describe("Retell: inbound webhook", () => {
     expect(sequence(server).slice(0, 2)).toEqual(["batch:verify", "POST /v1/context"]);
     expect(server.callsTo("POST /v1/context")[0]!.body).toMatchObject({ subject: marina, view: "voice", verification: "V2", conversation_id: "call_b8f2" });
     expect(await store.get("call_b8f2")).toMatchObject({ subject: marina, verification: "V2" });
+  });
+
+  it("waits for the first read within the call's start budget, longer than a turn's", async () => {
+    const server = new MockServer().on("POST /v1/context", { body: contextBody(), delay: 350 }).on("POST /v1/batch", batchOk());
+    const handlers = retell({ niadra: makeClient(server, { voice: { probe: false } }), apiKey: API_KEY, store: memoryCallStore() });
+    const response = await handlers.inbound(...(await signed(inboundBody)));
+    expect(response.body).toMatchObject({ call_inbound: { dynamic_variables: { niadra_context: PACK } } });
   });
 
   it("answers empty variables when Niadra is down, and refuses a bad or stale signature", async () => {

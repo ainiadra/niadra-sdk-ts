@@ -9,10 +9,14 @@
  * stays byte-identical turn after turn. Session events record the agent's answers (with the
  * LLM usage LiveKit measured), handoffs between agents and the end of the call.
  *
- * Voice reads use the 150 ms budget; a read that misses it leaves the context out and the agent
- * answers anyway. While the caller is still speaking, each `user_input_transcribed` event (interim
- * or final) sends the turn so far with `prefetch()`, in the background, so the read that answers
- * the turn finds the caller's memory warm; a prefetch never holds or fails a turn.
+ * `NiadraMemory` starts the caller's first read when it is built (`begin()`), so it runs while the
+ * session starts, and the first reply waits for it within `timeouts.contextVoiceStart` (1.5 s).
+ * After that no turn waits on a round trip for the pack: it comes from memory at once. While the
+ * caller is still speaking, each `user_input_transcribed` event (interim or final) sends the turn
+ * so far with `prefetch()`, in the background: the server warms the caller's memory, and once the
+ * words stop changing the SDK reads the turn with them, so the slots are there when LiveKit ends
+ * the turn. A turn waits at most 200 ms for such a read still on its way, then answers without
+ * the slots; a prefetch never holds or fails a turn.
  *
  * @example
  * const caller = ctx.room.remoteParticipants.values().next().value;
@@ -102,6 +106,7 @@ export class NiadraMemory {
   constructor(options: NiadraMemoryOptions) {
     this.conversation = options.conversation;
     this.bridge = new Bridge(options.conversation, options.verify, options.agentMemory);
+    this.bridge.begin(); // the call is starting: its first read runs meanwhile
     this.recordAgent = options.recordAgent ?? true;
   }
 

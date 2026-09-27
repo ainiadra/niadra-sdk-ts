@@ -7,7 +7,60 @@ All notable changes to this package are documented here. The format follows [Kee
 The memory has one behavior: every read that carries the customer's turn gets the conversation's
 pinned pack and that turn's slots. Not published; the n8n and Flowise packages did not change.
 
+### Added
+
+- The voice read path (`src/voice.ts`): in the `voice` view with a conversation or task id, a turn
+  never waits on a round trip to the region for what can be known in advance. From Brazil to a
+  cell in us-east-2 the round trip is about 145 ms, and every voice read of 0.5.0 paid it within a
+  150 ms budget, so a voice agent far from the region often got no memory at all.
+  - The pinned pack is the same bytes for the whole conversation, so once a read brought it, every
+    later turn gets it from memory at once, whatever its age, and the SDK revalidates it by ETag in
+    the background.
+  - `niadra.begin(params)` and `conversation.begin()` start the first read when the call starts
+    (ringing, the inbound webhook, the caller joining), so it runs while the call is set up;
+    `conversation.ready()` waits for it there, within `timeouts.contextVoiceStart`. A turn that
+    finds it still running waits only within its own budget.
+  - `prefetch()` still warms the server, and once the partial transcript has stayed the same for
+    `voice.settleMs` (200 ms) the SDK reads the turn with it: one such read in flight per
+    conversation, the newest settled text next. The final turn takes that read's slots and delta
+    when its words start with the partial's and the partial carries at least `voice.minCoverage`
+    (three quarters) of them; otherwise it reads its own words.
+  - A turn waits for the read of its words at most `timeouts.contextVoice`. Past it, the turn gets
+    the pinned pack without slots, and the read goes on in the background (within
+    `timeouts.prefetch`): its answer revalidates the pack and leaves its delta for the next turn.
+  - The first voice read of a client measures the round trip to the region once (`GET /healthz`,
+    twice, the faster; `niadra.rtt`) and logs a warning when `contextVoice` or
+    `contextVoiceStart` cannot hold it.
+  - `ClientOptions.voice` (`enabled`, `settleMs`, `minCoverage`, `probe`), `VoiceOptions`,
+    `DEFAULT_VOICE`. `voice: false` keeps the 0.5.0 behavior.
+  - Measured with a fake region answering in 150 to 400 ms (`test/voice.test.ts`): voice turns after
+    the first returned in 0.1 ms with the pinned body and their own slots, one read of a partial
+    transcript per turn; the first read left at once after `begin()` and `ready()` after 400 ms of
+    call setup returned in 0.2 ms; a turn whose read had not landed returned at its 200 ms budget
+    with the body and the next turn got the delta. The same turns on the 0.5.0 path took 152 ms
+    each and none got its slots.
+- `timeouts.contextVoiceStart`, 1,500 ms: the first read of a call, made while the phone rings or
+  the inbound webhook runs. A cold connection costs three round trips (TCP, TLS, the request) plus
+  the server's first compile: 3 x 400 ms + 300 ms at a 400 ms round trip.
+
 ### Changed
+
+- `timeouts.contextVoice` is 200 ms (was 150 ms), and in a voice conversation it is no longer a
+  round trip: it bounds the wait for the read of a turn's words already in flight. That read starts
+  200 ms after the last word changed and the platform ends the turn later (LiveKit waits at least
+  500 ms), about 300 ms of head start; with 200 ms of wait on top, the slots make the turn while
+  round trip plus server time stay under 500 ms, a round trip of up to about 400 ms at the server's
+  p95. 200 ms is the usual gap between two people's turns, so a longer wait would be heard.
+- The voice adapters use this path. LiveKit's `NiadraMemory` starts the first read when it is built
+  and the first reply waits for it; the prefetch it already sent while the caller speaks now also
+  brings the turn's slots. Retell (`inbound`, `call_started` and the custom LLM socket), Vapi
+  (`assistant-request`) and ElevenLabs (conversation initiation) start the read at call start,
+  after the proof when one is given, and wait for the pack within `contextVoiceStart` instead of
+  the turn budget. `verifyTwilio()` starts it on the incoming call webhook (`ringing`), at the level
+  the attestation proved.
+- Ending a conversation or task drops what the SDK kept in memory for it (its packs and, in the
+  voice view, its line) at once, before the server confirms the end, and an answer still on its
+  way then is not stored (each purge moves the scope's epoch in the cache).
 
 - A read with a turn, or with its own `query`, always goes to the API and always settles as a read
   of the pinned pack: the pack is cached as the read without `query`, and the slots never are. In a

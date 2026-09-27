@@ -1,6 +1,9 @@
 import type { CacheOptions } from "./options.js";
 import type { ContextResponse } from "./types/context.js";
 
+/** Scopes whose epoch is remembered after a purge; past this, the oldest are forgotten. */
+const MAX_EPOCHS = 4096;
+
 /** How usable a cached pack is at the moment of a lookup. */
 export type Freshness = "fresh" | "stale" | "expired";
 
@@ -45,6 +48,8 @@ export class ContextCache {
   private readonly entries = new Map<string, Entry>();
   private readonly inflight = new Map<string, Promise<Revalidated>>();
   private epoch = 0;
+  /** Per scope, bumped by `deleteScope()`: an answer to a read started before is not stored. */
+  private readonly scopeEpochs = new Map<string, number>();
 
   constructor(
     private readonly options: CacheOptions,
@@ -80,8 +85,35 @@ export class ContextCache {
     return { response: entry.response, freshness };
   }
 
-  store(key: string, scope: string, response: ContextResponse, generation: number = this.epoch): void {
-    if (generation !== this.epoch) return;
+  /** The epoch of one conversation or task now; pass it to `store()` from a read started under it. */
+  scopeEpoch(scope: string): number {
+    return this.scopeEpochs.get(scope) ?? 0;
+  }
+
+  /** Whether a pack for `key` is held (and not past `maxStaleMs`). Delivers nothing. */
+  has(key: string): boolean {
+    const entry = this.entries.get(key);
+    if (!entry) return false;
+    if (this.now() - entry.confirmedAt > this.options.maxStaleMs) {
+      this.entries.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  /** The cached pack's ETag, without touching the order of eviction. */
+  etag(key: string): string | null {
+    return this.entries.get(key)?.response.etag ?? null;
+  }
+
+  store(
+    key: string,
+    scope: string,
+    response: ContextResponse,
+    generation: number = this.epoch,
+    scopeEpoch: number = this.scopeEpoch(scope),
+  ): void {
+    if (generation !== this.epoch || scopeEpoch !== this.scopeEpoch(scope)) return;
     const previous = this.entries.get(key);
     // A new pack already contains every change the deltas pending against the old one carried.
     const pending = previous?.response.etag === response.etag ? [...previous.pending] : [];
@@ -111,10 +143,18 @@ export class ContextCache {
     this.entries.delete(key);
   }
 
-  /** Drops every pack of one conversation or task. */
+  /** Drops every pack of one conversation or task; an answer to a read started before is not stored. */
   deleteScope(scope: string): void {
     for (const [key, entry] of this.entries) {
       if (entry.scope === scope) this.entries.delete(key);
+    }
+    const next = this.scopeEpoch(scope) + 1;
+    this.scopeEpochs.delete(scope); // re-inserted last, the most recent
+    this.scopeEpochs.set(scope, next);
+    while (this.scopeEpochs.size > MAX_EPOCHS) {
+      const oldest = this.scopeEpochs.keys().next();
+      if (oldest.done) break;
+      this.scopeEpochs.delete(oldest.value);
     }
   }
 

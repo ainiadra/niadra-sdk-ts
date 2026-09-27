@@ -90,6 +90,10 @@ export interface ConversationHooks {
  * the live turns and the delta; the pinned pack does not change. `prefetch()` sends a partial
  * transcript while the customer is still speaking.
  *
+ * In the `voice` view, `begin()` starts the first read when the call starts and `ready()` waits for
+ * it there; later turns get the pinned pack from memory at once, and their slots from the read a
+ * prefetch made of their words (`voice.ts`). Ending the conversation drops what the SDK kept for it.
+ *
  * Call `markInjected()` when the pack goes into the prompt; the agent's later turns and actions
  * carry that moment and the pack's etag as `context_stamp`. `wrap()` does it for you.
  *
@@ -193,8 +197,36 @@ export class Conversation {
   }
 
   /**
+   * Starts this conversation's first read now, in the background: call it when the call starts
+   * (ringing, the inbound webhook), so the read runs while the call is set up. The voice view
+   * only; see `niadra.begin()`.
+   */
+  begin(): boolean {
+    return this.client.begin({
+      subject: this.subject,
+      view: this.view,
+      verification: this.level,
+      conversation_id: this.id,
+      ...(this.params.about ? { about: this.params.about } : {}),
+      ...(this.params.target ? { target: this.params.target } : {}),
+    });
+  }
+
+  /**
+   * `begin()`, then the pack of that first read, waiting for it within what is left of
+   * `timeouts.contextVoiceStart`: for the moment the call starts, when the platform waits anyway.
+   * Outside the voice view, a `context()` without the customer's turn.
+   */
+  async ready(options: RequestOptions = {}): Promise<ContextResult> {
+    this.begin();
+    const timeout = options.timeout ?? this.client.startBudget(`conversation:${this.id}`);
+    return this.context({ ...options, turn: null, ...(timeout === undefined ? {} : { timeout }) });
+  }
+
+  /**
    * Sends a partial transcript of the customer's turn while they speak, so the read that answers
-   * the turn finds their memory warm. In the background; never rejects. See `niadra.prefetch()`.
+   * the turn finds their memory warm and, in the voice view, reads the turn with it once the words
+   * stop changing. In the background; never rejects. See `niadra.prefetch()`.
    */
   prefetch(text: string): boolean {
     if (text === this.prefetched) return false;

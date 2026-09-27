@@ -31,8 +31,8 @@ export type {
   TrackEvent,
   VerifyParams,
 } from "./items.js";
-export type { CacheOptions, ClientOptions, QueueOptions, Timeouts } from "./options.js";
-export { DEFAULT_CACHE, DEFAULT_QUEUE, DEFAULT_TIMEOUTS } from "./options.js";
+export type { CacheOptions, ClientOptions, QueueOptions, Timeouts, VoiceOptions } from "./options.js";
+export { DEFAULT_CACHE, DEFAULT_QUEUE, DEFAULT_TIMEOUTS, DEFAULT_VOICE } from "./options.js";
 export type { Logger } from "./logger.js";
 export { consoleLogger, silentLogger } from "./logger.js";
 export { uuidv7 } from "./ids.js";

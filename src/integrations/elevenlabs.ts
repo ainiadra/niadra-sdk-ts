@@ -157,6 +157,7 @@ export function elevenLabs(options: ElevenLabsOptions): ElevenLabsHandlers {
 
     const conversation = options.niadra.conversation({ subject, channel: "voice", conversation_id: call.conversationId });
     const bridge = new Bridge(conversation, options.verify ? () => options.verify?.(call) : undefined, options.agentMemory);
+    bridge.begin(); // waited for within timeouts.contextVoiceStart: the agent has not spoken yet
     const read = await bridge.read(options.contextTimeout ? { timeout: options.contextTimeout } : {});
     bridge.injected(read.context);
     variables.niadra_context = read.context.text;

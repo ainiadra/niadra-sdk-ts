@@ -82,8 +82,9 @@ resolves identity across channels and systems, closes items when a system of rec
 action, and filters what each agent may read by the verification level of the conversation.
 
 **What happens if Niadra is slow or down?** The agent keeps answering without the memory. Every
-call has its own time budget (150 ms for voice context, 300 ms otherwise) and resolves with an
-error value instead of throwing, unless you ask for strict mode.
+call has its own time budget (300 ms for context; in a voice call the pack is served from memory
+and a turn waits at most 200 ms for its slots) and resolves with an error value instead of
+throwing, unless you ask for strict mode.
 
 **What about privacy and LGPD or GDPR?** Items carry a verification level and a purpose, and the
 policy decides what each agent sees. Every read leaves a receipt, and a person can be erased or
@@ -159,7 +160,11 @@ await convo.end();
 
 After the first pack, each read also asks for the delta, and the conversation keeps every delta it receives, in order, in `suffix`, after the live turns. When the server pins a new pack, after `verify()` for instance, the kept deltas are dropped: the new pack already has them. `query` picks a read's slots by other words than the turn; the pack is the pinned one all the same.
 
-Every read sends the customer's last turn, the text of the last `customer()`, and the answer carries what it needs from memory as slots in `suffix`. Pass `turn` when the platform has the turn before `customer()` recorded it, or `turn: null` to read without one. In a voice call, `convo.prefetch(partialTranscript)` sends the turn so far while the customer speaks.
+Every read sends the customer's last turn, the text of the last `customer()`, and the answer carries what it needs from memory as slots in `suffix`. Pass `turn` when the platform has the turn before `customer()` recorded it, or `turn: null` to read without one. In a voice call, `convo.prefetch(partialTranscript)` sends the turn so far while the customer speaks, and `convo.begin()` at call start (ringing, the inbound webhook) starts the first read so it runs while the call is set up; `await convo.ready()` waits for it there. Ending the conversation drops the pack and everything else the SDK kept in memory for it.
+
+### Voice
+
+In the `voice` view with a conversation id, no turn waits on a round trip to the region for what can be known in advance. The first read starts at call start (`begin()`) and is awaited there (`ready()`, within `timeouts.contextVoiceStart`, 1.5 s). After that the pinned pack, which the server keeps byte-stable for the whole conversation, comes from memory at once and is revalidated by ETag in the background. While the customer speaks, `prefetch()` warms the server and, once the partial transcript has stayed the same for 200 ms, reads the turn with it; the final turn takes that read's slots and delta when its words start with the partial's and the partial carries at least three quarters of them. A turn waits at most `timeouts.contextVoice` (200 ms) for such a read still on its way; past that it gets the pack without slots, and the read, which goes on, leaves its delta for the next turn. The first voice read of a client measures the round trip to the region once (`GET /healthz`, `niadra.rtt`) and logs a warning when the budgets cannot hold it. `voice: false` keeps the path of 0.5.0.
 
 Call `markInjected()` each time you put the pack in a prompt. The agent's turns and actions that follow carry it as `context_stamp`, with the pack's etag, which is how Niadra tells a context that arrived after the agent spoke from one the agent had and did not use. `timings` keeps the first injection and the first agent turn, for your own checks.
 
@@ -304,7 +309,7 @@ const { data } = await niadra.subjectToken({ subject: marina, conversation_id: "
 
 Each integration is a subpath of this package, with its framework as an optional peer dependency: `@niadra/sdk` itself loads no framework, and you install only the one you use. Every adapter wires the same five things into the framework's own lifecycle:
 
-1. **Context before the model call**: the pack after your instructions, the suffix (live turns, the turn's slots and deltas) at the end, within the read budget (150 ms on voice).
+1. **Context before the model call**: the pack after your instructions, the suffix (live turns, the turn's slots and deltas) at the end, within the read budget (in a voice call the pack comes from memory and a turn waits at most 200 ms for its slots).
 2. **Turns**: what the customer said and what the agent answered, with the provider's usage when the framework exposes it, and the end of the conversation.
 3. **Tools**: `search_customer_history`, `get_customer_timeline` and `open_history_item` in the framework's tool format, bound to the customer outside the model's reach. No tool has a parameter that names a customer.
 4. **Verification**: what the framework or the carrier proved, recorded with `verify()` before the first context read.
@@ -354,7 +359,7 @@ memory.attach(session);                                          // answers, han
 await session.start({ agent: new NiadraAgent({ instructions, memory }), room: ctx.room });
 ```
 
-`NiadraAgent` is a LiveKit `Agent` whose `onUserTurnCompleted` records the final transcript (with its STT confidence), then puts the pack in the turn's chat context right after the instructions and the suffix after the new message. LiveKit builds that context for one reply only, so nothing piles up in the agent's history and the prompt prefix stays the same turn after turn. The navigation kit joins the agent's own tools as the `niadra` toolset. With your own `Agent` subclass, call `memory.onUserTurnCompleted(turnCtx, newMessage)` from your hook and add `memory.toolset()` to its tools. While the caller is still speaking, `attach(session)` also listens to `user_input_transcribed` (interim and final) and sends the turn so far with `prefetch()`, in the background; a prefetch never holds or fails a turn.
+`NiadraAgent` is a LiveKit `Agent` whose `onUserTurnCompleted` records the final transcript (with its STT confidence), then puts the pack in the turn's chat context right after the instructions and the suffix after the new message. LiveKit builds that context for one reply only, so nothing piles up in the agent's history and the prompt prefix stays the same turn after turn. The navigation kit joins the agent's own tools as the `niadra` toolset. With your own `Agent` subclass, call `memory.onUserTurnCompleted(turnCtx, newMessage)` from your hook and add `memory.toolset()` to its tools. `NiadraMemory` starts the caller's first read when it is built, and the first reply waits for it (see [Voice](#voice)). While the caller is still speaking, `attach(session)` also listens to `user_input_transcribed` (interim and final) and sends the turn so far with `prefetch()`, in the background, so the turn's slots are read before LiveKit ends the turn; a prefetch never holds or fails a turn.
 
 `attach(session)` records the agent's answers from `conversation_item_added` (with the LLM usage LiveKit measured), a handoff for each `AgentHandoffItem` (`session.updateAgent()` or a tool that returns another agent), and the end of the conversation on `close`. Call `memory.handoffToHuman(reason)` right before a SIP transfer to a person. LiveKit's SIP attributes carry no STIR/SHAKEN attestation: map the carrier's header to a participant attribute in the trunk settings and pass it to `attestationProof()` (`A` proves V2, `B` and `C` prove V1).
 
@@ -651,7 +656,8 @@ Every call you wait for has its own time budget for the whole call, retries and 
 
 | Call | Default |
 | --- | --- |
-| `context()` | 300 ms, 150 ms with `view: "voice"` |
+| `context()` | 300 ms, 200 ms with `view: "voice"` (in a voice conversation, only the wait for a turn's slots: the pack comes from memory) |
+| The first read of a voice call (`begin()`, `ready()`) | 1.5 s, spent while the phone rings or the inbound webhook runs |
 | `search()`, `timeline()`, `open()`, `objectState()`, `objectTimeline()` | 600 ms, 300 ms through voice conversations and voice-bound tools |
 | `subjectToken()` | 2 s |
 | `identify()`, `verify()`, `handoff()`, `feedback()` and the reservation in `uploadMedia()` | 5 s |
@@ -693,7 +699,8 @@ Create one client per process and share it: it owns the queue and the cache.
 new Niadra({
   apiKey: "nia_sk_live_...",                 // default: NIADRA_API_KEY
   baseURL: "http://localhost:4010",          // default: NIADRA_BASE_URL, then derived from the key
-  timeouts: { context: 300, contextVoice: 150, navigation: 600, navigationVoice: 300, write: 5000, token: 2000, upload: 60_000 },
+  timeouts: { context: 300, contextVoice: 200, contextVoiceStart: 1500, navigation: 600, navigationVoice: 300, write: 5000, token: 2000, upload: 60_000 },
+  voice: { enabled: true, settleMs: 200, minCoverage: 0.75, probe: true },
   cache: { ttlMs: 10_000, staleWhileRevalidateMs: 600_000, maxStaleMs: 1_800_000, maxEntries: 1000 },
   queue: { flushAt: 15, flushIntervalMs: 1000, turnFlushIntervalMs: 200, maxBatchSize: 100, maxQueueSize: 10_000, maxAttempts: 3 },
   strict: false,

@@ -177,7 +177,7 @@ describe("per-conversation context cache", () => {
     await niadra.context({ ...inConversation, verification: "V2" });
     await niadra.context({ ...inConversation, view: "voice" });
     await niadra.context({ ...inConversation, view: "chat" });
-    expect(server.calls).toHaveLength(3);
+    expect(server.callsTo("POST /v1/context")).toHaveLength(3);
   });
 
   it("drops a conversation's packs after a successful verify()", async () => {

@@ -8,7 +8,7 @@ import {
   sipSubject,
 } from "../../src/integrations/livekit.js";
 import { PACK, SUFFIX, marina, sent, sequence, setup, turns } from "./support.js";
-import { contextBody, problem } from "../helpers.js";
+import { MockServer, batchOk, contextBody, makeClient, problem } from "../helpers.js";
 
 beforeAll(() => {
   initializeLogger({ pretty: false, level: "silent" });
@@ -68,6 +68,19 @@ describe("LiveKit: NiadraMemory.onUserTurnCompleted", () => {
     await memory.onUserTurnCompleted(ctx, llm.ChatMessage.create({ role: "user", content: "one" }));
     await memory.onUserTurnCompleted(ctx, llm.ChatMessage.create({ role: "user", content: "two" }));
     expect(contents(ctx).filter(([, text]) => text === PACK || text === SUFFIX)).toHaveLength(2);
+  });
+
+  it("starts the caller's first read when the memory is built, and the first reply waits for it", async () => {
+    const server = new MockServer().on("POST /v1/context", { body: contextBody(), delay: 300 }).on("POST /v1/batch", batchOk());
+    const niadra = makeClient(server, { voice: { probe: false } });
+    const memory = new NiadraMemory({ conversation: niadra.conversation({ subject: marina, channel: "voice", conversation_id: "call-9" }) });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.callsTo("POST /v1/context")).toHaveLength(1);
+    expect(server.callsTo("POST /v1/context")[0]!.body.query).toBeUndefined();
+    const ctx = turnContext();
+    // Longer than the 200 ms turn budget: the first read has the call's start budget.
+    await memory.onUserTurnCompleted(ctx, llm.ChatMessage.create({ role: "user", content: "hello" }));
+    expect(contents(ctx)).toContainEqual(["system", PACK]);
   });
 
   it("leaves the turn as it was when Niadra fails or misses the voice budget", async () => {

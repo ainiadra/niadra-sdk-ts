@@ -134,6 +134,7 @@ export function vapi(options: VapiOptions): (body: unknown, headers: HeadersLike
     if (subject) {
       const conversation = options.niadra.conversation({ subject, channel: "voice", conversation_id: call.id });
       const bridge = new Bridge(conversation, options.verify ? () => options.verify?.(call) : undefined, options.agentMemory);
+      bridge.begin(); // waited for within timeouts.contextVoiceStart: the assistant is not answering yet
       const read = await bridge.read(options.contextTimeout ? { timeout: options.contextTimeout } : {});
       bridge.injected(read.context);
       context.context = read.context.text;

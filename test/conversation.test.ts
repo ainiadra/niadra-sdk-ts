@@ -64,7 +64,7 @@ describe("conversation()", () => {
   it("defaults to the voice view on the voice channel", async () => {
     const server = new MockServer().on("POST /v1/context", { body: contextBody() });
     await makeClient(server).conversation({ subject: marina, channel: "voice" }).context();
-    expect(server.calls[0]!.body.view).toBe("voice");
+    expect(server.callsTo("POST /v1/context")[0]!.body.view).toBe("voice");
   });
 
   it("captures turns with the right speaker, direction and conversation", async () => {

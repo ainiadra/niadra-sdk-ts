@@ -4,7 +4,8 @@
  * Retell package is needed.
  *
  * - `inbound`: the inbound call webhook. Opens the conversation by Retell's `call_id`, records what
- *   the call proved, reads the voice context and answers it as dynamic variables: put
+ *   the call proved, starts the first read and waits for it within `timeouts.contextVoiceStart`
+ *   (the phone rings meanwhile), and answers it as dynamic variables: put
  *   `{{niadra_context}}` in the agent's prompt (and `{{niadra_turn}}` where the live turns from other
  *   channels go).
  * - `tool`: custom functions for the navigation kit. `toolConfigs()` writes them for Retell's
@@ -16,8 +17,9 @@
  *   for the call details, answers Retell's pings, records each utterance once a response is
  *   required, and gives your model the messages with the context in place. The read sends the
  *   caller's last utterance along, and each `update_only` event whose transcript ends with the
- *   caller speaking sends that utterance so far with `prefetch()`, in the background, so the read
- *   that answers the turn finds the caller's memory warm; a prefetch never holds or fails a turn. Retell does not sign the
+ *   caller speaking sends that utterance so far with `prefetch()`, in the background: once its
+ *   words stop changing the SDK reads the turn with them, and the turn takes that read's slots; the
+ *   pack itself comes from memory at once. A prefetch never holds or fails a turn. Retell does not sign the
  *   websocket, so the customer comes from a signed webhook of the same call (`inbound` or
  *   `call_started`, kept in the store), never from the socket's `call_details`: anyone who reaches
  *   the socket could name any caller there. Until a signed webhook registers the call, the model gets
@@ -213,6 +215,7 @@ export function retell(options: RetellOptions): RetellHandlers {
     if (!subject) return null;
     const conversation = options.niadra.conversation({ subject, channel: "voice", conversation_id: call.id });
     const bridge = new Bridge(conversation, options.verify ? () => options.verify?.(call) : undefined, options.agentMemory);
+    bridge.begin(); // the call is starting: its first read runs meanwhile
     return { bridge, conversation };
   };
 
@@ -356,6 +359,7 @@ export function retell(options: RetellOptions): RetellHandlers {
       if (stored) {
         record = stored;
         bridge = new Bridge(open(callId, stored), undefined, options.agentMemory);
+        bridge.begin(); // the socket opens as the call starts: its first read runs meanwhile
         return bridge;
       }
       // The socket is not signed: its call details never name the customer unless the server said so.

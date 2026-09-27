@@ -6,8 +6,9 @@
  * @example
  * const { status, request } = await readTwilio(publicUrl, await req.text(), req.headers, { authToken });
  * const convo = niadra.conversation({ subject: request.subject, channel: request.channel, conversation_id: request.conversationId });
- * await verifyTwilio(convo, request);   // StirVerstat on voice
+ * await verifyTwilio(convo, request);   // StirVerstat on voice; then the first read starts while it rings
  * recordTwilioInbound(convo, request);
+ * const ctx = await convo.ready();       // the call's first read, within timeouts.contextVoiceStart
  */
 
 import type { Conversation } from "../conversation.js";
@@ -111,13 +112,24 @@ export function parseTwilio(params: URLSearchParams | Record<string, string>): T
   return { ...base, channel: "sms", subject };
 }
 
-/** Records what the carrier attested for the call, before the first context read. Never rejects. */
+/**
+ * Records what the carrier attested for the call, before the first context read, and on the
+ * incoming call webhook (`CallStatus` `ringing`) starts the conversation's first read at the level
+ * it proved, so it runs while the phone rings; `conversation.ready()` waits for it. Never rejects.
+ */
 export async function verifyTwilio(conversation: Conversation, request: TwilioRequest): Promise<void> {
-  if (!request.proof) return;
+  if (request.proof) {
+    try {
+      await conversation.verify(request.proof);
+    } catch (error) {
+      conversation.logger.warn(`could not record the verification (${errorName(error)})`);
+    }
+  }
+  if (request.channel !== "voice" || request.params.CallStatus !== "ringing") return;
   try {
-    await conversation.verify(request.proof);
+    conversation.begin();
   } catch (error) {
-    conversation.logger.warn(`could not record the verification (${errorName(error)})`);
+    conversation.logger.warn(`could not start the first read (${errorName(error)})`);
   }
 }
 
