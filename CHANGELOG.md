@@ -15,6 +15,10 @@ pinned pack and that turn's slots. Not published; the n8n and Flowise packages d
   picks the slots by those words, and the pack is the pinned one.
 - `ContextPack.spec` is `"context-pack.v1"`, the one version the SDK reads; the `spec/` copy
   carries only that schema.
+- Tests pin the queue's order: one `/v1/batch` in flight per client, `flush()` waits for the batch
+  the background send has in flight (even with nothing queued), and `conversation.ended` lands
+  after the turns queued before it, as does everything `shutdown()` sends. The TypeScript queue
+  already behaved this way; the Python SDK 0.5.0 did not (fixed in its 0.6.0).
 
 ### Removed
 

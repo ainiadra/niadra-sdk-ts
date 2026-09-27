@@ -139,6 +139,72 @@ describe("batching", () => {
   });
 });
 
+describe("one batch in flight per client", () => {
+  // The QA run on the Python SDK 0.5.0: a flush while the background sender had the turns in
+  // flight sent `conversation.ended` beside them, it landed first and the session reopened.
+  function slowServer(firstDelayMs: number) {
+    const state = { inFlight: 0, maxInFlight: 0, answered: [] as string[][] };
+    const server = new MockServer().on("POST /v1/batch", (request) => {
+      const first = server.calls.length === 1;
+      const kinds = heartbeatFree(request.body.items).map((item) => item.type);
+      state.inFlight++;
+      state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);
+      const delay = first ? firstDelayMs : 1;
+      setTimeout(() => {
+        state.inFlight--;
+        state.answered.push(kinds);
+      }, delay);
+      return { ...batchOk(), delay };
+    });
+    return { server, state };
+  }
+
+  async function until(condition: () => boolean): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error("condition not met in time");
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+  }
+
+  const eagerTurns = { queue: { flushAt: 100, flushIntervalMs: 60_000, turnFlushIntervalMs: 5 } };
+
+  it("sends conversation.ended after the turns the background send has in flight", async () => {
+    const { server, state } = slowServer(100);
+    const niadra = makeClient(server, eagerTurns);
+    const convo = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-1" });
+    convo.customer("I was charged twice");
+    convo.customer("on the 12th");
+    await until(() => server.calls.length === 1);
+    const ended = convo.end();
+    await niadra.flush();
+    expect((await ended).ok).toBe(true);
+    expect(state.maxInFlight).toBe(1);
+    expect(state.answered).toEqual([["event", "event"], ["conversation.ended"]]);
+  });
+
+  it("flush() with an empty queue waits for the batch in flight", async () => {
+    const { server, state } = slowServer(100);
+    const niadra = makeClient(server, eagerTurns);
+    niadra.track({ ...message("I was charged twice"), conversation_id: "wa-1" });
+    await until(() => server.calls.length === 1);
+    await niadra.flush();
+    expect(state.answered).toEqual([["event"]]);
+  });
+
+  it("shutdown() waits for the batch in flight, then sends the rest in order", async () => {
+    const { server, state } = slowServer(100);
+    const niadra = makeClient(server, eagerTurns);
+    niadra.track({ ...message("I was charged twice"), conversation_id: "wa-1" });
+    await until(() => server.calls.length === 1);
+    niadra.track(message("after the turn"));
+    await niadra.shutdown();
+    expect(state.maxInFlight).toBe(1);
+    expect(state.answered).toEqual([["event"], ["event"]]);
+    expect(server.calls.map((call) => call.body.items[0].content.text)).toEqual(["I was charged twice", "after the turn"]);
+  });
+});
+
 describe("retries", () => {
   const fast = { retryDelayMs: 1, maxRetryDelayMs: 5 };
 
