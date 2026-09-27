@@ -2,6 +2,26 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - Unreleased
+
+The memory has one behavior: every read that carries the customer's turn gets the conversation's
+pinned pack and that turn's slots. Not published; the n8n and Flowise packages did not change.
+
+### Changed
+
+- A read with a turn, or with its own `query`, always goes to the API and always settles as a read
+  of the pinned pack: the pack is cached as the read without `query`, and the slots never are. In a
+  conversation, `context({ query })` no longer leaves the conversation's pack and deltas alone: it
+  picks the slots by those words, and the pack is the pinned one.
+- `ContextPack.spec` is `"context-pack.v1"`, the one version the SDK reads; the `spec/` copy
+  carries only that schema.
+
+### Removed
+
+- The fallback for a space that answered a turn without slots: the second read of the pinned pack
+  within the same budget, and the ten minutes without sending the turn after such an answer.
+- `spec/context-pack.v0.json` and its example.
+
 ## [0.5.0] - 2026-09-26
 
 Ready to publish; npm still has 0.1.1, so 0.5.0 carries 0.2.0 through 0.5.0.
@@ -17,7 +37,7 @@ pnpm install --frozen-lockfile && pnpm check && pnpm runtimes && npm publish --a
 ### Added
 
 - `explain` on `ContextRequest`, `ContextParams` and `ContextOptions` (`niadra.context()`,
-  `conversation.context()` and `task.context()`), memory v2 only: requires `format: "json"`
+  `conversation.context()` and `task.context()`): requires `format: "json"`
   (throws `NiadraValidationError` otherwise) and adds `why` to each of `pack.slots`, a `SlotWhy`
   naming the retrieval channels that ranked the item (`SlotChannelRank`: `channel`, `position`,
   `weight`, `contribution`), the fused `score`, the `weights_version` used and, for a derived
@@ -39,7 +59,7 @@ pnpm install --frozen-lockfile && pnpm check && pnpm runtimes && npm publish --a
   with no source (`UnbackedValue[]`, a card or document number masked) instead of sending the
   turn, and an empty array when it sent it. The check never fails a turn and costs well under
   5 ms an answer. `checkBacking()` and `BackingSources` run it on their own.
-- Guard lines (memory v2): `ContextResponse.guards` (`PackGuard`: `id`, `value_type`, `value`),
+- Guard lines: `ContextResponse.guards` (`PackGuard`: `id`, `value_type`, `value`),
   `PackSlot.id` (the short id of the item a slot line states) and `section: "guard"` for a guard
   line. `agent()` checks the answer against the guards of the read before it and names the ones it
   went against on the turn, which the server turns into a `guard.violated` webhook at once; with
@@ -78,15 +98,15 @@ pnpm install --frozen-lockfile && pnpm check && pnpm runtimes && npm publish --a
   They resolve `{ data, error }` and fail open like the rest of the client.
 - Types: `IngestStatus`, `KeyIdentity`, `ProfileMemory`, `FactOut`, `FactHistory`, `ProfileMatch`,
   `CorrectionRequest`, `ForgetTarget`, `Erasure`, `ExportPackage`, `WhereExpression`.
-- Memory v2 on the read path. A conversation sends the customer's last turn (the text of the last
-  `customer()`) as `query` on every `context()`; `turn` passes another one and `turn: null` sends
-  none. In a space with memory v2 the answer keeps the pinned pack and adds `slots`, what that turn
+- The customer's turn on the read path. A conversation sends the customer's last turn (the text of
+  the last `customer()`) as `query` on every `context()`; `turn` passes another one and
+  `turn: null` sends none. The answer keeps the pinned pack and adds `slots`, what that turn
   selected from memory, which `suffix` places after the live turns and before the delta, as the
-  API documents it, so every integration gets it with no change. The pack is cached as the read without `query` and the slots
-  never are; a read as data asks for the whole answer, so each turn's pack carries its own slots. A
-  space without memory v2 compiles a read with `query` for it and does not pin it: after one such
-  answer the client reads the pinned pack instead, within the same budget, and stops sending the
-  turn for ten minutes. `niadra.context()` takes `turn` too.
+  API documents it, so every integration gets it with no change. The pack is cached as the read
+  without `query` and the slots never are; a read as data asks for the whole answer, so each turn's
+  pack carries its own slots. An answer without slots made the client read the pinned pack again
+  and stop sending the turn for ten minutes (removed in 0.6.0). `niadra.context()` takes `turn`
+  too.
 - The pack as data follows `context-pack.v1`: `pack.slots` lists the turn's lines typed as
   `PackSlot` (`section`, `derived`: `count`, `no_record` or `withheld`, `channels`, `text`) and
   `ContextResponse.slots` is the rendered block. A pack of the earlier version reads with

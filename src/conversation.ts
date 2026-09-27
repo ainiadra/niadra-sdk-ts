@@ -85,9 +85,9 @@ export interface ConversationHooks {
  * conversation keeps them, in order, in `suffix`, after the live turns, for the end of the
  * prompt. A successful `verify()` starts over from the pack the server pins for the new level.
  *
- * Every read sends the customer's last turn along (the text of the last `customer()`). In a space
- * with memory v2 the server picks from memory what that turn needs and the answer carries it as
- * `slots`, in `suffix` between the live turns and the delta; the pinned pack does not change. `prefetch()` sends a partial
+ * Every read sends the customer's last turn along (the text of the last `customer()`). The server
+ * picks from memory what that turn needs and the answer carries it as `slots`, in `suffix` between
+ * the live turns and the delta; the pinned pack does not change. `prefetch()` sends a partial
  * transcript while the customer is still speaking.
  *
  * Call `markInjected()` when the pack goes into the prompt; the agent's later turns and actions
@@ -170,10 +170,9 @@ export class Conversation {
 
   /**
    * The pack for this turn: the pinned `text`, and a `suffix` with every delta since the pin,
-   * the current live turns and, in a space with memory v2, what the customer's last turn
-   * selected from memory. `turn` passes the customer's turn when `customer()` has not recorded it
-   * yet (`null` reads without one). A read with `query` is compiled for that query and never
-   * pinned, so it leaves the conversation's deltas alone.
+   * the current live turns and what the customer's last turn selected from memory. `turn` passes
+   * the customer's turn when `customer()` has not recorded it yet (`null` reads without one).
+   * `query` picks this read's slots by other words than the turn; the pack is the pinned one.
    */
   async context(options: ContextOptions & { query?: string; turn?: string | null } = {}): Promise<ContextResult> {
     const { query, turn, format, explain, ...requestOptions } = options;
@@ -187,7 +186,7 @@ export class Conversation {
       ...(format === "json" ? { format } : {}),
       ...(explain ? { explain } : {}),
     };
-    if (query) return this.state.observe(await this.client.context({ ...params, query }, requestOptions));
+    if (query) params.query = query;
     if (this.state.wantsDelta) params.delta = true;
     params.turn = turn === undefined ? this.turnText : turn;
     return this.state.observe(this.state.absorb(await this.client.context(params, requestOptions)));

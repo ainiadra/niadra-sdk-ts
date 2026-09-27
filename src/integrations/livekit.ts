@@ -4,8 +4,7 @@
  * The same hook as LiveKit's own RAG recipe: `onUserTurnCompleted(turnCtx, newMessage)`. There
  * the customer's final transcript is recorded, the conversation's pack goes into the turn's chat
  * context as a system message right after the agent's instructions, and the suffix (live turns
- * from other channels, what the caller's turn needs from memory in a space with memory v2, and
- * deltas) goes after the new message. The read sends the caller's turn along. The turn context is
+ * from other channels, what the caller's turn needs from memory, and deltas) goes after the new message. The read sends the caller's turn along. The turn context is
  * a copy LiveKit builds for this reply only, so nothing piles up in the agent's history and the prompt prefix
  * stays byte-identical turn after turn. Session events record the agent's answers (with the
  * LLM usage LiveKit measured), handoffs between agents and the end of the call.

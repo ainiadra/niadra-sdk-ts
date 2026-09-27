@@ -112,11 +112,4 @@ describe("the Context Pack specification", () => {
     expect(suffix.startsWith("<live_turns")).toBe(true);
     expect(suffix.endsWith(`${answer.slots!}\n\n${answer.delta!}`)).toBe(true);
   });
-
-  it("still reads the earlier version's example", () => {
-    const answer = read("examples/context-pack-as-data.json") as ContextResponse;
-    expect(answer.pack!.spec).toBe("context-pack.v0");
-    expect(answer.slots).toBeUndefined();
-    expect(renderSuffix(answer)).not.toContain("<turn");
-  });
 });

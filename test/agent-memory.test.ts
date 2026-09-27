@@ -160,7 +160,7 @@ describe("searchAgentMemory() and remember()", () => {
 
 describe("context({ format: \"json\" }), valid_until and versions", () => {
   const pack = {
-    spec: "context-pack.v0" as const,
+    spec: "context-pack.v1" as const,
     view: "chat",
     verification: "V1" as const,
     withheld: 0,
@@ -171,7 +171,7 @@ describe("context({ format: \"json\" }), valid_until and versions", () => {
   };
 
   it("asks for the pack as data and hands it back typed, cached apart from the text", async () => {
-    // A pack of the earlier version (`context-pack.v0`), as a server without memory v2 sends it.
+    // The pack of a read without a turn, sent without its empty `slots`.
     const earlier = { pack } as unknown as Partial<ContextResponse>;
     const server = new MockServer().on("POST /v1/context", (request) => ({ body: contextBody(request.body.format === "json" ? earlier : {}) }));
     const convo = makeClient(server).conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-1" });

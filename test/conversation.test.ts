@@ -53,23 +53,6 @@ describe("conversation()", () => {
     expect(server.calls[3]!.body.delta).toBeUndefined();
   });
 
-  it("leaves the deltas alone for a read with a query", async () => {
-    const server = new MockServer().on(
-      "POST /v1/context",
-      { body: contextBody() },
-      { body: contextBody({ etag: "q-1", text: "<context>about billing</context>" }) },
-      { body: contextBody({ delta: "[New] refund" }) },
-    );
-    const convo = makeClient(server, { cache: false }).conversation({ subject: marina, channel: "whatsapp" });
-    await convo.context();
-    const focused = await convo.context({ query: "billing" });
-    const after = await convo.context();
-    expect(focused.text).toBe("<context>about billing</context>");
-    expect(server.calls[1]!.body).toMatchObject({ query: "billing" });
-    expect(server.calls[1]!.body.delta).toBeUndefined();
-    expect(after.suffix).toBe("[New] refund");
-  });
-
   it("does not pin an empty pack", async () => {
     const server = new MockServer().on("POST /v1/context", problem(503, "unavailable"), { body: contextBody() });
     const convo = makeClient(server, { cache: false }).conversation({ subject: marina, channel: "whatsapp" });

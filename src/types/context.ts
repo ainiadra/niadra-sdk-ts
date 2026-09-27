@@ -26,7 +26,7 @@ export interface ContextRequest {
   /** `json` also returns `pack`: the same pack as typed sections (`context-pack.v1`). Defaults to `text`. */
   format?: ContextFormat;
   /**
-   * Memory v2, with `format: "json"` and `query`: each of `pack.slots` also says `why` it was
+   * With `format: "json"` and `query`: each of `pack.slots` also says `why` it was
    * chosen (its position in each retrieval channel, each channel's weighted share of the fused
    * score, the weights version, the rule of a derived line). Requires `format: "json"`. It changes
    * nothing else: the pinned text, the slots chosen and the receipt are the same bytes with or
@@ -117,7 +117,7 @@ export interface SlotWhy {
 }
 
 /**
- * One line of this turn's slots (memory v2): an item the customer's last turn selected, or a
+ * One line of this turn's slots: an item the customer's last turn selected, or a
  * line the server derived. The same line as in `ContextResponse.slots`.
  */
 export interface PackSlot {
@@ -139,7 +139,7 @@ export interface PackSlot {
 }
 
 /**
- * What one guard line states (memory v2): the value memory holds for a kind the customer's turn
+ * What one guard line states: the value memory holds for a kind the customer's turn
  * asked about, by the precedence of who stated it (the system of record, then a human agent). The
  * agent must not state another; `agent()` checks its answer against it.
  */
@@ -154,11 +154,11 @@ export interface PackGuard {
 
 /**
  * The pack as data (`context-pack.v1`), for programs that build their own prompt: the same
- * content as `text`, and this turn's `slots`, which are never part of `text`. A server of the
- * earlier version answers `context-pack.v0` and no slots; the SDK gives an empty list then.
+ * content as `text`, and this turn's `slots`, which are never part of `text`; an empty list on a
+ * read without a turn.
  */
 export interface ContextPack {
-  spec: "context-pack.v1" | "context-pack.v0";
+  spec: "context-pack.v1";
   view: string;
   /** The effective level. */
   verification: Verification;
@@ -220,13 +220,12 @@ export interface ContextResponse {
   live_complete: boolean;
   delta?: string | null;
   /**
-   * Memory v2, on a read with `query`: what the customer's last turn selected from memory for
-   * this turn, a tagged block for the end of the prompt. Never part of `text`. Servers without
-   * memory v2 do not send it.
+   * On a read with `query`: what the customer's last turn selected from memory for this turn, a
+   * tagged block for the end of the prompt. Never part of `text`.
    */
   slots?: string | null;
   /**
-   * Memory v2: what the guard lines among `slots` state, typed. `agent()` checks the answer against
+   * What the guard lines among `slots` state, typed. `agent()` checks the answer against
    * them and names a guard it went against on the turn.
    */
   guards?: PackGuard[];

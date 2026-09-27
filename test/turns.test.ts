@@ -1,8 +1,6 @@
-// Memory v2 on the SDK side: the customer's turn goes as `query`, the slots land last in the suffix,
-// the pack stays pinned, a space without memory v2 keeps its old reads, and `prefetch()` never holds
-// or fails a turn.
+// The customer's turn on the SDK side: it goes as `query`, the slots land last in the suffix, the
+// pack stays pinned, and `prefetch()` never holds or fails a turn.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RECHECK_AFTER_MS } from "../src/turns.js";
 import type { ContextResponse, PackSlot } from "../src/index.js";
 import { MockServer, batchOk, contextBody, makeClient, marina, problem } from "./helpers.js";
 
@@ -10,8 +8,8 @@ const LIVE = [{ at: "2026-09-22T17:07:02Z", channel: "whatsapp", kind: "message"
 const SLOTS = '<turn source="niadra">\nAbout what the customer just said:\n[Recent conversations] 09/18 · email · protocol 81220 sent\n</turn>';
 const PACK_SLOTS: PackSlot[] = [{ section: "episodes", derived: null, channels: ["lexical"], text: "[Recent conversations] 09/18 · email · protocol 81220 sent" }];
 
-/** An answer of a space with memory v2: the pinned pack, and slots for a read with `query`. */
-function v2(request: { body: { query?: string; known_etag?: string; format?: string; delta?: boolean } }): { body: ContextResponse } {
+/** The server's answer: the pinned pack, and slots for a read with `query`. */
+function answer(request: { body: { query?: string; known_etag?: string; format?: string; delta?: boolean } }): { body: ContextResponse } {
   const turn = request.body.query !== undefined;
   const timing = turn ? { total: 4, slots: 1 } : { total: 3 };
   const extra: Partial<ContextResponse> = { timing, ...(turn ? { slots: SLOTS } : {}), ...(request.body.delta ? { delta: "<delta>new item</delta>", live: LIVE } : {}) };
@@ -40,7 +38,7 @@ afterEach(() => {
 
 describe("the customer's turn", () => {
   it("goes as query, and its slots come after the live turns and before the delta while the pack stays pinned", async () => {
-    const server = new MockServer().on("POST /v1/context", v2).on("POST /v1/batch", batchOk());
+    const server = new MockServer().on("POST /v1/context", answer).on("POST /v1/batch", batchOk());
     const convo = makeClient(server).conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-1" });
     convo.customer("What was the protocol you sent me by email?");
     const first = await convo.context();
@@ -58,7 +56,7 @@ describe("the customer's turn", () => {
   });
 
   it("never lets the cache serve an earlier turn's slots", async () => {
-    const server = new MockServer().on("POST /v1/context", v2, problem(503, "unavailable"));
+    const server = new MockServer().on("POST /v1/context", answer, problem(503, "unavailable"));
     const niadra = makeClient(server, { flushOnExit: false });
     const convo = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-2" });
     convo.customer("the protocol from the email");
@@ -74,7 +72,7 @@ describe("the customer's turn", () => {
   });
 
   it("types the slots in the pack as data, asking for the whole answer each turn", async () => {
-    const server = new MockServer().on("POST /v1/context", v2);
+    const server = new MockServer().on("POST /v1/context", answer);
     const convo = makeClient(server, { flushOnExit: false }).conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-3" });
     convo.customer("the protocol");
     await convo.context({ format: "json" });
@@ -85,34 +83,18 @@ describe("the customer's turn", () => {
     expect(second.pack?.spec).toBe("context-pack.v1");
   });
 
-  it("is not sent where the space answers it without slots, and is asked again later", async () => {
-    let now = 1_000_000;
-    vi.spyOn(Date, "now").mockImplementation(() => now);
-    const server = new MockServer().on("POST /v1/context", { body: contextBody() });
-    const niadra = makeClient(server, { flushOnExit: false });
-    const convo = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-4" });
-    convo.customer("first turn");
-    const first = await convo.context();
-    convo.customer("second turn");
-    await convo.context({ cache: false });
-    now += RECHECK_AFTER_MS;
-    convo.customer("third turn");
-    await convo.context({ cache: false });
-    const queries = server.callsTo("POST /v1/context").map((call) => call.body.query as string | undefined);
-    // The first answer had no slots: the pinned pack was read at once, and the turn stopped going.
-    expect(queries).toEqual(["first turn", undefined, undefined, "third turn", undefined]);
-    expect(first.text).toBe("<context>Marina · customer since 2021</context>");
-  });
-
-  it("gives way to an explicit query, a one-off read", async () => {
-    const server = new MockServer().on("POST /v1/context", { body: contextBody() });
+  it("gives way to an explicit query, which picks the slots and keeps the pinned pack", async () => {
+    const server = new MockServer().on("POST /v1/context", answer);
     const convo = makeClient(server, { flushOnExit: false }).conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-5" });
     convo.customer("my turn");
-    await convo.context({ query: "invoices" });
-    expect(server.callsTo("POST /v1/context").map((call) => call.body.query)).toEqual(["invoices"]);
+    const focused = await convo.context({ query: "invoices" });
+    const next = await convo.context();
+    expect(server.callsTo("POST /v1/context").map((call) => call.body.query)).toEqual(["invoices", "my turn"]);
+    expect(focused.suffix).toBe(SLOTS);
+    expect(next.text).toBe(focused.text);
   });
 
-  it("reads an old server without slots as before", async () => {
+  it("reads an answer without slots", async () => {
     const server = new MockServer().on("POST /v1/context", { body: contextBody({ live: LIVE, delta: "<delta/>" }) });
     const result = await makeClient(server, { flushOnExit: false }).context({ subject: marina, turn: "hello" });
     expect(result.response?.slots).toBeUndefined();
@@ -164,14 +146,5 @@ describe("prefetch()", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(convo.prefetch("the internet keeps dropping at night")).toBe(false);
     expect(server.callsTo("POST /v1/context/prefetch")).toHaveLength(1);
-  });
-
-  it("is skipped where the space reads no turns", async () => {
-    const server = new MockServer().on("POST /v1/context", { body: contextBody() }).on("POST /v1/context/prefetch", { status: 202, body: {} });
-    const niadra = makeClient(server, { flushOnExit: false });
-    const convo = niadra.conversation({ subject: marina, channel: "voice", conversation_id: "call-4" });
-    convo.customer("hello there");
-    await convo.context();
-    expect(convo.prefetch("the internet keeps dropping")).toBe(false);
   });
 });

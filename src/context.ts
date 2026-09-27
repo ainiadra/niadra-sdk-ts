@@ -33,14 +33,14 @@ export interface ContextParams {
   /** For internal agents: the task plays the role of the conversation. */
   task_id?: string;
   /**
-   * A read focused on this text, compiled for it. Up to 2,000 characters. Wins over `turn`.
+   * Other words than the turn to pick this read's slots by. Up to 2,000 characters. Wins over
+   * `turn`, and like it never changes the pack.
    */
   query?: string;
   /**
-   * The customer's last turn; a conversation passes it for you. In a space with memory v2 it goes
-   * as `query` and the answer adds `slots`, what the turn selected from memory, in `suffix`, while the pack stays the conversation's pinned one (and is cached as without it). A
-   * space without memory v2 compiles a read with `query` for it and does not pin it, so after one
-   * such answer the client reads the pinned pack instead and stops sending the turn for ten minutes.
+   * The customer's last turn; a conversation passes it for you. It goes as `query` and the answer
+   * adds `slots`, what the turn selected from memory, in `suffix`, while the pack stays the
+   * conversation's pinned one (and is cached as without it).
    */
   turn?: string | null;
   /** Ask only for what changed since this source last read the subject. */
@@ -50,7 +50,7 @@ export interface ContextParams {
   /** `json` also returns the pack as typed sections in `pack` (`context-pack.v1`). Defaults to `text`. */
   format?: ContextFormat;
   /**
-   * With memory v2: adds `why` to each of `pack.slots`, naming the retrieval channels that
+   * Adds `why` to each of `pack.slots`, naming the retrieval channels that
    * ranked it, the fused score, the weights version and, for a derived line, the rule behind it.
    * Requires `format: "json"`. It changes nothing else: the pinned text, the slots chosen and the
    * receipt are the same bytes with or without it.
@@ -112,8 +112,7 @@ export interface ContextResult {
   /**
    * The parts that change turn by turn and belong at the end of the prompt, after the
    * conversation: the live turns from other channels, this turn's slots (what the customer's last
-   * turn selected from memory, in a space with memory v2) and the delta, in that order, as the API
-   * places them. Empty when there are none.
+   * turn selected from memory) and the delta, in that order, as the API places them. Empty when there are none.
    */
   suffix: string;
   /** Named values from the pack, for templates that place them individually. */
