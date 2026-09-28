@@ -97,7 +97,7 @@ export function problem(status: number, code: string, headers?: Record<string, s
 export function contextBody(overrides: Partial<ContextResponse> = {}): ContextResponse {
   return {
     not_modified: false,
-    text: "<context>Marina · customer since 2021</context>",
+    text: "<niadra>Marina · customer since 2021</niadra>",
     variables: { name: "Marina" },
     version: "1",
     etag: "etag-1",

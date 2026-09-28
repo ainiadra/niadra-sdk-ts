@@ -117,7 +117,7 @@ describe("Google ADK: niadraAdk", () => {
     expect(await run(new LlmAgent({ name: "a", model: llm, instruction: "Hi.", ...down }), "hi")).toBe("ok");
     const nobody = niadraAdk({ session: () => null });
     expect(await run(new LlmAgent({ name: "b", model: llm, instruction: "Hi.", ...nobody }), "hi", "s2")).toBe("ok");
-    expect(llm.requests.every((request) => !JSON.stringify(request).includes("<context>"))).toBe(true);
+    expect(llm.requests.every((request) => !JSON.stringify(request).includes("<niadra>"))).toBe(true);
   });
 
   it("reads usageMetadata", () => {

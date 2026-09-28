@@ -36,7 +36,7 @@ const conversation = { handleType: "phone_e164", handleValue: "+5511987654321", 
 describe("Niadra n8n node", () => {
   it("gets the context from the space the key names, with the suffix rendered as the SDKs do", async () => {
     const { ctx, requests } = context("getContext", { ...conversation, view: "chat", verification: "V1" }, () => ({
-      text: "<context>Marina</context>",
+      text: "<niadra>Marina</niadra>",
       etag: "e1",
       path: "t0",
       withheld: 0,
@@ -54,7 +54,7 @@ describe("Niadra n8n node", () => {
       body: { subject: marina, view: "chat", verification: "V1", conversation_id: "wa-8812" },
     });
     expect(json).toMatchObject({
-      text: "<context>Marina</context>",
+      text: "<niadra>Marina</niadra>",
       suffix: '[New] credit\n\n<live_turns source="niadra">\n[2026-09-22T17:07:02Z] voice · customer: called\n</live_turns>',
       etag: "e1",
     });

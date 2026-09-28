@@ -108,6 +108,6 @@ describe("Cloudflare Agents: niadraAgent", () => {
     });
     const result = await generateText({ model: wrapLanguageModel({ model, middleware: nobody.middleware }), prompt: "hi" });
     expect(result.text).toBe("ok");
-    expect(JSON.stringify(model.doGenerateCalls[0]!.prompt)).not.toContain("<context>");
+    expect(JSON.stringify(model.doGenerateCalls[0]!.prompt)).not.toContain("<niadra>");
   });
 });

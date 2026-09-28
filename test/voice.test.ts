@@ -14,7 +14,7 @@ import { verifyTwilio } from "../src/integrations/twilio.js";
 import type { TwilioRequest } from "../src/integrations/twilio.js";
 import { KEY, contextBody, marina, spyLogger } from "./helpers.js";
 
-const BODY = "<context>Marina, prefers WhatsApp; March: the same reason came up before</context>";
+const BODY = "<niadra>Marina, prefers WhatsApp; March: the same reason came up before</niadra>";
 /**
  * LiveKit's default minimum endpointing delay is 500 ms; the turns here wait a little more than
  * the slowest read (200 ms of settle plus 400 ms) so the read of the last partial has landed.

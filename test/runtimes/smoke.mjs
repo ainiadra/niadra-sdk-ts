@@ -6,7 +6,7 @@ import { Niadra, handles, silentLogger } from "../../dist/index.js";
 const KEY = "nia_sk_test_us-east-2_acme-sandbox_k7Qx_s3cr3t";
 const CONTEXT = {
   not_modified: false,
-  text: "<context>Marina, customer since 2021</context>",
+  text: "<niadra>Marina, customer since 2021</niadra>",
   variables: { name: "Marina" },
   version: "1",
   etag: "etag-1",

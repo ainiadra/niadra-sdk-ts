@@ -11,7 +11,7 @@ describe("conversation()", () => {
       { body: contextBody({ delta: "[New] credit of R$ 40", live }) },
       { body: contextBody({ delta: "[New] visit rescheduled" }) },
       { body: contextBody({ delta: "[New] visit rescheduled" }) },
-      { body: contextBody({ text: "<context>V2 pack</context>", etag: "e2", delta: "[New] credit of R$ 40" }) },
+      { body: contextBody({ text: "<niadra>V2 pack</niadra>", etag: "e2", delta: "[New] credit of R$ 40" }) },
     );
     const niadra = makeClient(server, { cache: false });
     const convo = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-1" });
@@ -32,7 +32,7 @@ describe("conversation()", () => {
     expect(third.suffix).toBe("[New] credit of R$ 40\n\n[New] visit rescheduled");
     expect(third.response?.delta).toBe("[New] credit of R$ 40\n\n[New] visit rescheduled");
     expect(fourth.suffix).toBe(third.suffix);
-    expect(repinned.text).toBe("<context>V2 pack</context>");
+    expect(repinned.text).toBe("<niadra>V2 pack</niadra>");
     expect(repinned.suffix).toBe("");
   });
 
@@ -105,7 +105,7 @@ describe("conversation()", () => {
 
   it("raises the level and releases the pin after verify()", async () => {
     const server = new MockServer()
-      .on("POST /v1/context", { body: contextBody() }, { body: contextBody({ text: "<context>V2 pack</context>" }) })
+      .on("POST /v1/context", { body: contextBody() }, { body: contextBody({ text: "<niadra>V2 pack</niadra>" }) })
       .on("POST /v1/batch", batchOk());
     const convo = makeClient(server, { cache: false }).conversation({ subject: marina, channel: "whatsapp", conversation_id: "wa-1" });
     await convo.context();
@@ -116,7 +116,7 @@ describe("conversation()", () => {
     expect(server.callsTo("POST /v1/batch")[0]!.body.items[0]).toMatchObject({ type: "verify", handle: marina, conversation_id: "wa-1" });
     expect(server.callsTo("POST /v1/context")[1]!.body).toMatchObject({ verification: "V2" });
     expect(server.callsTo("POST /v1/context")[1]!.body.delta).toBeUndefined();
-    expect(after.text).toBe("<context>V2 pack</context>");
+    expect(after.text).toBe("<niadra>V2 pack</niadra>");
   });
 
   it("keeps the level when verify() fails", async () => {

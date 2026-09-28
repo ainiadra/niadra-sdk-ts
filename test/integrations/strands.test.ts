@@ -95,7 +95,7 @@ describe.runIf(supported)("Strands Agents: NiadraPlugin", () => {
     const nobody = new adapter!.NiadraPlugin(() => null);
     expect(nobody.getTools()).toEqual([]);
     expect(String(await new strands!.Agent({ model, plugins: [nobody], printer: false }).invoke("hi"))).toContain("ok");
-    expect(mock.doStreamCalls.every((call) => !JSON.stringify(call.prompt).includes("<context>"))).toBe(true);
+    expect(mock.doStreamCalls.every((call) => !JSON.stringify(call.prompt).includes("<niadra>"))).toBe(true);
   });
 
   it("reads the usage of each provider", () => {

@@ -36,7 +36,7 @@ describe("per-conversation context cache", () => {
     const server = new MockServer().on(
       "POST /v1/context",
       { body: contextBody() },
-      { body: contextBody({ text: "<context>v2</context>", etag: "etag-2" }) },
+      { body: contextBody({ text: "<niadra>v2</niadra>", etag: "etag-2" }) },
     );
     const niadra = makeClient(server);
     await niadra.context(inConversation);
@@ -50,7 +50,7 @@ describe("per-conversation context cache", () => {
 
     const refreshed = await niadra.context(inConversation);
     expect(refreshed.source).toBe("cache");
-    expect(refreshed.text).toBe("<context>v2</context>");
+    expect(refreshed.text).toBe("<niadra>v2</niadra>");
   });
 
   it("keeps the cached text on not_modified but takes the new live turns", async () => {
@@ -228,7 +228,7 @@ describe("per-conversation context cache", () => {
     const cache = new ContextCache(DEFAULT_CACHE);
     cache.store("k", "conversation:c", contextBody());
     cache.store("k", "conversation:c", contextBody({ delta: "[New] refund" }));
-    cache.store("k", "conversation:c", contextBody({ etag: "etag-2", text: "<context>v2</context>" }));
+    cache.store("k", "conversation:c", contextBody({ etag: "etag-2", text: "<niadra>v2</niadra>" }));
     expect(cache.take("k")).toBeNull();
     expect(cache.take("missing")).toBeUndefined();
   });
