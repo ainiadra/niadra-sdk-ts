@@ -119,7 +119,9 @@ export interface QueueOptions {
   flushIntervalMs: number;
   /**
    * Send a conversation turn (a message with a `conversation_id`) at most this long after it was
-   * queued, with whatever else is waiting. It is what the other agents read in `live`.
+   * queued, with whatever else is waiting. It is what the other agents read in `live`, so by
+   * default it leaves at once. Turns queued while a batch is in flight leave together as the next
+   * batch: a burst costs one request per round trip, never one per turn.
    */
   turnFlushIntervalMs: number;
   /** Items per request. The server accepts up to 500. */
@@ -136,7 +138,7 @@ export interface QueueOptions {
 export const DEFAULT_QUEUE: QueueOptions = {
   flushAt: 15,
   flushIntervalMs: 1_000,
-  turnFlushIntervalMs: 200,
+  turnFlushIntervalMs: 0,
   maxBatchSize: 100,
   maxQueueSize: 10_000,
   maxAttempts: 3,

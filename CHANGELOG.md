@@ -2,6 +2,20 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - Unreleased
+
+A turn another agent should read reaches the memory as soon as it is said.
+
+### Changed
+
+- `track()` sends a conversation turn at once: `queue.turnFlushIntervalMs` is now 0 (it was
+  200 ms). The wait was most of the time between a customer's message on one channel and the
+  moment an agent on another channel could read it. Turns still coalesce: turns queued in the
+  same tick leave together, one batch is in flight per client, and whatever is queued while it is
+  answered leaves together as the next batch, so a burst of turns costs one request per round
+  trip, never one per turn. Order, retries and the 1 s `flushIntervalMs` of items outside a
+  conversation are unchanged. Set `turnFlushIntervalMs` to keep the old wait.
+
 ## [0.6.0] - Unreleased
 
 The memory has one behavior: every read that carries the customer's turn gets the conversation's
