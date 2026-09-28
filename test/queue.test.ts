@@ -54,14 +54,12 @@ describe("batching", () => {
     expect(texts).toEqual(["outside any conversation", "I was charged twice"]);
   });
 
-  it("by default sends a turn within 200 ms and anything else within a second", async () => {
+  it("by default sends a turn at once and anything else within a second", async () => {
     vi.useFakeTimers();
     const server = new MockServer().on("POST /v1/batch", batchOk());
     const niadra = makeClient(server);
     niadra.track({ ...message("a turn"), conversation_id: "wa-1" });
-    await vi.advanceTimersByTimeAsync(199);
-    expect(server.calls).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(0);
     expect(server.calls).toHaveLength(1);
     niadra.track(message("no conversation"));
     niadra.track({ channel: "erp", speaker: "system", kind: "system_event", canonical_type: "invoice.credited", object_refs: ["invoice:erp:0823"], conversation_id: "wa-1" });
@@ -202,6 +200,59 @@ describe("one batch in flight per client", () => {
     expect(state.maxInFlight).toBe(1);
     expect(state.answered).toEqual([["event"], ["event"]]);
     expect(server.calls.map((call) => call.body.items[0].content.text)).toEqual(["I was charged twice", "after the turn"]);
+  });
+});
+
+describe("turns leave at once and coalesce behind the batch in flight", () => {
+  function timedServer(delayMs: number) {
+    const state = { inFlight: 0, maxInFlight: 0, texts: [] as string[] };
+    const server = new MockServer().on("POST /v1/batch", (request) => {
+      state.inFlight++;
+      state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);
+      const items = heartbeatFree(request.body.items);
+      setTimeout(() => {
+        state.inFlight--;
+        state.texts.push(...items.map((item: any) => item.content.text));
+      }, delayMs);
+      return { ...batchOk(items.length), delay: delayMs };
+    });
+    return { server, state };
+  }
+
+  async function until(condition: () => boolean): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error("condition not met in time");
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+  }
+
+  it("sends a burst of 40 turns as few batches, one in flight, in order", async () => {
+    const { server, state } = timedServer(100);
+    const niadra = makeClient(server);
+    const texts = Array.from({ length: 40 }, (_, i) => `turn ${i}`);
+    for (const text of texts) niadra.track({ ...message(text), conversation_id: "wa-1" });
+    await until(() => state.texts.length === texts.length);
+    expect(state.texts).toEqual(texts);
+    expect(server.calls.length).toBeLessThanOrEqual(3);
+    expect(state.maxInFlight).toBe(1);
+  });
+
+  it("at 25 turns a second, sends at most one request per round trip", async () => {
+    const { server, state } = timedServer(100);
+    const niadra = makeClient(server);
+    const texts = Array.from({ length: 25 }, (_, i) => `turn ${i}`);
+    const started = Date.now();
+    for (const [i, text] of texts.entries()) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, started + i * 40 - Date.now())));
+      niadra.track({ ...message(text), conversation_id: `wa-${i % 5}` });
+    }
+    await until(() => state.texts.length === texts.length);
+    const elapsed = Date.now() - started;
+    expect(state.texts).toEqual(texts);
+    expect(state.maxInFlight).toBe(1);
+    expect(server.calls.length).toBeLessThanOrEqual(elapsed / 100 + 2);
+    expect(server.calls.length).toBeLessThan(texts.length);
   });
 });
 

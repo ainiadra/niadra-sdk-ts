@@ -226,7 +226,7 @@ await task.end();
 | `handoff({ conversation_id, target })` | A transfer to a human or another agent | Sent at once |
 | `feedback({ subject, action, ... })` | A correction of what Niadra derived: `retract_fact`, `correct_fact`, `resolve_open_item`, `conversation_outcome` | Sent at once |
 
-Queued items leave in batches when 15 are waiting or a second after the first one, whichever comes first. A message with a `conversation_id` is a turn the other agents read in `live`, so it leaves within 200 ms (`queue.turnFlushIntervalMs`), taking whatever else is waiting along.
+Queued items leave in batches when 15 are waiting or a second after the first one, whichever comes first. A message with a `conversation_id` is a turn the other agents read in `live`, so it leaves at once (`queue.turnFlushIntervalMs`, 0 by default), taking whatever else is waiting along. One batch is in flight per client, so turns queued while it is answered leave together in the next one: a burst of turns costs one request per round trip, not one per turn.
 
 Every item carries an idempotency key: the provider's message id when you pass one, a UUIDv7 otherwise. Retrying the same event is harmless.
 
@@ -709,7 +709,7 @@ new Niadra({
   timeouts: { context: 300, contextVoice: 200, contextVoiceStart: 1500, navigation: 600, navigationVoice: 300, write: 5000, token: 2000, upload: 60_000 },
   voice: { enabled: true, settleMs: 200, minCoverage: 0.75, probe: true },
   cache: { ttlMs: 10_000, staleWhileRevalidateMs: 600_000, maxStaleMs: 1_800_000, maxEntries: 1000 },
-  queue: { flushAt: 15, flushIntervalMs: 1000, turnFlushIntervalMs: 200, maxBatchSize: 100, maxQueueSize: 10_000, maxAttempts: 3 },
+  queue: { flushAt: 15, flushIntervalMs: 1000, turnFlushIntervalMs: 0, maxBatchSize: 100, maxQueueSize: 10_000, maxAttempts: 3 },
   strict: false,
   flushOnExit: true,
   logger: console,                           // anything with debug, warn and error
