@@ -99,8 +99,6 @@ export interface SlotWhy {
   channels: SlotChannelRank[];
   /** The space's learned fusion weights used; absent for the defaults. */
   weights_version?: number | null;
-  /** For an item the `linked` channel brought: the exact match it is tied to, as `item_id`. */
-  via?: string | null;
   /** The line was cut to the sentences that answer the turn. */
   excerpt?: boolean;
   /**
