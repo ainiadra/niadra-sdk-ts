@@ -1,7 +1,7 @@
 {
   "name": "@niadra/sdk",
   "version": "0.6.0",
-  "description": "TypeScript SDK for Niadra, the shared customer memory for every AI agent in a company: context before the model call, history, tools and MCP.",
+  "description": "TypeScript SDK for Niadra, the omnichannel memory layer for a company's AI agents: context before the model call, history, tools and MCP.",
   "license": "Apache-2.0",
   "author": "Niadra",
   "homepage": "https://docs.niadra.com/en",
@@ -14,6 +14,8 @@
     "niadra",
     "ai-agents",
     "agent-memory",
+    "omnichannel",
+    "multi-platform",
     "llm",
     "customer-context",
     "context-engineering",
