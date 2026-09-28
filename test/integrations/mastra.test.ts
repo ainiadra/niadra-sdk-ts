@@ -133,7 +133,7 @@ describe("Mastra", () => {
     expect((await agent.generate("hi", { requestContext: new RequestContext([["niadra", convo]]) })).text).toBe("ok");
     expect((await agent.generate("hi")).text).toBe("ok");
     const prompts = calls(model).map((call) => JSON.stringify(call.prompt));
-    expect(prompts.every((prompt) => !prompt.includes("<context>"))).toBe(true);
+    expect(prompts.every((prompt) => !prompt.includes("<niadra>"))).toBe(true);
     expect(niadraTools(undefined)).toEqual({});
   });
 

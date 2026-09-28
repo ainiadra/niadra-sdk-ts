@@ -81,7 +81,7 @@ describe("VoltAgent: niadraHooks", () => {
     const agent = agentWith(model);
     expect((await agent.generateText("hi", { context: { niadra: convo } })).text).toBe("ok");
     expect((await agent.generateText("hi")).text).toBe("ok");
-    expect(model.doGenerateCalls.every((call) => !JSON.stringify(call.prompt).includes("<context>"))).toBe(true);
+    expect(model.doGenerateCalls.every((call) => !JSON.stringify(call.prompt).includes("<niadra>"))).toBe(true);
   });
 });
 

@@ -5,7 +5,7 @@ import { nodeClass as ToolsNode } from "../src/NiadraTools";
 import type { INodeData, MemoryMethods } from "../src/flowise";
 
 const KEY = "nia_sk_test_sa-east-1_acme-sandbox_k7Qx_s3cr3t";
-const PACK = "<context>Marina · customer since 2021</context>";
+const PACK = "<niadra>Marina · customer since 2021</niadra>";
 
 /** Answers like a Niadra space and keeps what the nodes sent. */
 function space() {

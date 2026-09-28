@@ -3,7 +3,7 @@ import type { Niadra } from "../../src/index.js";
 
 export { marina };
 
-export const PACK = "<context>Marina · customer since 2021</context>";
+export const PACK = "<niadra>Marina · customer since 2021</niadra>";
 const LIVE = [
   { at: "2026-09-22T17:07:02Z", channel: "whatsapp", kind: "message" as const, speaker: "customer", text: "sent the photo", source_id: "s" },
 ];

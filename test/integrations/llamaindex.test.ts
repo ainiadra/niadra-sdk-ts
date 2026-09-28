@@ -109,7 +109,7 @@ describe("LlamaIndex.TS: NiadraMemory with an agent", () => {
     const llm = new ScriptedLLM([{ text: "ok" }]);
     expect((await agent({ llm, tools: [], memory: new NiadraMemory(convo) }).run("hi")).data.result).toBe("ok");
     expect((await agent({ llm, tools: [], memory: new NiadraMemory(() => null) }).run("hi")).data.result).toBe("ok");
-    expect(llm.prompts.every((prompt) => !JSON.stringify(prompt).includes("<context>"))).toBe(true);
+    expect(llm.prompts.every((prompt) => !JSON.stringify(prompt).includes("<niadra>"))).toBe(true);
   });
 });
 

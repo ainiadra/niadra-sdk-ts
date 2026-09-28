@@ -75,7 +75,7 @@ describe("Genkit: niadraMiddleware", () => {
     const model = mockModel(ai, { name: "plain", respond: "ok" });
     expect((await ai.generate({ model, prompt: "hi", use: [niadraMiddleware(convo)] })).text).toBe("ok");
     expect((await ai.generate({ model, prompt: "hi", use: [niadraMiddleware(() => null)] })).text).toBe("ok");
-    expect(model.requests.every((request) => !JSON.stringify(request.messages).includes("<context>"))).toBe(true);
+    expect(model.requests.every((request) => !JSON.stringify(request.messages).includes("<niadra>"))).toBe(true);
   });
 });
 

@@ -7,7 +7,7 @@ import { niadraAgent } from "../../dist/cloudflare-agents.js";
 const KEY = "nia_sk_test_us-east-2_acme-sandbox_k7Qx_s3cr3t";
 const CONTEXT = {
   not_modified: false,
-  text: "<context>Marina, customer since 2021</context>",
+  text: "<niadra>Marina, customer since 2021</niadra>",
   variables: {},
   version: "1",
   etag: "etag-1",

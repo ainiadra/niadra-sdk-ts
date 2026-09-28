@@ -58,7 +58,6 @@ const slotWhyKeys: Record<keyof SlotWhy, true> = {
   score: true,
   channels: true,
   weights_version: true,
-  via: true,
   excerpt: true,
   rule: true,
   basis: true,
@@ -104,12 +103,15 @@ describe("the Context Pack specification", () => {
     expect(pack.spec).toBe("context-pack.v1");
     const names = schema.$defs.PackSection!.properties.name!.enum!;
     expect(pack.sections.every((s) => names.includes(s.name))).toBe(true);
+    // A section's lines carry no label; the text puts the section's label back before each one.
     const inner = answer.text!.split("\n").slice(1, -1);
-    expect([pack.preamble, ...pack.sections.flatMap((s) => s.lines)]).toEqual(inner);
-    expect(pack.slots.map((slot) => slot.text)).toEqual(answer.slots!.split("\n").slice(2, -1));
+    expect([pack.preamble, ...pack.sections.flatMap((s) => s.lines.map((line) => `[${s.label}] ${line}`))]).toEqual(inner);
+    expect(pack.slots.map((slot) => slot.text)).toEqual(answer.slots!.split("\n").slice(1, -1));
     expect(pack.stamp.etag).toBe(answer.etag);
     const suffix = renderSuffix(answer);
     expect(suffix.startsWith("<live_turns")).toBe(true);
-    expect(suffix.endsWith(`${answer.slots!}\n\n${answer.delta!}`)).toBe(true);
+    // The producer's example carries no delta, so the slots close the block where a delta would follow.
+    expect(answer.delta).toBeNull();
+    expect(suffix.endsWith(answer.slots!)).toBe(true);
   });
 });
