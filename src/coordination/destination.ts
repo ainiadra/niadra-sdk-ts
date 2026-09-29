@@ -10,11 +10,11 @@
  * The same rules as the Python SDK's `niadra.coordination.destination`.
  */
 
+import { fromBase64url, toBase64url } from "../base64url.js";
 import { NiadraError } from "../errors.js";
 
 const SEPARATORS = /[\s().\-/]/g;
 const DIGITS = /^[0-9]+$/;
-const BASE64URL = /^[A-Za-z0-9_-]*$/;
 const EMAIL = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9-]{1,63})+$/;
 
 /**
@@ -61,7 +61,7 @@ export function canonicalDestination(type: string, value: string): string {
  */
 export async function suppressionKey(salt: string, canonical: string): Promise<string> {
   const subtle = globalThis.crypto.subtle;
-  const key = await subtle.importKey("raw", fromBase64url(salt), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await subtle.importKey("raw", saltBytes(salt), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return toBase64url(new Uint8Array(await subtle.sign("HMAC", key, new TextEncoder().encode(canonical))));
 }
 
@@ -93,15 +93,8 @@ function isArea(code: string): boolean {
   return /^[1-9]{2}$/.test(code);
 }
 
-/** Strict base64url without padding. */
-function fromBase64url(text: string): Uint8Array<ArrayBuffer> {
-  if (!BASE64URL.test(text) || text.length % 4 === 1) throw new TypeError("the salt is not base64url");
-  const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
-}
-
-function toBase64url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function saltBytes(salt: string): Uint8Array<ArrayBuffer> {
+  const bytes = fromBase64url(salt);
+  if (bytes === null) throw new TypeError("the salt is not base64url");
+  return bytes;
 }

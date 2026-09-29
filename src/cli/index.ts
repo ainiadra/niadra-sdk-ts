@@ -75,7 +75,7 @@ export async function main(argv: readonly string[], io: Io = processIo()): Promi
 }
 
 /** The process's streams and a client from the environment, built once. */
-export function processIo(): Io {
+function processIo(): Io {
   let niadra: Niadra | undefined;
   return {
     out: (text) => void process.stdout.write(`${text}\n`),

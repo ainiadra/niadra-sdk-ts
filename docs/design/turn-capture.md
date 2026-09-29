@@ -1,13 +1,8 @@
 # Turn capture
 
-Status: design. What exists today:
-
-- the canonical JSON and the digest (`canonicalJson`, `jsonDigest`);
-- the route types (`src/types/turns.ts` and the other generated modules);
-- the route methods (`niadra.api`).
-
-This note fixes how the SDK captures a turn record in the agent's process, before the code is written.
-The Python SDK follows the same design, in snake_case.
+Status: built, except two parts. In section 4's table, Genkit, Cloudflare Agents, LiveKit and the webhook
+rows do not record turns yet. In section 3, the conversation's quotes are not kept locally. The capture
+lives in `src/capture/`. The Python SDK follows the same design, in snake_case.
 
 A turn runs from its input (a message, an interface action, an event, a timer firing) to the last thing
 it emits to the customer or to a document. Its record says what the agent read, called, showed, claimed
@@ -25,8 +20,8 @@ One rule decides every choice below: **capture never delays the agent**.
     `node:async_hooks` statically.
   - It takes the class from `process.getBuiltinModule("node:async_hooks")` where that exists: Node 20.16
     and later, Bun, Deno.
-  - On Cloudflare Workers, with the `nodejs_als` flag, the `@niadra/sdk/cloudflare-agents` entry passes it
-    in.
+  - A runtime without it, such as Cloudflare Workers with the `nodejs_als` flag, passes the class to
+    `useAsyncLocalStorage()`.
 - **Where there is no async context,** `currentTurn()` returns `undefined`. The adapters then pass the turn
   explicitly: every hook receives the frame the adapter opened. Capture keeps working; only the implicit
   lookup is missing.

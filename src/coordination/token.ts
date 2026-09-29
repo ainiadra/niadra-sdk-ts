@@ -19,13 +19,14 @@
  * `seen` store. The signature is checked with Web Crypto's Ed25519.
  */
 
+import { fromBase64url, toBase64url } from "../base64url.js";
 import { NiadraError } from "../errors.js";
 import type { Handle } from "../types/common.js";
 import type { ContactKey, ContactKeys } from "../types/coordination.js";
 import { canonicalDestination } from "./destination.js";
 
 /** Seconds of clock skew a gateway allows, before `iat` and after `exp`. */
-export const LEEWAY = 5;
+const LEEWAY = 5;
 const MAX_LIFETIME = 120;
 const MAX_LENGTH = 1024;
 const KEYS_REFRESH_MS = 3_600_000;
@@ -107,17 +108,9 @@ const NAME = /^[a-z][a-z0-9_]{0,39}$/;
 const KID = /^[A-Za-z0-9_-]{8,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Strict base64url without padding, or `null`. */
+/** Strict base64url without padding, or `null`; never empty. */
 function unb64(text: string): Uint8Array<ArrayBuffer> | null {
-  if (!SEGMENT.test(text) || text.length % 4 === 1) return null;
-  const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (text.length % 4)) % 4));
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-}
-
-function b64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return SEGMENT.test(text) ? fromBase64url(text) : null;
 }
 
 /**
@@ -128,7 +121,7 @@ export async function recipientHash(gatewayKey: string | Uint8Array, destination
   const raw = typeof gatewayKey === "string" ? unb64(gatewayKey) : new Uint8Array(gatewayKey);
   if (raw === null) throw new TypeError("the gateway key is not base64url");
   const key = await crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return b64(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(destination))));
+  return toBase64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(destination))));
 }
 
 function claimsOf(raw: Uint8Array): ContactClaims {

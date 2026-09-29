@@ -18,9 +18,10 @@
  * the cap a write is not stored and the previous state stays (`reason: "over_cap"`), never an error.
  */
 
-import { NiadraAPIError, NiadraConnectionError, NiadraTimeoutError } from "./errors.js";
+import { NiadraAPIError } from "./errors.js";
 import type { Logger } from "./logger.js";
 import type { Outbox } from "./outbox.js";
+import { isTransient } from "./transport.js";
 import { currentTurn } from "./capture/frame.js";
 import { replaying } from "./replay/playback.js";
 import type { Handle } from "./types/common.js";
@@ -66,12 +67,7 @@ interface Held {
   pending: number;
 }
 
-const RETRYABLE = new Set([408, 421, 429, 500, 502, 503, 504]);
 
-function retryable(error: unknown): boolean {
-  if (error instanceof NiadraTimeoutError || error instanceof NiadraConnectionError) return true;
-  return error instanceof NiadraAPIError && RETRYABLE.has(error.status);
-}
 
 function isConflict(error: unknown): boolean {
   return error instanceof NiadraAPIError && (error.status === 412 || error.code === "agent_state_conflict");
@@ -145,7 +141,7 @@ export class AgentStates {
       return this.written(write, await this.transport.write(write));
     } catch (error) {
       if (isConflict(error)) return { stored: false, version: this.held.get(key(write.scope, write.agent))?.version ?? 0, reason: "conflict", pending: false };
-      if (retryable(error)) return this.later(write);
+      if (isTransient(error)) return this.later(write);
       return { stored: false, version: 0, reason: error instanceof NiadraAPIError ? error.code : "error", pending: false };
     }
   }

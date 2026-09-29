@@ -40,8 +40,8 @@ import type { ClaimRecord } from "../types/turns.js";
 import { findingsOf, passages, recordOf } from "./claims.js";
 import type { TurnFrame } from "./frame.js";
 
-export const HOLD_MS = 150;
-export const MESSAGE_MS = 300;
+const HOLD_MS = 150;
+const MESSAGE_MS = 300;
 const ACTED = new Set<string>(["block", "rewrite", "warn"]);
 const BOUNDARY = pattern(String.raw`[!?;](?=\s)|\.(?=\s+[A-ZÀ-Ý])|\n`, "g");
 const TRAILING_WORD = pattern(String.raw`[\w$€£]+$`);

@@ -16,7 +16,7 @@ function comb(n: number, k: number): bigint {
   return out;
 }
 
-export function fisher(basePass: number, baseFail: number, passed: number, failed: number): number {
+function fisher(basePass: number, baseFail: number, passed: number, failed: number): number {
   const total = basePass + baseFail + passed + failed;
   const failures = baseFail + failed;
   const drawn = passed + failed;

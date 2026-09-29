@@ -42,7 +42,7 @@ export function recordNewest(bridge: Bridge, seen: Set<string>, prompt: readonly
   bridge.customer(text);
 }
 
-export function textParts(content: unknown): string {
+function textParts(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return (content as unknown[])
@@ -51,7 +51,7 @@ export function textParts(content: unknown): string {
     .join("\n");
 }
 
-export function lastUserIndex(prompt: readonly unknown[]): number {
+function lastUserIndex(prompt: readonly unknown[]): number {
   for (let index = prompt.length - 1; index >= 0; index--) if (roleOf(prompt[index]) === "user") return index;
   return -1;
 }

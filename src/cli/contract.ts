@@ -28,7 +28,7 @@ import type { Io } from "./index.js";
 type Json = Record<string, unknown>;
 
 /** What the test found: the phrases that triggered and the examples that differ. */
-export interface ContractReport {
+interface ContractReport {
   contract: string;
   corpus: string | null;
   phrases: number;

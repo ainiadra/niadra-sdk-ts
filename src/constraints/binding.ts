@@ -68,7 +68,7 @@ export function relaxed(raw: RawBinding, result: unknown): boolean {
 }
 
 /** What a small path reads out of a JSON value: `$` the value, `a.b` a key, `a[*]` each item of a list. */
-export function readPath(value: unknown, path: string): unknown[] {
+function readPath(value: unknown, path: string): unknown[] {
   let found: unknown[] = [value];
   const trimmed = path.replace(/^\$/, "").replace(/^\.+|\.+$/g, "");
   if (!trimmed) return found;

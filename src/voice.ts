@@ -32,9 +32,9 @@ import type { Timeouts, VoiceOptions } from "./options.js";
 import type { ContextRequest, ContextResponse } from "./types/context.js";
 
 /** Reads a line remembers for matching turns; older ones are forgotten. */
-export const MAX_READS = 4;
+const MAX_READS = 4;
 /** Conversations with a line at once; past this, the least recently used line goes. */
-export const MAX_LINES = 1000;
+const MAX_LINES = 1000;
 
 const WORD = /[\p{L}\p{N}_]+/gu;
 const MARKS = /\p{M}/gu;

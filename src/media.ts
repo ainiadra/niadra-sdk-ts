@@ -25,7 +25,7 @@ export interface MediaUpload {
   expires_at: string | null;
 }
 
-export interface PreparedUpload {
+interface PreparedUpload {
   bytes: Uint8Array<ArrayBuffer>;
   request: MediaUploadRequest;
 }

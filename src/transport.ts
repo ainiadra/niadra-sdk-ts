@@ -39,7 +39,7 @@ export interface RequestSpec {
 }
 
 /** Bytes for a pre-signed storage URL. The URL is the credential; nothing of the API's goes along. */
-export interface UploadSpec {
+interface UploadSpec {
   url: string;
   body: Uint8Array<ArrayBuffer>;
   /** Exactly the headers the signature covers, as the reservation named them. */
@@ -49,13 +49,13 @@ export interface UploadSpec {
   signal?: AbortSignal | undefined;
 }
 
-export interface TransportResponse<T> {
+interface TransportResponse<T> {
   status: number;
   data: T;
   requestId: string | null;
 }
 
-export interface TransportConfig {
+interface TransportConfig {
   baseURL: string;
   apiKey: string;
   fetch: typeof fetch;
@@ -268,7 +268,8 @@ function isStatus(error: unknown, status: number): boolean {
   return error instanceof NiadraAPIError && error.status === status;
 }
 
-function isTransient(error: unknown): boolean {
+/** A failure worth trying again: a timeout, a lost connection, or a status that may answer otherwise later. */
+export function isTransient(error: unknown): boolean {
   if (error instanceof NiadraTimeoutError || error instanceof NiadraConnectionError) return true;
   return error instanceof NiadraAPIError && RETRYABLE_WRITE_STATUS.has(error.status);
 }

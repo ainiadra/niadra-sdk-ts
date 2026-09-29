@@ -8,7 +8,7 @@ import { scenarioVerdict, worst } from "./stats.js";
 import type { Execution } from "./stats.js";
 
 export const SPACE = "0192f5a0-0000-7000-8000-00000000a0e1";
-export const KID = "ck_test_space_1";
+const KID = "ck_test_space_1";
 const SEED = new Uint8Array(32).fill(7);
 const SALT = "bW9jay1zdXBwcmVzc2lvbi1zYWx0LTMyYnl0ZXMtbG9uZw";
 const PINS = ["prompts", "corpus_digest", "model", "assembler", "tool_schemas"];

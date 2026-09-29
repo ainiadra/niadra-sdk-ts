@@ -73,7 +73,7 @@ import { consoleLogger } from "./logger.js";
 import type { Logger } from "./logger.js";
 import { DEFAULT_CACHE, DEFAULT_QUEUE, DEFAULT_TIMEOUTS, DEFAULT_VOICE } from "./options.js";
 import type { ClientOptions, Timeouts } from "./options.js";
-import { EventQueue } from "./queue.js";
+import { EventQueue, unref } from "./queue.js";
 import { Task } from "./task.js";
 import type { TaskParams } from "./task.js";
 import { bindTools } from "./tools.js";
@@ -1681,8 +1681,3 @@ async function waitFor(
   }
 }
 
-function unref(timer: unknown): void {
-  if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
-    (timer as { unref(): void }).unref();
-  }
-}

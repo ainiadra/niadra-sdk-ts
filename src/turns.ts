@@ -6,7 +6,7 @@
  * the SDK caches the pack as a read without `query` and never caches the slots.
  */
 
-export const MAX_TURN = 2000;
+const MAX_TURN = 2000;
 /** A partial transcript shorter than this says nothing the server can use yet. */
 export const MIN_PREFETCH = 8;
 /** Statuses of a server without the prefetch route. */

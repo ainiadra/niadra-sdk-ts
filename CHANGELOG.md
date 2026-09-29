@@ -11,8 +11,8 @@ built on them.
 
 - `niadra.api` (`Api`): one method per route of turn records, replay and scenarios, typed state and the
   agent's working state, subject signals and measurement, and coordination, named in camelCase as the
-  server names the operation. Unlike the rest of the client they never fail open; the server answers
-  501 until it builds a route, and the method rejects with `NiadraNotAvailableError`.
+  server names the operation. Unlike the rest of the client they never fail open; a route a server does
+  not serve (501) rejects with `NiadraNotAvailableError`.
 - The types of those routes (`TurnRecord`, `StateReadRequest`, `CheckResult` and the rest), generated
   from the server's OpenAPI document by `scripts/sync-spec.ts`.
 - Turn records: `conversation.turn()` records what one turn read, called and said, with the build it ran

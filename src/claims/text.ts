@@ -118,7 +118,7 @@ export function slice(text: string, start: number, end: number): string {
  * than 0, what Python's `unicodedata.combining` reads): canonical ordering moves a mark between two marks
  * out of order, and never moves a starter.
  */
-export function combining(c: string): boolean {
+function combining(c: string): boolean {
   if (!MARK.test(c)) return false;
   const run = `\u0301${c}\u0316`;
   return run.normalize("NFD") !== run;

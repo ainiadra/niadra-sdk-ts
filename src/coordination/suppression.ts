@@ -21,12 +21,12 @@ import type { Suppression, SuppressionPage, SuppressionSalt } from "../types/coo
 import { NiadraDestinationError, canonicalDestination, suppressionKey } from "./destination.js";
 
 /** Milliseconds after which the copy is read again. */
-export const REFRESH_MS = 60_000;
+const REFRESH_MS = 60_000;
 /** Purposes whose contacts go when Niadra cannot say; every other purpose waits. */
-export const FAIL_OPEN = new Set(["transactional", "service"]);
-export const PAGE = 200;
+const FAIL_OPEN = new Set(["transactional", "service"]);
+const PAGE = 200;
 /** Pages one read takes at most; the next read goes on from its cursor. */
-export const MAX_PAGES = 50;
+const MAX_PAGES = 50;
 
 export interface SuppressionReader {
   salt(): Promise<SuppressionSalt>;

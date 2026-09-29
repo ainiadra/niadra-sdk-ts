@@ -95,7 +95,7 @@ export function stateValues(objects: readonly ObjectRead[]): StateValue[] {
 }
 
 /** What the turn holds that a claim can stand on: the values its tools returned and its reads served. */
-export function evidence(frame: TurnFrame, contract: ClaimContractSummary, spoken: readonly Mention[], lang: Language): Turn {
+function evidence(frame: TurnFrame, contract: ClaimContractSummary, spoken: readonly Mention[], lang: Language): Turn {
   const roles = new Map<string, Set<string>>();
   for (const category of contract.categories ?? []) {
     for (const role of Object.keys(category.detect.roles ?? {})) {

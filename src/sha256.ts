@@ -1,6 +1,6 @@
 /**
  * SHA-256 (FIPS 180-4), synchronous, for what hashes in the middle of a computation (niadra-expr's
- * `sha256()`). Web Crypto only hashes asynchronously, and the SDK runs on Node, Deno, Bun, Workers and edge
+ * `sha256()`, the exposure token's verifier). Web Crypto only hashes asynchronously, and the SDK runs on Node, Deno, Bun, Workers and edge
  * runtimes alike, so this is plain 32-bit arithmetic with no runtime module.
  */
 
@@ -20,6 +20,11 @@ const rotr = (x: number, n: number): number => (x >>> n) | (x << (32 - n));
 
 /** The SHA-256 of `bytes`, in lowercase hexadecimal. */
 export function sha256Hex(bytes: Uint8Array): string {
+  return Array.from(sha256(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** The SHA-256 of `bytes`. */
+export function sha256(bytes: Uint8Array): Uint8Array {
   // The message, a 1 bit, zeros, and its length in bits as a 64-bit big-endian number, in blocks of 64 bytes.
   const size = Math.ceil((bytes.length + 9) / 64) * 64;
   const message = new Uint8Array(size);
@@ -62,5 +67,5 @@ export function sha256Hex(bytes: Uint8Array): string {
       state.setUint32(i * 4, state.getUint32(i * 4) + word);
     });
   }
-  return Array.from(new Uint8Array(state.buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return new Uint8Array(state.buffer);
 }

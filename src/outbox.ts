@@ -8,22 +8,18 @@
  * write that went through hears the answer. Putting a write never waits. Past `capacity` writes the oldest go.
  */
 
-import { NiadraAPIError, NiadraConnectionError, NiadraTimeoutError } from "./errors.js";
+import { NiadraAPIError } from "./errors.js";
 import type { Logger } from "./logger.js";
+import { isTransient } from "./transport.js";
 
 const CAPACITY = 1000;
 const MAX_PAUSE_MS = 60_000;
-const RETRYABLE = new Set([408, 421, 429, 500, 502, 503, 504]);
 
 export interface Write {
   send(): Promise<unknown>;
   settled?: (answer: unknown, error: unknown) => void;
 }
 
-function retryable(error: unknown): boolean {
-  if (error instanceof NiadraTimeoutError || error instanceof NiadraConnectionError) return true;
-  return error instanceof NiadraAPIError && RETRYABLE.has(error.status);
-}
 
 export class Outbox {
   private readonly writes: Write[] = [];
@@ -96,7 +92,7 @@ export class Outbox {
     try {
       answer = await write.send();
     } catch (error) {
-      if (retryable(error)) {
+      if (isTransient(error)) {
         this.pause = Math.min(MAX_PAUSE_MS, Math.max(this.intervalMs, this.pause * 2));
         this.resumeAt = this.now() + this.pause;
         return false;
