@@ -99,6 +99,14 @@ built on them.
 - `pnpm sync-spec --spec` also copies the Context Pack schemas (`spec/context-pack.v1.json` and `v2`), and
   `test/spec.test.ts` holds `ContextResponse` and every include block to the v2 schema.
 
+### Fixed
+
+- The claim contract reads the computed values a state read serves (`ObjectRead.values`, a deadline the
+  company's rule recomputed) as evidence, by their name, while they are claim-safe and no unknown field of
+  their object blocks claims. The guard used to find no evidence for such a value and blocked a correct
+  answer. A stale or blocked computed value still backs nothing, and a field of an object whose claims are
+  blocked is a copy too old to back one.
+
 ## [0.6.1] - Unreleased
 
 A turn another agent should read reaches the memory as soon as it is said.

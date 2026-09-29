@@ -81,14 +81,25 @@ export function recordOf(finding: Finding, act: ClaimRecord["action"]): ClaimRec
   return record;
 }
 
-/** The fields of objects a state read served, as the claim check's evidence. */
+/**
+ * The fields and computed values of objects a state read served, as the claim check's evidence. A computed
+ * value (a deadline the company's rule recomputed) backs a claim by its name, and only while it is claim-safe
+ * and no unknown field of its object blocks claims. A field that is not claim-safe stays as a copy too old to
+ * back one, so a claim that repeats it is `stale`. A masked or unknown value backs nothing.
+ */
 export function stateValues(objects: readonly ObjectRead[]): StateValue[] {
   const out: StateValue[] = [];
   for (const item of objects) {
     const ref = `${item.ref.type}:${item.ref.namespace}:${item.ref.id}`;
+    const gaps = item.declared_gaps ?? [];
+    const claimable = (item.blocked?.claim ?? []).length === 0;
     for (const [name, field] of Object.entries(item.fields ?? {})) {
       if (field.masked || field.logic !== "yes" || field.v == null) continue;
-      out.push({ ref, field: name, value: field.v, claimSafe: field.claim_safe, role: field.role ?? null, declaredGaps: item.declared_gaps ?? [] });
+      out.push({ ref, field: name, value: field.v, claimSafe: field.claim_safe && claimable, role: field.role ?? null, declaredGaps: gaps });
+    }
+    for (const [name, value] of Object.entries(item.values ?? {})) {
+      if (value.logic !== "yes" || value.v == null || !(value.claim_safe && claimable)) continue;
+      out.push({ ref, field: name, value: value.v, claimSafe: true, role: null, declaredGaps: [...new Set([...gaps, ...(value.declared_gaps ?? [])])] });
     }
   }
   return out;
