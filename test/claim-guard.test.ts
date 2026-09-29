@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Guard, Niadra, TurnFrame, guardStream, guardText, silentLogger } from "../src/index.js";
-import type { ClaimContractSummary } from "../src/index.js";
+import type { ClaimContractSummary, ObjectRead } from "../src/index.js";
+import { stateValues } from "../src/capture/claims.js";
 import { Cell } from "./support/cell.js";
 import { KEY, marina } from "./helpers.js";
 
@@ -134,6 +135,40 @@ describe("the claim guard", () => {
       expect(streamed).toBe(whole);
       const immutable = (await collect(guardStream(new Guard(HEALTH, frame(), { context: "proposal", holdMs: 60_000, messageMs: 60_000 }), chunks))).join("");
       expect(immutable).toBe(text);
+    }
+  });
+});
+
+const LEGAL = contract("legal");
+const NOTICE = "intimacao_com_prazo:tj:0001234-56";
+const DEADLINE = "O prazo final vence em 21/10/2026, sem contar feriado local.";
+
+/** A turn whose state block served a notice with the deadline the company's rule recomputed. */
+function served(due: string, options: { claimSafe?: boolean; blocked?: boolean } = {}): TurnFrame {
+  const claimSafe = options.claimSafe ?? true;
+  const read = {
+    ref: { type: "intimacao_com_prazo", namespace: "tj", id: "0001234-56" },
+    fields: { published_at: { v: "2026-09-30", logic: "yes", status: "fresh", claim_safe: true } },
+    values: {
+      due_date: { v: due, logic: "yes", status: claimSafe ? "fresh" : "stale", claim_safe: claimSafe, rule: "prazo_util@v3", computed_at: "2026-09-30T12:00:00Z", version: 2, supersedes_version: 1 },
+    },
+    blocked: options.blocked ? { claim: ["published_at"] } : {},
+  } as unknown as ObjectRead;
+  const turn = new TurnFrame(null, { agent: "clerk", conversationId: "c-9" });
+  turn.observeState(stateValues([read]));
+  return turn;
+}
+
+describe("a computed value the state block served", () => {
+  it("backs a claim of the recomputed deadline", () => {
+    const guarded = guardText(LEGAL, served("2026-10-21"), DEADLINE);
+    expect(guarded.text).toBe(DEADLINE);
+    expect(guarded.claims.map((c) => [c.category, c.verdict, c.action, c.evidence?.ref, c.evidence?.field])).toEqual([["deadline", "matched", "none", NOTICE, "due_date"]]);
+  });
+
+  it("still flags a stale or blocked value, and a date the state never gave", () => {
+    for (const turn of [served("2026-10-21", { claimSafe: false }), served("2026-10-21", { blocked: true }), served("2026-10-22")]) {
+      expect(guardText(LEGAL, turn, DEADLINE).claims.map((c) => [c.verdict, c.nature, c.action])).toEqual([["unsupported", "model", "block"]]);
     }
   });
 });
