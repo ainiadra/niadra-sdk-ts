@@ -56,6 +56,8 @@ export class TurnRecorder implements Submit {
   claims: ((frame: TurnFrame) => ClaimRecord[]) | null = null;
   /** The mode the space's recording names, when the client knows it (the SDK profile). */
   recordingMode: () => ContentMode | null = () => null;
+  /** The pins a turn needs to be replayable, when the client knows them (the SDK profile). */
+  requiredPins: () => readonly string[] = () => [];
   /** The features the space turned on, when the client knows them (the SDK profile). */
   features: () => ReadonlySet<string> | null = () => null;
   accepted = 0;
@@ -102,6 +104,12 @@ export class TurnRecorder implements Submit {
       return;
     }
     if (!this.recording) return;
+    const pins = frame.pins as Record<string, unknown>;
+    const missing = this.requiredPins().filter((pin) => !pinned(pins[pin]));
+    if (missing.length > 0) {
+      const names = missing.join(", ");
+      this.warnOnce(`pins:${names}`, `turns without the ${names} pin are kept but cannot be replayed; name them in Niadra.build()`);
+    }
     try {
       this.queue.put(frame);
       this.sender?.notify();
@@ -182,4 +190,9 @@ export class TurnRecorder implements Submit {
     this.warned.add(key);
     this.logger.warn(message);
   }
+}
+
+function pinned(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return false;
+  return typeof value !== "object" || Object.keys(value).length > 0;
 }

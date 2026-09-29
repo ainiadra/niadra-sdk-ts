@@ -242,8 +242,38 @@ export interface InferencePage {
   next_cursor?: string | null;
 }
 
+export interface InterleavingRow {
+  day: string;
+  experiment: string;
+  impressions: number;
+  /** Impressions engaged with equally, or not at all. */
+  ties: number;
+  tool: string;
+  /** Impressions whose engagement went to the items ranking `a` contributed. */
+  wins_a: number;
+  wins_b: number;
+}
+
+export interface InterleavingTotal {
+  experiment: string;
+  impressions: number;
+  /** The two-sided sign test on the decided impressions; absent before any was decided. */
+  p_value: number | null;
+  ties: number;
+  tool: string;
+  wins_a: number;
+  wins_b: number;
+}
+
+/**
+ * Interleaved lists of a tool's two rankings (team draft, seeded by the turn): which ranking the
+ * person's engagement credited, impression by impression, by day and over the period.
+ */
 export interface InterleavingReport {
-  rows: (Record<string, unknown>)[];
+  rows: InterleavingRow[];
+  since: string;
+  totals: InterleavingTotal[];
+  until: string;
 }
 
 export interface LegalHold {

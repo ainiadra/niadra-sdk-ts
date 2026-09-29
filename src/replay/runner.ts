@@ -42,6 +42,7 @@ export interface ReplayInput {
   history: Json[];
   context: ContextResponse | null;
   record: Json;
+  /** The execution's number, from 1. */
   run: number;
   paraphrase: boolean;
 }
@@ -150,7 +151,8 @@ export class Replayer {
     const out: Json[] = [];
     const stopped = new Set<number>();
     for (const [turnId, found, status, error] of cases) {
-      for (let run = 0; run < runs; run++) {
+      for (let run = 1; run <= runs; run++) {
+        // Runs are numbered from 1 (the replay spec, 7).
         if (stopped.has(run)) continue;
         if (found === null) {
           out.push(result(id, turnId, null, run, status, error === null ? {} : { error }));

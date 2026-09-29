@@ -175,6 +175,22 @@ describe("turn records", () => {
     expect(queue.length).toBe(3);
   });
 
+  it("a turn without a pin the space requires is kept, with one warning", async () => {
+    const cell = new Cell();
+    const warnings: string[] = [];
+    const logger = { debug: () => undefined, warn: (message: string) => warnings.push(message), error: () => undefined };
+    const niadra = client(cell, { logger });
+    niadra.turns.requiredPins = () => ["prompts", "model"];
+    const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-9" });
+    for (let i = 0; i < 2; i++) await conversation.turn({ build: Niadra.build({ model: "model-a" }) }, () => quote("ouro"));
+    await conversation.turn({ build: Niadra.build({ prompts: { core: "v1" }, model: "model-a" }) }, () => quote("ouro"));
+    await niadra.flush();
+    expect(records(cell)).toHaveLength(3);
+    expect(warnings.filter((w) => w.includes("cannot be replayed"))).toEqual([
+      expect.stringContaining("turns without the prompts pin are kept but cannot be replayed"),
+    ]);
+  });
+
   it("closing a turn never waits for the sender", async () => {
     const cell = new Cell();
     const niadra = client(cell, { fetch: () => new Promise<Response>(() => undefined) });

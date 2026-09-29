@@ -316,6 +316,7 @@ export class Cell {
       });
     }
     if (method === "POST" && path === "/v1/scenario-runs") {
+      if ((body.results as Json[]).some((r) => !(Number(r.run) >= 1 && Number(r.run) <= 100))) return problem(422, "invalid_input"); // runs are numbered 1 to 100
       for (const id of body.scenario_ids as string[]) {
         for (const turnId of (this.scenarios.get(id)?.turn_ids ?? []) as string[]) {
           const pins = this.pinDifferences(this.turns.get(turnId)?.build?.pins ?? {}, body.build?.pins ?? {}, body.vary ?? []);

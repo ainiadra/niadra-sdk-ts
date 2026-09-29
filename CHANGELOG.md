@@ -51,7 +51,10 @@ built on them.
 - Replay inside your boundary: `Replayer` runs the turns of a scenario N times with the build you pin,
   answers your tools from the record (`tool(name, fn, { dryRun: true })` lets one run for real when the
   record has no answer), keeps everything the agent sends from leaving, evaluates the assertions and
-  reports the run, and Niadra answers with the statistical verdict.
+  reports the run, and Niadra answers with the statistical verdict. Runs are numbered from 1, as the
+  replay spec numbers them.
+- The recording the SDK profile serves: a turn leaves in the content mode the space names for the source,
+  and a turn without a pin the space requires for replay is kept with a warning, once.
 - Turn records from the framework adapters. LangChain.js and LangGraph.js:
   `new NiadraCallbackHandler(conversation, { turns: true })` records each top-level run as a turn, with its
   tool calls (the provider's call ids) and its model calls with their tokens. Mastra:
