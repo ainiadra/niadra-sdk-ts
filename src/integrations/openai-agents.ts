@@ -7,7 +7,9 @@
  * - `niadraInstructions(base, conversation)` makes the agent's instructions dynamic: your text,
  *   then the agent's notes and the customer's pack, then the suffix.
  * - `niadraTools(conversation)` is the navigation kit as function tools bound to the customer.
- * - `niadraRunHooks(runner, conversation)` records handoffs between agents.
+ * - `niadraRunHooks(runner, conversation)` records handoffs between agents, and with `turns: true` each run
+ *   as a turn record: each tool call with its call id, arguments and result, and each model request with
+ *   its tokens. A run inside a turn in progress (`conversation.turn()` around `runner.run`) records into it.
  *
  * Fail-open: when Niadra is slow or down, the instructions are yours alone and the run goes on.
  */
@@ -15,7 +17,8 @@
 import { MemorySession, tool } from "@openai/agents";
 import type { Agent, AgentInputItem, FunctionTool, RunContext, Runner, Session as AgentsSession } from "@openai/agents";
 import type { Conversation } from "../conversation.js";
-import { Bridge, isRecord } from "./shared.js";
+import { uuidv7 } from "../ids.js";
+import { Bridge, TurnHooks, count, isRecord } from "./shared.js";
 import type { AgentMemoryOption, ProofSource, Session } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
@@ -117,19 +120,74 @@ export function niadraTools(session: Session, options: { agentMemory?: AgentMemo
   );
 }
 
+export interface NiadraRunHooksOptions {
+  /** Records each run as a turn, with its tool calls and model requests. Defaults to `false`. */
+  turns?: boolean;
+}
+
 /**
- * Records each handoff between agents of a run as a handoff to another agent. Returns a function
- * that stops listening.
+ * Records each handoff between agents of a run as a handoff to another agent, and with `turns: true` the
+ * run's turn record. Returns a function that stops listening.
  */
-export function niadraRunHooks(runner: Runner, conversation: Conversation): () => void {
+export function niadraRunHooks(runner: Runner, conversation: Conversation, options: NiadraRunHooksOptions = {}): () => void {
   const bridge = new Bridge(conversation);
+  const hooks = new TurnHooks("openai-agents", options.turns ?? false);
+  const keys = new WeakMap<object, string>();
+  const keyOf = (context: object): string => {
+    let key = keys.get(context);
+    if (key === undefined) {
+      key = uuidv7();
+      keys.set(context, key);
+    }
+    return key;
+  };
   const onHandoff = (_context: unknown, from: { name: string }, to: { name: string }): void => {
     void bridge.handoff("agent", `${from.name} to ${to.name}`);
   };
+  const onStart = (context: object, agent: { name: string }): void => {
+    hooks.open(conversation, keyOf(context), { agent: agent.name });
+  };
+  const onToolStart = (context: object, _agent: unknown, tool: { name: string }, details: { toolCall: unknown }): void => {
+    const call = isRecord(details.toolCall) ? details.toolCall : {};
+    const callId = typeof call.callId === "string" ? call.callId : null;
+    hooks.toolStart(conversation, callId ?? uuidv7(), tool.name, parsed(call.arguments), { frameKey: keyOf(context), callId });
+  };
+  const onToolEnd = (_context: object, _agent: unknown, _tool: unknown, result: string, details: { toolCall: unknown }): void => {
+    const call = isRecord(details.toolCall) ? details.toolCall : {};
+    if (typeof call.callId === "string") hooks.toolEnd(call.callId, result);
+  };
+  const onEnd = (context: object, agent: { model?: unknown }): void => {
+    const key = keyOf(context);
+    const model = typeof agent.model === "string" ? agent.model : null;
+    const usage = isRecord(context) && isRecord(context.usage) ? context.usage : {};
+    const entries = Array.isArray(usage.requestUsageEntries) ? (usage.requestUsageEntries as Record<string, unknown>[]) : [];
+    for (const entry of entries) {
+      const details = isRecord(entry.inputTokensDetails) ? entry.inputTokensDetails : {};
+      hooks.model(conversation, model, { in: count(entry.inputTokens), out: count(entry.outputTokens), cached: count(details.cached_tokens) ?? 0 }, key);
+    }
+    hooks.close(key);
+  };
   runner.on("agent_handoff", onHandoff);
+  runner.on("agent_start", onStart as never);
+  runner.on("agent_tool_start", onToolStart as never);
+  runner.on("agent_tool_end", onToolEnd as never);
+  runner.on("agent_end", onEnd as never);
   return () => {
     runner.off("agent_handoff", onHandoff);
+    runner.off("agent_start", onStart as never);
+    runner.off("agent_tool_start", onToolStart as never);
+    runner.off("agent_tool_end", onToolEnd as never);
+    runner.off("agent_end", onEnd as never);
   };
+}
+
+function parsed(text: unknown): unknown {
+  if (typeof text !== "string") return text;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
 }
 
 /** The text of a user or assistant item: a string, or its `input_text` and `output_text` parts. */

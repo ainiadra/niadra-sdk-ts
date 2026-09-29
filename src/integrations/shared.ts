@@ -6,6 +6,8 @@
  * is logged without content, and the agent keeps working without memory.
  */
 
+import { recordedTool } from "../capture/tool.js";
+import type { Played } from "../replay/playback.js";
 import type { AgentMemoryParams } from "../agent-memory.js";
 import type { TurnParams } from "../agent-session.js";
 import type { CallCapture, TurnFrame } from "../capture/frame.js";
@@ -392,6 +394,17 @@ export class TurnHooks {
     } catch {
       frame.incomplete();
     }
+  }
+
+  /**
+   * In a replay, how a framework tool the adapter stands in for answers: the recorded result of a call with the
+   * same arguments, or empty (a divergence), never the live tool. `null` outside a replay, and for a function
+   * wrapped with `tool()`, which answers itself.
+   */
+  replayed(session: Session, name: string, args: unknown, fn?: unknown, frameKey?: string): Played | null {
+    const frame = this.enabled ? this.frame(session, frameKey) : session.activeTurn();
+    if (frame?.playback == null || (fn !== undefined && recordedTool(fn) !== null)) return null;
+    return frame.playback.answer(name, args, false);
   }
 
   toolEnd(callKey: string, result?: unknown, error?: unknown): void {
