@@ -10,6 +10,8 @@
  * - `niadraRunHooks(runner, conversation)` records handoffs between agents, and with `turns: true` each run
  *   as a turn record: each tool call with its call id, arguments and result, and each model request with
  *   its tokens. A run inside a turn in progress (`conversation.turn()` around `runner.run`) records into it.
+ *   A function wrapped with `tool()` inside a tool takes over its call, which is how a replay answers it:
+ *   the Runner runs a tool before any hook could answer for it.
  *
  * Fail-open: when Niadra is slow or down, the instructions are yours alone and the run goes on.
  */
