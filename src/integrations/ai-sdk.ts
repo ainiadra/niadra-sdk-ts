@@ -8,6 +8,10 @@
  *   end of the last user message, where every provider accepts it.
  * - `wrapGenerate` and `wrapStream` record the model's text as the agent's turn, with the usage the
  *   provider reported (prompt tokens, cache reads and writes). Tool-only steps record nothing.
+ * - Turn records: inside a turn of the session (`conversation.turn()` around `generateText`, or
+ *   `niadraTurn()` for `streamText`, whose steps run after the call returns), each model call is
+ *   recorded with its tokens, and `recordTools(tools)` records each tool call with the provider's
+ *   call id; in a replay those tools answer from the record.
  *
  * Nothing here can fail the model call: a context that cannot be read is left out, and a failure
  * to record is logged without content.
@@ -20,13 +24,22 @@
  *   messages,
  *   tools: { ...niadraTools(convo), ...yourTools },
  * });
+ *
+ * @example
+ * const turn = niadraTurn(convo);
+ * const result = turn.run(() =>
+ *   streamText({ model, messages, tools: recordTools(yourTools, { session: convo }), onFinish: turn.onFinish, onError: turn.onError }),
+ * );
  */
 
 import { jsonSchema, tool } from "ai";
 import type { ToolSet } from "ai";
+import type { TurnParams } from "../agent-session.js";
+import type { TurnFrame } from "../capture/frame.js";
+import { tool as recorded } from "../capture/tool.js";
 import type { ModelUsage } from "../types/events.js";
 import { injectPrompt, recordNewest } from "./prompt.js";
-import { Bridge, count, errorName, isRecord, resolveSession } from "./shared.js";
+import { Bridge, TurnHooks, count, errorName, isRecord, resolveSession } from "./shared.js";
 import type { AgentMemoryOption, ProofSource, Session, SessionResolver } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
@@ -75,6 +88,15 @@ interface State {
  */
 export function niadraMiddleware(session: SessionResolver, options: NiadraMiddlewareOptions = {}): NiadraMiddleware {
   const states = new WeakMap<Session, State>();
+  const hooks = new TurnHooks("ai-sdk", true);
+  const modelCall = (usage: unknown, model: ModelInfo, modelId: unknown): void => {
+    const current = resolveSession(session);
+    if (!current) return;
+    const name = typeof modelId === "string" && modelId ? modelId : model.modelId;
+    const reported = aiSdkUsage(usage, model, modelId);
+    const out = isRecord(usage) ? (count(usage.outputTokens) ?? (isRecord(usage.outputTokens) ? count(usage.outputTokens.total) : null)) : null;
+    hooks.model(current, name, reported ? { in: reported.prompt_tokens, out, cached: reported.cached_tokens ?? 0 } : {});
+  };
   const stateOf = (): State | null => {
     const current = resolveSession(session);
     if (!current) return null;
@@ -106,6 +128,7 @@ export function niadraMiddleware(session: SessionResolver, options: NiadraMiddle
 
     async wrapGenerate({ doGenerate, model }: { doGenerate: () => PromiseLike<unknown>; model: ModelInfo }) {
       const result = await doGenerate();
+      if (isRecord(result)) modelCall(result.usage, model, isRecord(result.response) ? result.response.modelId : undefined);
       if (options.recordAgent ?? true) {
         const state = stateOf();
         if (state) {
@@ -140,6 +163,7 @@ export function niadraMiddleware(session: SessionResolver, options: NiadraMiddle
         },
         flush() {
           try {
+            modelCall(usage, model, modelId);
             record(state, parts.join(""), usage, model, modelId);
           } catch (error) {
             state.bridge.logger.warn(`could not capture the model's answer (${errorName(error)})`);
@@ -165,6 +189,64 @@ export function niadraTools(session: Session, options: { agentMemory?: AgentMemo
     });
   }
   return tools;
+}
+
+/**
+ * A turn of the session for one `streamText` or `generateText` call: run the call inside `run()` and pass
+ * `onFinish` and `onError` (call them from yours when you have your own), which close the turn.
+ */
+export function niadraTurn(
+  session: Session,
+  params: TurnParams = {},
+): { frame: TurnFrame; run<T>(fn: () => T): T; onFinish(): void; onError(event: { error: unknown }): void; onAbort(): void } {
+  const frame = session.openTurn({ ...params, adapter: "ai-sdk" });
+  return {
+    frame,
+    run: (fn) => frame.run(fn),
+    onFinish: () => {
+      frame.close();
+    },
+    onError: (event) => {
+      frame.close(event.error);
+    },
+    onAbort: () => {
+      frame.close();
+    },
+  };
+}
+
+export interface RecordToolsOptions {
+  /** The session whose turn in progress the calls go to when the async context does not carry it. */
+  session?: Session;
+  /** The tools a replay may run for real when the record has no answer: their names, or all. */
+  dryRun?: boolean | readonly string[];
+}
+
+/**
+ * Your tools with each call recorded in the turn it runs in, named by the tool's key, with the provider's
+ * call id. In a replay a call answers from the record. Tools without `execute` pass as they are.
+ */
+export function recordTools<T extends ToolSet>(tools: T, options: RecordToolsOptions = {}): T {
+  const out: Record<string, unknown> = {};
+  for (const [name, spec] of Object.entries(tools)) {
+    const execute = isRecord(spec) ? spec.execute : undefined;
+    if (typeof execute !== "function") {
+      out[name] = spec;
+      continue;
+    }
+    const dryRun = Array.isArray(options.dryRun) ? options.dryRun.includes(name) : options.dryRun === true;
+    const session = options.session;
+    out[name] = {
+      ...spec,
+      execute: recorded<[unknown, unknown?], unknown>(name, execute as (input: unknown, context?: unknown) => unknown, {
+        args: (input) => input,
+        callId: (_input: unknown, context?: unknown) => (isRecord(context) && typeof context.toolCallId === "string" ? context.toolCallId : null),
+        ...(session ? { frame: () => session.activeTurn() } : {}),
+        dryRun,
+      }),
+    };
+  }
+  return out as T;
 }
 
 /** What the AI SDK reports as usage, as a `ModelUsage`: v2 counts are numbers, v3 and v4 split the input. */

@@ -16,7 +16,7 @@ import { segment } from "./routes.js";
 import type { RouteCall } from "./routes.js";
 import type { CheckBatchRequest, CheckBatchResponse, CheckRequest, CheckResult, ClaimRelease, ClaimRequest, ContactKeys, CoordinationReportPage, DeclareRequest, DeclareResult, Effect, EffectReserve, EffectSettle, Handoff, HandoffCreate, HandoffOutcome, OwnershipClaim, ShadowRequest, ShadowRun, SuppressionPage, SuppressionSalt } from "./types/coordination.js";
 import type { AttributionReport, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
-import type { AgentState, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotRequest, ObjectSnapshotResponse, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
+import type { AgentState, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
 import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
 
 /** The routes of `niadra.api`. See the module. */
@@ -130,14 +130,22 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/objects/coverage" }, options);
   }
 
-  /** `POST /v1/objects/push`. */
+  /**
+   * `POST /v1/objects/push`. State from a system of record: a shared object's items are decided against the
+   * working set's hot
+   * copy with no database statement and written within a second; a customer's, kept in one statement.
+   */
   pushObjects(body: ObjectPushRequest, options: RequestOptions = {}): Promise<ObjectPushResponse> {
     return this.call({ method: "POST", path: "/v1/objects/push", body }, options);
   }
 
-  /** `POST /v1/objects/snapshot`. */
-  snapshotObjects(body: ObjectSnapshotRequest, options: RequestOptions = {}): Promise<ObjectSnapshotResponse> {
-    return this.call({ method: "POST", path: "/v1/objects/snapshot", body }, options);
+  /**
+   * `POST /v1/objects/snapshot`. Reconciliation of a shared type from its system of record: NDJSON, one push
+   * item per line, applied as
+   * pushes of provenance `snapshot` by the same version rule.
+   */
+  snapshotObjects(params: { type: string }, options: RequestOptions = {}): Promise<ObjectSnapshotResponse> {
+    return this.call({ method: "POST", path: "/v1/objects/snapshot", query: { type: params.type } }, options);
   }
 
   /**
@@ -186,12 +194,18 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/constraints", body }, options);
   }
 
-  /** `POST /v1/legal-holds`. */
+  /**
+   * `POST /v1/legal-holds`. Keeps a handle's, an object's or a conversation's data from purging until the
+   * release.
+   */
   createLegalHold(body: LegalHoldCreate, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<LegalHold> {
     return this.call({ method: "POST", path: "/v1/legal-holds", body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
 
-  /** `POST /v1/legal-holds/{hold_id}/release`. */
+  /**
+   * `POST /v1/legal-holds/{hold_id}/release`. What erasures left waiting under the hold goes once it is
+   * released.
+   */
   releaseLegalHold(holdId: string, body: LegalHoldRelease, options: RequestOptions = {}): Promise<LegalHold> {
     return this.call({ method: "POST", path: `/v1/legal-holds/${segment(holdId)}/release`, body }, options);
   }
@@ -241,22 +255,34 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/measure/unmet-demand", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
-  /** `GET /v1/profiles/{profile_id}/inferences`. */
+  /**
+   * `GET /v1/profiles/{profile_id}/inferences`. Every inference about the subject, with its origin, evidence,
+   * confidence, use and date.
+   */
   listInferences(profileId: string, params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<InferencePage> {
     return this.call({ method: "GET", path: `/v1/profiles/${segment(profileId)}/inferences`, query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
-  /** `DELETE /v1/profiles/{profile_id}/inferences/{key}`. */
+  /**
+   * `DELETE /v1/profiles/{profile_id}/inferences/{key}`. A tombstone: the same evidence never infers it
+   * again.
+   */
   deleteInference(profileId: string, key: string, options: RequestOptions = {}): Promise<void> {
     return this.call({ method: "DELETE", path: `/v1/profiles/${segment(profileId)}/inferences/${segment(key)}` }, options);
   }
 
-  /** `POST /v1/profiles/{profile_id}/inferences/{key}/correct`. */
+  /**
+   * `POST /v1/profiles/{profile_id}/inferences/{key}/correct`. The subject's value becomes a stated
+   * preference or attribute; the inference is deleted.
+   */
   correctInference(profileId: string, key: string, body: InferenceCorrection, options: RequestOptions = {}): Promise<Inference> {
     return this.call({ method: "POST", path: `/v1/profiles/${segment(profileId)}/inferences/${segment(key)}/correct`, body }, options);
   }
 
-  /** `POST /v1/profiles/{profile_id}/review-requests`. */
+  /**
+   * `POST /v1/profiles/{profile_id}/review-requests`. Sent to the controller's data protection officer with
+   * the explanation built from receipts.
+   */
   createReviewRequest(profileId: string, body: ReviewRequestCreate, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<ReviewRequest> {
     return this.call({ method: "POST", path: `/v1/profiles/${segment(profileId)}/review-requests`, body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
@@ -266,7 +292,7 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/review-requests", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
-  /** `POST /v1/review-requests/{request_id}/resolve`. */
+  /** `POST /v1/review-requests/{request_id}/resolve`. The controller's decision, recorded once. */
   resolveReviewRequest(requestId: string, body: ReviewResolution, options: RequestOptions = {}): Promise<ReviewRequest> {
     return this.call({ method: "POST", path: `/v1/review-requests/${segment(requestId)}/resolve`, body }, options);
   }

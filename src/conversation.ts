@@ -179,6 +179,11 @@ export class Conversation {
     return this.features.openTurn(params);
   }
 
+  /** The turn in progress for this session: the async context's, else the newest it opened and left open. */
+  activeTurn(): TurnFrame | undefined {
+    return this.features.activeTurn();
+  }
+
   /**
    * Asks before acting: the coordination decision for `intent` of `purpose` about this customer. With
    * `effectKey`, an `allow` whose `effect.state` is `none` reserved the effect: act, then

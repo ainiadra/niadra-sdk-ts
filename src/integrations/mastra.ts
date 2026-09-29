@@ -7,6 +7,10 @@
  *   the pack goes after the system messages and the suffix at the end of the last user message,
  *   so nothing of it lands in Mastra's memory. The customer's newest message is recorded once.
  * - `processOutputResult` records the final answer with the usage Mastra summed for the run.
+ * - With `turns: true`, each request is a turn record, closed with the final answer: each model
+ *   call with its tokens, each tool call with Mastra's call id and its result. A request inside a
+ *   turn in progress (`conversation.turn()` around `agent.generate`) records into it. A function
+ *   wrapped with `tool()` inside a tool takes over its call, which is how a replay answers it.
  *
  * The session comes from the request context (`requestContext.set("niadra", convo)`), or is fixed
  * when the processor is built for one conversation.
@@ -24,11 +28,20 @@
  * await agent.generate(messages, { requestContext });
  */
 
-import type { Processor, ProcessLLMRequestArgs, ProcessLLMRequestResult, ProcessOutputResultArgs } from "@mastra/core/processors";
+import type {
+  Processor,
+  ProcessLLMRequestArgs,
+  ProcessLLMRequestResult,
+  ProcessLLMResponseArgs,
+  ProcessOutputResultArgs,
+  ProcessOutputStepArgs,
+  ProcessToolResultArgs,
+} from "@mastra/core/processors";
+import { uuidv7 } from "../ids.js";
 import { createTool } from "@mastra/core/tools";
 import type { ModelUsage } from "../types/events.js";
 import { injectPrompt, recordNewest } from "./prompt.js";
-import { Bridge, count, errorName, isRecord, resolveSession } from "./shared.js";
+import { Bridge, TurnHooks, count, errorName, isRecord, resolveSession } from "./shared.js";
 import type { AgentMemoryOption, ProofSource, Session } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
@@ -52,7 +65,12 @@ export interface NiadraProcessorOptions {
   recordAgent?: boolean;
   /** Puts the agent's own notes before the customer's context. Pass the same to `niadraTools`. */
   agentMemory?: AgentMemoryOption;
+  /** Records each request as a turn, with its model and tool calls. Defaults to `false`. */
+  turns?: boolean;
 }
+
+/** The key of the request's run in the processor's state. */
+const RUN = "niadraRun";
 
 interface State {
   bridge: Bridge;
@@ -61,11 +79,24 @@ interface State {
 }
 
 /** A Mastra processor that is both an input processor (the request) and an output processor (the result). */
-export type NiadraProcessor = Processor<"niadra"> & Required<Pick<Processor<"niadra">, "processLLMRequest" | "processOutputResult">>;
+export type NiadraProcessor = Processor<"niadra"> &
+  Required<Pick<Processor<"niadra">, "processLLMRequest" | "processOutputResult" | "processLLMResponse" | "processOutputStep" | "processToolResult">>;
 
 /** One processor serves both lists: put the same instance in `inputProcessors` and `outputProcessors`. */
 export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraProcessor {
   const states = new WeakMap<Session, State>();
+  const hooks = new TurnHooks("mastra", options.turns ?? false);
+  /** The request's run: its turn opened on first use, keyed in the processor's per-request state. */
+  const runOf = (state: Record<string, unknown>, session: Session): string | undefined => {
+    if (!hooks.enabled) return undefined;
+    let key = state[RUN];
+    if (typeof key !== "string") {
+      key = uuidv7();
+      state[RUN] = key;
+    }
+    hooks.open(session, key as string);
+    return key as string;
+  };
   const stateOf = (requestContext: unknown): State | null => {
     const context = isContext(requestContext) ? requestContext : undefined;
     const choice = options.session;
@@ -86,9 +117,10 @@ export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraPro
     id: "niadra",
     name: "Niadra customer context",
 
-    async processLLMRequest({ prompt, model, requestContext }: ProcessLLMRequestArgs): Promise<ProcessLLMRequestResult> {
+    async processLLMRequest({ prompt, model, requestContext, state: kept }: ProcessLLMRequestArgs): Promise<ProcessLLMRequestResult> {
       const state = stateOf(requestContext);
       if (!state) return undefined;
+      runOf(kept, state.bridge.session);
       try {
         if (isRecord(model)) {
           state.model = {
@@ -106,17 +138,49 @@ export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraPro
       }
     },
 
-    processOutputResult({ messageList, result, requestContext }: ProcessOutputResultArgs) {
-      if (!(options.recordAgent ?? true)) return messageList;
-      const state = stateOf(requestContext);
-      if (!state || typeof result.text !== "string") return messageList;
-      try {
-        const usage = mastraUsage(result.usage, state.model);
-        state.bridge.agent(result.text, usage ? { usage } : {});
-      } catch (error) {
-        state.bridge.logger.warn(`could not record the agent's answer (${errorName(error)})`);
+    processLLMResponse({ model, chunks, requestContext, state: kept, fromCache }: ProcessLLMResponseArgs) {
+      const state = hooks.enabled && !fromCache ? stateOf(requestContext) : null; // a cached answer called no model
+      if (!state) return;
+      const key = runOf(kept, state.bridge.session);
+      // This step's usage is on its `finish` chunk; `steps` holds the ones before it.
+      const finished: unknown = chunks.find((chunk) => chunk.type === "finish");
+      const payload = isRecord(finished) && isRecord(finished.payload) ? finished.payload : {};
+      const usage = isRecord(payload.output) ? payload.output.usage : undefined;
+      const name = isRecord(model) && typeof model.modelId === "string" ? model.modelId : state.model?.modelId;
+      const reported = mastraUsage(usage, state.model);
+      const out = isRecord(usage) ? (count(usage.outputTokens) ?? (isRecord(usage.outputTokens) ? count(usage.outputTokens.total) : null)) : null;
+      hooks.model(state.bridge.session, name, reported ? { in: reported.prompt_tokens, out, cached: reported.cached_tokens ?? 0 } : {}, key);
+    },
+
+    processOutputStep({ messageList, toolCalls, requestContext, state: kept }: ProcessOutputStepArgs) {
+      const state = hooks.enabled ? stateOf(requestContext) : null;
+      if (!state) return messageList;
+      const key = runOf(kept, state.bridge.session);
+      for (const call of toolCalls ?? []) {
+        hooks.toolStart(state.bridge.session, call.toolCallId, call.toolName, call.args, { ...(key ? { frameKey: key } : {}), callId: call.toolCallId });
       }
       return messageList;
+    },
+
+    processToolResult({ toolCallId, result }: ProcessToolResultArgs) {
+      hooks.toolEnd(toolCallId, result);
+    },
+
+    processOutputResult({ messageList, result, requestContext, state: kept }: ProcessOutputResultArgs) {
+      const state = stateOf(requestContext);
+      const key = kept[RUN];
+      try {
+        if (!(options.recordAgent ?? true) || !state || typeof result.text !== "string") return messageList;
+        try {
+          const usage = mastraUsage(result.usage, state.model);
+          state.bridge.agent(result.text, usage ? { usage } : {});
+        } catch (error) {
+          state.bridge.logger.warn(`could not record the agent's answer (${errorName(error)})`);
+        }
+        return messageList;
+      } finally {
+        if (typeof key === "string") hooks.close(key);
+      }
     },
   };
 }
