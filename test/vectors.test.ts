@@ -9,7 +9,7 @@
 // - a file nothing expects, a case field its spec does not define and a malformed envelope fail.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { canonicalJson, jsonDigest } from "../src/index.js";
+import { canonicalJson, expr, jsonDigest } from "../src/index.js";
 
 const SPEC = new URL("../spec/", import.meta.url);
 const VECTORS = new URL("vectors/", SPEC);
@@ -44,13 +44,173 @@ async function digestCase(c: Case): Promise<void> {
   expect(await jsonDigest(c.value)).toEqual({ sha256: expected.sha256, size: expected.size });
 }
 
+// niadra-expr, read as the server's runner reads it (`spec/object-type.md`, section 6): a member the spec
+// does not define fails the case, so a vector written for a later version never passes by being half read.
+const EXPR_INPUT = new Set([
+  "now",
+  "utc_offset",
+  "fields",
+  "inputs",
+  "absent_names",
+  "config",
+  "quotes",
+  "calendars",
+  "state",
+  "derived_status",
+  "watch_count",
+  "purpose",
+  "presented_rank",
+]);
+const EXPR_SLOT = new Set(["type", "v", "logic", "absent", "at", "observer", "was", "completeness"]);
+const EXPR_PREVIOUS = new Set(["type", "v", "logic", "absent"]);
+const EXPR_CALENDAR = new Set(["holidays", "weekend"]);
+const EXPR_LOGIC = new Set(["yes", "no", "unobserved", "known_defect"]);
+const KIND_OF_TYPE: Record<string, expr.Kind> = {
+  string: "string",
+  text: "string",
+  enum: "string",
+  ref: "string",
+  number: "number",
+  money: "number",
+  percent: "number",
+  date: "date",
+  datetime: "datetime",
+  duration: "duration",
+  bool: "bool",
+  list: "list",
+};
+
+type Json = Record<string, any>;
+
+function only(raw: Json, members: Set<string>, what: string): Json {
+  expect(Object.keys(raw).filter((key) => !members.has(key)), `unknown ${what} members`).toEqual([]);
+  return raw;
+}
+
+const entries = (raw: unknown): [string, any][] => Object.entries((raw ?? {}) as Json);
+
+function scalar(raw: unknown): expr.Value {
+  if (typeof raw === "boolean") return expr.boolean(raw);
+  if (typeof raw === "number") return { logic: "yes", kind: "number", datum: raw };
+  if (typeof raw === "string") return { logic: "yes", kind: "string", datum: raw };
+  throw new Error(`not a scalar: ${JSON.stringify(raw)}`);
+}
+
+function present(kind: expr.Kind, raw: unknown): expr.Value {
+  if (kind === "number" && typeof raw === "number") return { logic: "yes", kind, datum: raw };
+  if (kind === "string" && typeof raw === "string") return { logic: "yes", kind, datum: raw };
+  if (kind === "date" && typeof raw === "string") return { logic: "yes", kind, datum: expr.parseDate(raw) };
+  if (kind === "datetime" && typeof raw === "string") return { logic: "yes", kind, datum: expr.parseDatetime(raw) };
+  if (kind === "duration" && Number.isInteger(raw)) return { logic: "yes", kind, datum: raw as number };
+  if (kind === "list" && Array.isArray(raw)) return { logic: "yes", kind, datum: raw.map(scalar) };
+  throw new Error(`not a ${kind}: ${JSON.stringify(raw)}`);
+}
+
+/** A slot's value: `yes` with a value (`no` for `false`) and `unobserved` without one, unless `logic` says. */
+function valueOf(raw: Json, members: Set<string>): expr.Value {
+  only(raw, members, "slot");
+  const v: unknown = raw.v ?? null;
+  const kind = raw.type === undefined ? (v === null ? undefined : scalar(v).kind) : KIND_OF_TYPE[raw.type as string];
+  if (raw.type !== undefined && kind === undefined) throw new Error(`unknown type ${JSON.stringify(raw.type)}`);
+  const logic = (raw.logic ?? (v === null ? "unobserved" : v === false ? "no" : "yes")) as expr.Value["logic"];
+  if (!EXPR_LOGIC.has(logic)) throw new Error(`unknown logic ${JSON.stringify(logic)}`);
+  if (kind === "bool" && (logic === "yes" || logic === "no")) return expr.boolean(logic === "yes");
+  if (logic === "no") return expr.absent(raw.absent as string | undefined);
+  if (logic !== "yes") return expr.unknown(logic);
+  if (kind === undefined) throw new Error("a present value needs a type or a value");
+  return present(kind, v);
+}
+
+function slotOf(raw: Json): expr.Slot {
+  only(raw, EXPR_SLOT, "slot");
+  const value = valueOf(Object.fromEntries(Object.entries(raw).filter(([key]) => EXPR_PREVIOUS.has(key))), EXPR_SLOT);
+  return {
+    value,
+    ...(raw.at === undefined ? {} : { at: expr.parseDatetime(raw.at as string) }),
+    ...(raw.observer === undefined ? {} : { observer: raw.observer as string }),
+    ...(raw.was === undefined ? {} : { was: valueOf(raw.was as Json, EXPR_PREVIOUS) }),
+    ...(raw.completeness === undefined ? {} : { completeness: raw.completeness as string }),
+  };
+}
+
+function offsetMinutes(text: string): number {
+  const match = /^([+-])(\d{2}):(\d{2})$/.exec(text);
+  if (match === null) throw new Error(`not a UTC offset: ${text}`);
+  return (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3]));
+}
+
+function environment(raw: Json): expr.Environment {
+  only(raw, EXPR_INPUT, "input");
+  const slots = (group: unknown) => Object.fromEntries(entries(group).map(([name, slot]) => [name, slotOf(slot as Json)]));
+  return {
+    now: expr.parseDatetime(raw.now as string),
+    utcOffsetMin: offsetMinutes((raw.utc_offset ?? "+00:00") as string),
+    fields: slots(raw.fields),
+    inputs: slots(raw.inputs),
+    absentNames: new Set((raw.absent_names ?? []) as string[]),
+    config: Object.fromEntries(entries(raw.config).map(([key, v]) => [key, v === null ? expr.absent() : scalar(v)])),
+    quotes: Object.fromEntries(entries(raw.quotes).map(([source, quote]) => [source, slots(quote)])),
+    calendars: Object.fromEntries(
+      entries(raw.calendars).map(([name, calendar]) => {
+        only(calendar as Json, EXPR_CALENDAR, "calendar");
+        const { holidays = [], weekend = [6, 7] } = calendar as { holidays?: string[]; weekend?: number[] };
+        return [name, { holidays: new Set(holidays.map(expr.parseDate)), weekend: new Set(weekend) }];
+      }),
+    ),
+    ...(raw.state === undefined ? {} : { state: raw.state as string }),
+    ...(raw.derived_status === undefined ? {} : { derivedStatus: raw.derived_status as string }),
+    watchCount: (raw.watch_count ?? 0) as number,
+    purpose: (raw.purpose ?? "display") as string,
+    ...(raw.presented_rank === undefined ? {} : { presentedRank: raw.presented_rank as number }),
+  };
+}
+
+/** A result as the vectors write it: the logical value, and the kind and value of a known one. */
+function encode(value: expr.Value): Json {
+  if (value.kind === undefined) {
+    if (value.logic !== "no") return { logic: value.logic };
+    return value.absent === undefined ? { logic: "no" } : { logic: "no", absent: value.absent };
+  }
+  switch (value.kind) {
+    case "date":
+      return { type: value.kind, logic: value.logic, v: expr.formatDate(value.datum) };
+    case "datetime":
+      return { type: value.kind, logic: value.logic, v: expr.formatDatetime(value.datum) };
+    case "list":
+      return { type: value.kind, logic: value.logic, v: value.datum.map(encode) };
+    case "business_days":
+    case "quote":
+      throw new Error(`a ${value.kind} is never a result`);
+    default:
+      return { type: value.kind, logic: value.logic, v: value.datum };
+  }
+}
+
+async function exprCase(c: Case): Promise<void> {
+  expect(Object.keys(c).sort()).toEqual(["expect", "expr", "id", "input"]);
+  expect(Object.keys(c.expect ?? {})).toHaveLength(1);
+  const env = environment(c.input as Json);
+  let result: Json;
+  try {
+    result = { value: encode(expr.evaluate(expr.parse(c.expr as string), env)) };
+  } catch (error) {
+    if (!(error instanceof expr.ExprError)) throw error;
+    result = { error: error.code };
+  }
+  expect(result).toStrictEqual(c.expect);
+}
+
 const EXPECTED: Record<string, Expected> = {
   "turn-record-digest.v0": {
     caseFields: ["id", "note", "value", "expect"],
     expectFields: ["canonical", "sha256", "size"],
     run: digestCase,
   },
-  "niadra-expr.v0": pending("id expr input expect", "value", "the niadra-expr evaluator"),
+  "niadra-expr.v0": {
+    caseFields: ["id", "expr", "input", "expect"],
+    expectFields: ["value"],
+    run: exprCase,
+  },
   "claim-parser.v0": pending("id lang text roles evidence expect", "mentions", "the claim contract's number and role parser"),
   "claim-detect.v0": pending("id contract output turn expect", "findings", "the claim contract's detection"),
   "claim-anchor.v0": pending("id quote document expect", "normalized_quote_length distance holds", "the claim contract's text anchor"),
