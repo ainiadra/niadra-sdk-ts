@@ -1,4 +1,21 @@
 import { Admin } from "./admin.js";
+import { AgentStates } from "./agent-state.js";
+import type { AgentHost } from "./agent-session.js";
+import { checkTurn } from "./capture/claims.js";
+import { tool as recordTool } from "./capture/tool.js";
+import type { ToolOptions as RecordedToolOptions } from "./capture/tool.js";
+import { TurnRecorder, DEFAULT_TURNS } from "./capture/recorder.js";
+import { TurnSender } from "./capture/sender.js";
+import { ContentResolver } from "./content.js";
+import { Coordinator } from "./coordination/client.js";
+import { SuppressionCopy } from "./coordination/suppression.js";
+import { ContactGateway } from "./coordination/token.js";
+import type { SeenTokens } from "./coordination/token.js";
+import { Outbox } from "./outbox.js";
+import { ProfileCache } from "./profile.js";
+import { replaying } from "./replay/playback.js";
+import { CLAIM_BUDGET_MS, Resolvers, asRef, fromNiadra, fromResolver } from "./resolvers.js";
+import type { ClaimVerdict } from "./resolvers.js";
 import { Api } from "./api.js";
 import { AgentMemoryCache, blockResult, checkNote, checkTags, emptyBlock } from "./agent-memory.js";
 import type { AgentMemoryParams, AgentMemoryResult, RememberParams } from "./agent-memory.js";
@@ -62,7 +79,7 @@ import { bindTools } from "./tools.js";
 import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./tools.js";
 import type { Route } from "./routes.js";
 import { READ_POLICY, Transport } from "./transport.js";
-import { MIN_PREFETCH, NO_PREFETCH, PrefetchSupport, turnText } from "./turns.js";
+import { MIN_PREFETCH, NO_PREFETCH, PREFETCH_RECHECK_AFTER_MS, PrefetchSupport, turnText } from "./turns.js";
 import { VoiceLines, compose, rttWarnings, wordsOf } from "./voice.js";
 import type { TurnRead, VoiceLine } from "./voice.js";
 import type { RequestSpec, RetryPolicy } from "./transport.js";
@@ -91,6 +108,9 @@ import type {
   RememberResult,
 } from "./types/agent-memory.js";
 import type { SubjectToken, SubjectTokenRequest } from "./types/tokens.js";
+import type { DeclareRequest } from "./types/coordination.js";
+import type { ClaimContractSummary, SdkProfile, StateRef, StateVerifyResponse } from "./types/state.js";
+import type { TurnPins, TurnsResponse } from "./types/turns.js";
 import type { Verification } from "./types/vocabulary.js";
 
 /** What `identify()`, `verify()`, `handoff()` and the `end()` helpers resolve to. */
@@ -182,11 +202,25 @@ export class Niadra {
    */
   readonly api: Api;
   /** Whether this client's server answers prefetches. */
-  private readonly turns: PrefetchSupport = new PrefetchSupport();
+  private readonly prefetchSupport: PrefetchSupport = new PrefetchSupport();
   /** Per conversation or task, the prefetch in flight and the newest text waiting behind it. */
   private readonly prefetching = new Map<string, PrefetchRequest | null>();
   /** The voice read path's lines, by conversation or task (`voice.ts`). */
   private readonly voice: VoiceLines;
+  /** Turn records: `conversation.turn()` opens one, and a background sender posts the closed ones. */
+  readonly turns: TurnRecorder;
+  /** The company's resolvers by object type: `resolvers.register(type, fn)` (`resolvers.ts`). */
+  readonly resolvers = new Resolvers();
+  /** The company's content resolver, for content kept by pointer: `content.register(fetch)`. */
+  readonly content = new ContentResolver();
+  private readonly profileCache = new ProfileCache();
+  private readonly suppressions = new SuppressionCopy();
+  private readonly outbox: Outbox;
+  private readonly coordinator: Coordinator;
+  private readonly states: AgentStates;
+  private readonly turnSender: TurnSender | null = null;
+  /** Blocks of `include` the space refused, and until when they are not asked for. */
+  private readonly refusedBlocks = new Map<string, number>();
 
   constructor(options: ClientOptions = {}) {
     this.strict = options.strict ?? false;
@@ -203,6 +237,37 @@ export class Niadra {
     this.api = new Api((route, opts) => this.route(route, opts));
 
     const setup = this.setup(options);
+    this.turns = new TurnRecorder({ ...DEFAULT_TURNS, ...options.turns }, !(setup instanceof NiadraConfigError), this.logger);
+    this.turns.features = () => this.profileCache.features;
+    this.turns.recordingMode = () => this.profileCache.recordingMode();
+    this.turns.claims = (frame) => {
+      const contract = this.profileCache.contract();
+      return contract === null ? [] : checkTurn(frame, contract);
+    };
+    this.outbox = new Outbox(this.logger);
+    this.coordinator = new Coordinator(this.outbox, this.suppressions, (body, key) =>
+      this.api.declare(body as unknown as DeclareRequest, { idempotency_key: key }),
+    );
+    this.states = new AgentStates(
+      this.outbox,
+      {
+        read: (scope, agent) => this.api.readAgentState({ scope, agent }, { timeout: this.timeouts.navigation }),
+        write: (write) => this.api.writeAgentState(write, { timeout: this.timeouts.navigation }),
+      },
+      this.logger,
+    );
+    if (!(setup instanceof NiadraConfigError)) {
+      const core = setup;
+      this.turnSender = new TurnSender(
+        this.turns,
+        this.turns.queue,
+        (body) => this.sendTurns(core, body),
+        this.logger,
+        this.turns.options.intervalMs,
+        () => this.profile(),
+      );
+      this.turns.sender = this.turnSender;
+    }
     if (setup instanceof NiadraConfigError) {
       if (this.strict) throw setup;
       this.logger.warn(`${setup.message}; the client is disabled and will send nothing`);
@@ -278,6 +343,8 @@ export class Niadra {
    * Never rejects unless `strict` is set. On failure `text` is empty and `error` is set.
    */
   async context(params: ContextParams, options: ContextOptions = {}): Promise<ContextResult> {
+    const played = replaying();
+    if (played !== null) return played.context ? resultFrom(played.context, "cache") : emptyResult(new NiadraError("replay"));
     if (!this.core) return emptyResult(this.disabledReason);
     let request: ContextRequest;
     try {
@@ -285,15 +352,158 @@ export class Niadra {
     } catch (error) {
       return this.contextFailure(toNiadraError(error), null);
     }
+    if (request.include) {
+      const now = Date.now();
+      const wanted = request.include.filter((name) => (this.refusedBlocks.get(name) ?? 0) <= now);
+      if (wanted.length > 0) request.include = wanted;
+      else delete request.include;
+    }
+    const result = await this.readContext(this.core, params, request, options);
+    if (this.content.registered && result.state) result.state = await this.content.fill(result.state);
+    return result;
+  }
+
+  private readContext(core: Core, params: ContextParams, request: ContextRequest, options: ContextOptions): Promise<ContextResult> {
 
     const timeout = options.timeout ?? (request.view === "voice" ? this.timeouts.contextVoice : this.timeouts.context);
     // The read's own `query`, else the customer's turn: either picks the slots, never the pack.
     const { query: own, ...pinned } = request;
     const query = turnText(own ?? params.turn);
-    const voiceCache = this.voiceCache(this.core, pinned, options.cache);
-    if (voiceCache) return this.voiceContext(this.core, voiceCache, pinned, query, timeout, options);
-    if (query !== null) return this.turnContext(this.core, pinned, query, timeout, options);
-    return this.pinnedContext(this.core, pinned, timeout, options);
+    const voiceCache = this.voiceCache(core, pinned, options.cache);
+    if (voiceCache) return this.voiceContext(core, voiceCache, pinned, query, timeout, options);
+    if (query !== null) return this.turnContext(core, pinned, query, timeout, options);
+    return this.pinnedContext(core, pinned, timeout, options);
+  }
+
+  /**
+   * The SDK profile of this key's space: the features it turned on, the claim contract and the summarized
+   * type registry, from the local cache, read again once `valid_for_s` has passed. When Niadra does not
+   * answer, the last profile read stays in use; `null` when there is none yet, or the space serves none (the
+   * SDK then asks again in 10 minutes). Never rejects.
+   */
+  async profile(): Promise<SdkProfile | null> {
+    if (!this.core) return null;
+    return this.profileCache.refresh(() => this.api.sdkProfile({ timeout: this.timeouts.navigation }));
+  }
+
+  /**
+   * Checks outputs against this claim contract instead of the one the profile serves (a company's own copy,
+   * in CI or a local run); `null` goes back to the profile's.
+   */
+  claimContract(contract: ClaimContractSummary | null): void {
+    this.profileCache.claimContract = contract;
+  }
+
+  /** The claim contract in force, the profile read first when it is due. */
+  async currentContract(): Promise<ClaimContractSummary | null> {
+    await this.profile();
+    return this.profileCache.contract();
+  }
+
+  /**
+   * Whether an outbound contact of `purpose` (`marketing`, `service`...) to `handle` may go, by the local
+   * copy of the space's suppression list: the opt-out holds with Niadra down, from the last copy read. Only
+   * messages the agent starts need it; an answer to the customer is never suppressed.
+   *
+   * The copy is read on the first call (within `timeouts.navigation`) and again in the background once a
+   * minute. With no copy and Niadra out of reach, the purpose decides: `transactional` and `service` go,
+   * every other purpose waits; `failOpen` overrides that. A space without a list suppresses nothing.
+   */
+  async mayContact(handle: Handle, purpose: string, options: { channel?: string; failOpen?: boolean } = {}): Promise<boolean> {
+    if (this.core && this.suppressions.due()) {
+      const read = this.suppressions.read(
+        {
+          salt: () => this.api.suppressionSalt({ timeout: this.timeouts.navigation }),
+          page: (cursor, limit) => this.api.suppressions({ cursor, limit }, { timeout: this.timeouts.navigation }),
+        },
+        this.suppressions.held ? this.timeouts.write : this.timeouts.navigation,
+      );
+      if (!this.suppressions.held) await read;
+    }
+    const checkOptions: { channel?: string | null; failOpen?: boolean } = { channel: options.channel ?? null };
+    if (options.failOpen !== undefined) checkOptions.failOpen = options.failOpen;
+    return this.suppressions.mayContact(handle, purpose, checkOptions);
+  }
+
+  /**
+   * The build a turn runs on, for `conversation.turn({ build })`: each prompt's version, the digest of the
+   * corpus the agent consults (computed by you, never the files), the model, your context assembler's version
+   * and your tools' schema digests. A replay compares them before it runs.
+   */
+  static build(pins: TurnPins): TurnPins {
+    return { ...pins };
+  }
+
+  build(pins: TurnPins): TurnPins {
+    return Niadra.build(pins);
+  }
+
+  /**
+   * Records each call of a tool of yours in the turn it runs in: arguments, result, latency and failure, and
+   * with `provenance` the objects the result showed. Outside a turn the tool runs untouched. `dryRun` lets a
+   * replay run it for real when the record has no answer.
+   */
+  static tool<A extends unknown[], R>(name: string, fn: (...args: A) => R, options: RecordedToolOptions<A, R> = {}): (...args: A) => R {
+    return recordTool(name, fn, options);
+  }
+
+  tool<A extends unknown[], R>(name: string, fn: (...args: A) => R, options: RecordedToolOptions<A, R> = {}): (...args: A) => R {
+    return recordTool(name, fn, options);
+  }
+
+  /**
+   * The contact token's offline check for a gateway of yours: its id, the space's id and the key it shares
+   * with Niadra. The space's public keys are read through this client and kept; `seen` shares the tokens let
+   * through between processes.
+   */
+  contactGateway(gatewayId: string, options: { space: string; key: string | Uint8Array; seen?: SeenTokens }): ContactGateway {
+    const gateway: ConstructorParameters<typeof ContactGateway>[1] = {
+      space: options.space,
+      key: options.key,
+      read: () => this.api.contactKeys({ space: options.space }),
+    };
+    if (options.seen) gateway.seen = options.seen;
+    return new ContactGateway(gatewayId, gateway);
+  }
+
+  /**
+   * Whether `value` may be claimed for `field` of the object `ref` (`type:namespace:id`) now: Niadra's
+   * verdict, and when that is not safe, a fresh read by your resolver of the type, all within `budgetMs`
+   * (300 ms). Never a stale value as verified; never rejects.
+   */
+  async verifyClaim(ref: StateRef | string, field: string, value: unknown, options: { subject?: Handle; budgetMs?: number } = {}): Promise<ClaimVerdict> {
+    const target = asRef(ref);
+    const budget = options.budgetMs ?? CLAIM_BUDGET_MS;
+    const deadline = Date.now() + budget;
+    let verdict = null;
+    if (this.core) {
+      try {
+        const body = { checks: [{ ref: target, field, value }], ...(options.subject ? { subject: options.subject } : {}) };
+        const answer: StateVerifyResponse = await this.api.stateVerify(body, { timeout: budget });
+        verdict = answer.verdicts[0] ?? null;
+      } catch {
+        verdict = null;
+      }
+    }
+    if (verdict !== null && (verdict.claim_safe || !this.resolvers.available(target.type))) return fromNiadra(verdict);
+    const left = deadline - Date.now();
+    const resolved = left > 0 ? await this.resolvers.resolve(target, [field], left) : null;
+    return fromResolver(target, field, value, resolved, verdict);
+  }
+
+  /** What a conversation or a task needs of its client for the agent features. */
+  get agentHost(): AgentHost {
+    return {
+      recorder: this.turns,
+      coordinator: this.coordinator,
+      states: this.states,
+      contract: () => this.currentContract(),
+      check: (request, timeoutMs) => this.api.check(request, { timeout: timeoutMs }),
+      claim: (request, timeoutMs) => this.api.claim(request, {}, { timeout: timeoutMs }),
+      verifyClaim: (ref, field, value, options) => this.verifyClaim(ref, field, value, options),
+      enabled: this.enabled,
+      navigationMs: this.timeouts.navigation,
+    };
   }
 
   /**
@@ -356,7 +566,7 @@ export class Niadra {
   prefetch(params: PrefetchParams, options: RequestOptions = {}): boolean {
     const core = this.core;
     const text = turnText(params.text);
-    if (!core || !text || text.length < MIN_PREFETCH || !this.turns.prefetchWanted()) return false;
+    if (!core || !text || text.length < MIN_PREFETCH || !this.prefetchSupport.prefetchWanted()) return false;
     let body: PrefetchRequest;
     try {
       body = buildPrefetchRequest({ ...params, text });
@@ -381,11 +591,11 @@ export class Niadra {
       try {
         await core.transport.request<unknown>(this.readSpec("POST", "/v1/context/prefetch", body, this.timeouts.prefetch, options));
       } catch (error) {
-        if (error instanceof NiadraAPIError && NO_PREFETCH.has(error.status)) this.turns.prefetchRefused();
+        if (error instanceof NiadraAPIError && NO_PREFETCH.has(error.status)) this.prefetchSupport.prefetchRefused();
         this.logger.debug(`prefetch skipped: ${describe(toNiadraError(error))}`);
       }
       body = this.prefetching.get(scope) ?? null;
-      if (body && this.turns.prefetchWanted()) this.prefetching.set(scope, null);
+      if (body && this.prefetchSupport.prefetchWanted()) this.prefetching.set(scope, null);
       else {
         body = null;
         this.prefetching.delete(scope);
@@ -854,6 +1064,8 @@ export class Niadra {
    */
   async flush(): Promise<void> {
     if (!this.core) return;
+    await this.turnSender?.flush();
+    await this.outbox.flush();
     const report = await this.core.queue.flush();
     const [first] = report.errors;
     if (this.strict && first) throw first;
@@ -866,6 +1078,8 @@ export class Niadra {
   async shutdown(): Promise<void> {
     this.unregisterExit();
     if (!this.core) return;
+    await this.turnSender?.stop(this.timeouts.write);
+    await this.outbox.stop(this.timeouts.write);
     const report = await this.core.queue.close();
     this.core.cache?.clear();
     this.voice.clear();
@@ -929,6 +1143,11 @@ export class Niadra {
     };
   }
 
+  /** Sends one route as `niadra.api` does, for the SDK's own modules (the replay runner, the resolver worker). */
+  callRoute<T>(route: Route, options: RequestOptions = {}): Promise<T> {
+    return this.route(route, options);
+  }
+
   /** One route of `niadra.api`: the error rejects, whatever `strict` says. */
   private async route<T>(route: Route, options: RequestOptions): Promise<T> {
     if (!this.core) throw this.disabledError();
@@ -977,10 +1196,20 @@ export class Niadra {
     signal: AbortSignal | undefined,
     headers: Record<string, string> | undefined,
   ): Promise<ContextResponse> {
-    const response = await core.transport.request<unknown>(
-      this.readSpec("POST", "/v1/context", request, timeout, { signal, headers }),
-    );
-    return normalizeContext(response.data);
+    const started = Date.now();
+    try {
+      const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", request, timeout, { signal, headers }));
+      return normalizeContext(response.data);
+    } catch (error) {
+      // A space that serves none of the blocks answers 404 (or 501): the read goes on without them.
+      const refused = error instanceof NiadraAPIError && (error.status === 404 || error.status === 501);
+      const left = timeout - (Date.now() - started);
+      if (!request.include?.length || !refused || left <= 0) throw error;
+      for (const name of request.include) this.refusedBlocks.set(name, Date.now() + PREFETCH_RECHECK_AFTER_MS);
+      const { include: _dropped, ...plain } = request;
+      const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", plain, left, { signal, headers }));
+      return normalizeContext(response.data);
+    }
   }
 
   /**
@@ -1261,8 +1490,20 @@ export class Niadra {
       this.logger.warn(`event dropped: ${failure.message}`);
       return null;
     }
+    const played = replaying();
+    if (played !== null) {
+      played.muted(item);
+      return "idempotency_key" in item ? item.idempotency_key : null;
+    }
     const accepted = this.core.queue.push(item);
     return accepted && "idempotency_key" in item ? item.idempotency_key : null;
+  }
+
+  private async sendTurns(core: Core, body: { bytes: Uint8Array<ArrayBuffer>; gzip: boolean }): Promise<TurnsResponse> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (body.gzip) headers["content-encoding"] = "gzip";
+    const spec: RequestSpec = { method: "POST", path: "/v1/turns", bytes: body.bytes, headers, timeoutMs: this.timeouts.write, retry: { ...core.writes, maxAttempts: 1 } };
+    return (await core.transport.request<TurnsResponse>(spec)).data;
   }
 
   private sendNow(build: () => BatchItem & { idempotency_key: string }): Promise<WriteResult> {

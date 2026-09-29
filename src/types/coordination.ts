@@ -326,6 +326,10 @@ export interface TaskLockDeclared {
   subject?: Handle | null;
 }
 
+/**
+ * What happened, after the fact: one kind of declaration, with the fields of its kind in `detail` (the
+ * coordination spec, 5).
+ */
 export type DeclareRequest = CaseOpened | CaseClosed | LeaseDeclared | TaskLockDeclared | ContactMade | EffectDeclared | CommitmentMade | CommitmentWithdrawn | HandoffDeclared | SuppressionAdded | SuppressionLifted;
 
 export interface DeclareResult {

@@ -1,4 +1,13 @@
 import type { Niadra, WriteResult } from "./client.js";
+import { AgentSession } from "./agent-session.js";
+import type { ClaimParams, TurnParams } from "./agent-session.js";
+import type { AgentStateHandle } from "./agent-state.js";
+import type { ClaimCheck } from "./capture/check.js";
+import type { TurnFrame } from "./capture/frame.js";
+import type { CheckOptions, Claimed, Declarations } from "./coordination/client.js";
+import type { ClaimVerdict } from "./resolvers.js";
+import type { CheckResult } from "./types/coordination.js";
+import type { StateRef } from "./types/state.js";
 import type { AgentMemoryParams, AgentMemoryResult } from "./agent-memory.js";
 import type { ContextOptions, ContextParams, ContextResult, RequestOptions } from "./context.js";
 import { uuidv7 } from "./ids.js";
@@ -29,6 +38,8 @@ export interface ConversationParams {
   /** The account or partner the customer acts for. */
   about?: Handle;
   target?: TargetModel;
+  /** Your agent's id within the source: its turns, working state and coordination are its own. */
+  agent_id?: string;
 }
 
 /** Optional details of one captured turn. */
@@ -121,6 +132,7 @@ export class Conversation {
   private ending: Promise<WriteResult> | null = null;
   private turnText: string | null = null;
   private prefetched: string | null = null;
+  private readonly features: AgentSession;
 
   constructor(
     private readonly client: Niadra,
@@ -132,6 +144,61 @@ export class Conversation {
     this.subject = params.subject;
     this.level = params.verification ?? "V0";
     this.view = params.view ?? (params.channel === "voice" ? "voice" : "chat");
+    const scope = { kind: "conversation" as const, id: this.id };
+    this.features = new AgentSession(client.agentHost, scope, params.agent_id ?? "agent", params.subject, null, params.channel);
+  }
+
+  /** The claim contract: `check()` classifies and counts, `guard()` and `guardText()` act as its actions say. */
+  get claims(): ClaimCheck {
+    return this.features.claims;
+  }
+
+  /** What the agent declares after it acts, sent in the background: `declare.effect(key, "done")`, ... */
+  get declare(): Declarations {
+    return this.features.declare;
+  }
+
+  /** This conversation's working state for its agent: `get()` and `put()` (`agent-state.ts`). */
+  get agentState(): AgentStateHandle {
+    return this.features.agentState;
+  }
+
+  /**
+   * Runs `fn` as a turn of this conversation, from its input to the last thing it emits: its reads, the tools
+   * wrapped with `niadra.tool()` and what it says are recorded, with the build it ran on. Opened inside another
+   * turn, it is a sub-turn of it.
+   */
+  turn<T>(fn: (frame: TurnFrame) => T | Promise<T>): Promise<T>;
+  turn<T>(params: TurnParams, fn: (frame: TurnFrame) => T | Promise<T>): Promise<T>;
+  turn<T>(first: TurnParams | ((frame: TurnFrame) => T | Promise<T>), second?: (frame: TurnFrame) => T | Promise<T>): Promise<T> {
+    return typeof first === "function" ? this.features.turn({}, first) : this.features.turn(first, second as (frame: TurnFrame) => T | Promise<T>);
+  }
+
+  /** A turn opened and closed by hand (`frame.run(fn)`, then `frame.close()`), for adapters. */
+  openTurn(params: TurnParams = {}): TurnFrame {
+    return this.features.openTurn(params);
+  }
+
+  /**
+   * Asks before acting: the coordination decision for `intent` of `purpose` about this customer. With
+   * `effectKey`, an `allow` whose `effect.state` is `none` reserved the effect: act, then
+   * `declare.effect(key, ...)`. Within `timeoutMs` (200 ms), or the purpose's direction decides; never rejects.
+   */
+  check(intent: string, options: CheckOptions): Promise<CheckResult> {
+    return this.features.check(intent, options);
+  }
+
+  /**
+   * Claims this customer, or with `object` and `task` a task lock on a business object, for `leaseS`
+   * seconds: `held` when it is this agent's, otherwise `error` says why. Never rejects.
+   */
+  claim(params: ClaimParams = {}): Promise<Claimed> {
+    return this.features.claim(params);
+  }
+
+  /** Whether `value` may be claimed for `field` of `ref` now, about this customer. See `niadra.verifyClaim`. */
+  verifyClaim(ref: StateRef | string, field: string, value: unknown, options: { budgetMs?: number } = {}): Promise<ClaimVerdict> {
+    return this.features.verifyClaim(ref, field, value, options);
   }
 
   /** The level in force for this conversation, raised by a successful `verify()`. */
@@ -179,7 +246,7 @@ export class Conversation {
    * `query` picks this read's slots by other words than the turn; the pack is the pinned one.
    */
   async context(options: ContextOptions & { query?: string; turn?: string | null } = {}): Promise<ContextResult> {
-    const { query, turn, format, explain, ...requestOptions } = options;
+    const { query, turn, format, explain, include, ...requestOptions } = options;
     const params: ContextParams = {
       subject: this.subject,
       view: this.view,
@@ -191,9 +258,12 @@ export class Conversation {
       ...(explain ? { explain } : {}),
     };
     if (query) params.query = query;
+    if (include?.length) params.include = include;
     if (this.state.wantsDelta) params.delta = true;
     params.turn = turn === undefined ? this.turnText : turn;
-    return this.state.observe(this.state.absorb(await this.client.context(params, requestOptions)));
+    const result = await this.client.context(params, requestOptions);
+    this.features.observe(result);
+    return this.state.observe(this.state.absorb(result));
   }
 
   /**
@@ -263,7 +333,7 @@ export class Conversation {
       this.turnText = text;
       this.state.sources.add(text);
     }
-    return this.turn("customer", text, options);
+    return this.emit("customer", text, options);
   }
 
   /**
@@ -279,14 +349,15 @@ export class Conversation {
     const checked = this.state.checkAnswer(text);
     if (strict && checked?.problems.length) return checked.problems;
     const stamp = this.state.agentTurn();
-    const key = this.turn("ai_agent", text, stamp ? { context_stamp: stamp, ...turnOptions } : turnOptions, checked?.backing);
+    const key = this.emit("ai_agent", text, stamp ? { context_stamp: stamp, ...turnOptions } : turnOptions, checked?.backing);
+    this.features.said(text, key);
     return strict ? [] : key;
   }
 
   /** Captures what a human attendant said, for example after a handoff. It backs the agent's answers. */
   human(text: string, options: TurnOptions = {}): string | null {
     this.state.sources.add(text);
-    return this.turn("human_agent", text, options);
+    return this.emit("human_agent", text, options);
   }
 
   /**
@@ -377,7 +448,7 @@ export class Conversation {
     return own ? { conversation_id: this.id } : { conversation_id: this.id, handles: [this.subject] };
   }
 
-  private turn(role: Speaker, text: string, options: TurnOptions, backing?: Backing): string | null {
+  private emit(role: Speaker, text: string, options: TurnOptions, backing?: Backing): string | null {
     const transcript = options.stt_confidence !== undefined;
     const content: Content =
       options.content ??

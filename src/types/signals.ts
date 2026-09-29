@@ -17,11 +17,61 @@ export interface AttributeEntry {
   value: boolean | number | string;
 }
 
-/** Value by method and band, deterministic and probable apart; weights are never summed as money. */
+export interface AttributionRow {
+  agent: string;
+  band: "deterministic" | "probable";
+  currency: string;
+  day: string;
+  finality: "provisional" | "final" | "expired_without_outcome";
+  lines: number;
+  method: "line" | "order" | "identity" | "assisted_handoff";
+  outcome: string;
+  outcomes: number;
+  value_minor: number;
+}
+
+/** One method, band and finality over the period: deterministic and probable are never added together. */
+export interface AttributionTotal {
+  band: "deterministic" | "probable";
+  currency: string;
+  finality: "provisional" | "final" | "expired_without_outcome";
+  lines: number;
+  method: "line" | "order" | "identity" | "assisted_handoff";
+  outcome: string;
+  outcomes: number;
+  value_minor: number;
+}
+
+/**
+ * How often the identity method names the exposure the line's own token names, on the lines where both
+ * exist: the confidence of that method in this space.
+ */
+export interface IdentityCalibration {
+  agreeing: number;
+  compared: number;
+  rate?: number | null;
+}
+
+/**
+ * Value by day, agent, method and band, deterministic and probable apart; a value is never multiplied by
+ * a confidence, and no total adds a probable value to a deterministic one.
+ */
 export interface AttributionReport {
-  rows: (Record<string, unknown>)[];
+  identity: IdentityCalibration;
+  rows: AttributionRow[];
   since: string;
+  totals: AttributionTotal[];
   until: string;
+}
+
+/**
+ * The company's BI export for the period, as CSV with a header: `order` (the id the company knows the
+ * object by), `line` (optional), `value` (in major units, as the signed definition nets it) and
+ * `currency`.
+ */
+export interface BiFile {
+  content: string;
+  format?: "csv";
 }
 
 export interface BlockSubject {
@@ -185,8 +235,46 @@ export interface LegalHoldRelease {
   reason: string;
 }
 
+/**
+ * One outcome attributed to what an agent did, by one method. `line` and `order` are deterministic: the
+ * exposure token the order line or the order carried, or the agent's own action on the object.
+ * `identity` and `assisted_handoff` are probable: the same item engaged with or shown within a window, or a
+ * handoff that assisted the sale. A link carries its line's value whole or none at all: a value is never
+ * weighted.
+ */
+export interface OutcomeLink {
+  action_id?: string | null;
+  agent?: string | null;
+  band: "deterministic" | "probable";
+  currency?: string | null;
+  exposure_id?: string | null;
+  /** When a provisional link becomes final. */
+  final_at?: string | null;
+  /**
+   * `provisional` until the exchange window ends or the object reaches a final state;
+   * `expired_without_outcome` when its deadline passed first.
+   */
+  finality: "provisional" | "final" | "expired_without_outcome";
+  handoff_id?: string | null;
+  known_at: string;
+  line?: string | null;
+  link_id: string;
+  method: "line" | "order" | "identity" | "assisted_handoff";
+  object: string;
+  /** The outcome definition of the `measurement` document. */
+  outcome: string;
+  position?: number | null;
+  /** The state the object or its line is in. */
+  state: string;
+  turn_id?: string | null;
+  /** When the outcome first counted. */
+  valid_at: string;
+  /** In the currency's minor units; absent: none. */
+  value_minor?: number | null;
+}
+
 export interface OutcomePage {
-  items: (Record<string, unknown>)[];
+  items: OutcomeLink[];
   next_cursor?: string | null;
 }
 
@@ -203,14 +291,36 @@ export interface PowerResult {
 }
 
 export interface ReconcileRequest {
+  file: BiFile;
   since: string;
   until: string;
-  upload_ref: string;
 }
 
+export interface ReconciledLine {
+  bi_minor: number;
+  line: string;
+  order: string;
+  ours_minor: number;
+}
+
+/**
+ * Our value of each line against the BI's, on the lines both know; lines only one side knows are
+ * counted apart and never enter the deviation.
+ */
 export interface ReconcileResult {
-  detail?: Record<string, unknown>;
-  deviation: number;
+  bi_minor: number;
+  currency?: string | null;
+  /** |ours - BI| / BI on the lines both know. */
+  deviation: number | null;
+  matched: number;
+  only_bi: number;
+  only_ours: number;
+  ours_minor: number;
+  report_id: string;
+  tolerance: number;
+  within_tolerance: boolean;
+  /** The lines that differ most. */
+  worst?: ReconciledLine[];
 }
 
 export interface ReviewRequest {

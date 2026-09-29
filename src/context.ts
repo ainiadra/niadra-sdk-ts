@@ -7,10 +7,13 @@ import type {
   ContextPack,
   ContextRequest,
   ContextResponse,
+  Include,
   LiveTurn,
   PrefetchRequest,
   TargetModel,
 } from "./types/context.js";
+import type { ConstraintsBlock } from "./types/signals.js";
+import type { StateView } from "./types/state.js";
 import type { Verification, View } from "./types/vocabulary.js";
 
 /** Arguments of `context()`. Pass exactly one of `subject` or `object`. */
@@ -56,6 +59,13 @@ export interface ContextParams {
    * receipt are the same bytes with or without it.
    */
   explain?: boolean;
+  /**
+   * Blocks read in the same round trip: `["constraints"]` returns the subject's constraints block, `["state"]`
+   * the state of their objects. Each only where the space turned its feature on; a block the space does not
+   * serve is left out and not asked again for a while, and the read goes on. The blocks are cached with the
+   * pack, so a read that fails serves the last good ones too.
+   */
+  include?: Include[];
 }
 
 /** Arguments of `prefetch()`: who the turn is about, as in `context()`, and the turn so far. */
@@ -85,6 +95,8 @@ export interface RequestOptions {
 export interface ContextOptions extends RequestOptions {
   /** Pass `false` to skip the per-conversation cache for this call. */
   cache?: boolean | undefined;
+  /** For `conversation.context()` and `task.context()`: blocks read in the same round trip. */
+  include?: Include[] | undefined;
   /** For `conversation.context()` and `task.context()`: `json` also returns `pack`. */
   format?: ContextFormat | undefined;
   /**
@@ -124,6 +136,10 @@ export interface ContextResult {
   response: ContextResponse | null;
   /** What went wrong, when `source` is `fallback` or `none`. */
   error: NiadraError | null;
+  /** With `include: ["constraints"]`: the subject's constraints block. */
+  constraints?: ConstraintsBlock | null;
+  /** With `include: ["state"]`: the state of the subject's objects. */
+  state?: StateView | null;
 }
 
 const VIEW = /^(voice|chat|brief|full|custom|account|partner|task:[a-z0-9_]{1,40})$/;
@@ -161,6 +177,7 @@ export function buildContextRequest(params: ContextParams): ContextRequest {
     if (format !== "json") throw new NiadraValidationError('explain requires format: "json"');
     request.explain = true;
   }
+  if (params.include?.length) request.include = [...new Set(params.include)];
   return request;
 }
 
@@ -212,6 +229,7 @@ export function cacheKey(request: ContextRequest): string {
     request.target ?? null,
     request.format ?? "text",
     request.explain ?? false,
+    request.include ?? null,
   ]);
 }
 
@@ -231,6 +249,9 @@ export function mergeNotModified(cached: ContextResponse, fresh: ContextResponse
     withheld: cached.withheld,
     cache: cached.cache ?? null,
     pack: cached.pack ?? null,
+    // The blocks sit outside the pinned pack: a fresh block wins, and a missing one keeps the cached.
+    constraints: fresh.constraints ?? cached.constraints ?? null,
+    state: fresh.state ?? cached.state ?? null,
   };
 }
 
@@ -243,11 +264,12 @@ export function resultFrom(
   const holdout = response.path === "holdout";
   const text = holdout ? "" : (response.text ?? "");
   const pack = holdout ? null : (response.pack ?? null);
-  return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, response, error };
+  const blocks = { constraints: response.constraints ?? null, state: response.state ?? null };
+  return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, response, error, ...blocks };
 }
 
 export function emptyResult(error: NiadraError | null): ContextResult {
-  return { text: "", suffix: "", variables: {}, pack: null, source: "none", response: null, error };
+  return { text: "", suffix: "", variables: {}, pack: null, source: "none", response: null, error, constraints: null, state: null };
 }
 
 /**

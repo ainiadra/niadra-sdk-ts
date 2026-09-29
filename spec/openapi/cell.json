@@ -432,12 +432,14 @@
       },
       "AttributionReport": {
         "additionalProperties": false,
-        "description": "Value by method and band, deterministic and probable apart; weights are never summed as money.",
+        "description": "Value by day, agent, method and band, deterministic and probable apart; a value is never multiplied by\na confidence, and no total adds a probable value to a deterministic one.",
         "properties": {
+          "identity": {
+            "$ref": "#/components/schemas/IdentityCalibration"
+          },
           "rows": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/AttributionRow"
             },
             "title": "Rows",
             "type": "array"
@@ -446,6 +448,13 @@
             "format": "date",
             "title": "Since",
             "type": "string"
+          },
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/AttributionTotal"
+            },
+            "title": "Totals",
+            "type": "array"
           },
           "until": {
             "format": "date",
@@ -456,9 +465,178 @@
         "required": [
           "since",
           "until",
-          "rows"
+          "rows",
+          "totals",
+          "identity"
         ],
         "title": "AttributionReport",
+        "type": "object"
+      },
+      "AttributionRow": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "band": {
+            "enum": [
+              "deterministic",
+              "probable"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "finality": {
+            "enum": [
+              "provisional",
+              "final",
+              "expired_without_outcome"
+            ],
+            "title": "Finality",
+            "type": "string"
+          },
+          "lines": {
+            "title": "Lines",
+            "type": "integer"
+          },
+          "method": {
+            "enum": [
+              "line",
+              "order",
+              "identity",
+              "assisted_handoff"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "outcome": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Outcome",
+            "type": "string"
+          },
+          "outcomes": {
+            "title": "Outcomes",
+            "type": "integer"
+          },
+          "value_minor": {
+            "title": "Value Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "outcome",
+          "agent",
+          "method",
+          "band",
+          "finality",
+          "currency",
+          "outcomes",
+          "lines",
+          "value_minor"
+        ],
+        "title": "AttributionRow",
+        "type": "object"
+      },
+      "AttributionTotal": {
+        "additionalProperties": false,
+        "description": "One method, band and finality over the period: deterministic and probable are never added together.",
+        "properties": {
+          "band": {
+            "enum": [
+              "deterministic",
+              "probable"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "finality": {
+            "enum": [
+              "provisional",
+              "final",
+              "expired_without_outcome"
+            ],
+            "title": "Finality",
+            "type": "string"
+          },
+          "lines": {
+            "title": "Lines",
+            "type": "integer"
+          },
+          "method": {
+            "enum": [
+              "line",
+              "order",
+              "identity",
+              "assisted_handoff"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "outcome": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Outcome",
+            "type": "string"
+          },
+          "outcomes": {
+            "title": "Outcomes",
+            "type": "integer"
+          },
+          "value_minor": {
+            "title": "Value Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "outcome",
+          "method",
+          "band",
+          "finality",
+          "currency",
+          "outcomes",
+          "lines",
+          "value_minor"
+        ],
+        "title": "AttributionTotal",
+        "type": "object"
+      },
+      "BiFile": {
+        "additionalProperties": false,
+        "description": "The company's BI export for the period, as CSV with a header: `order` (the id the company knows the\nobject by), `line` (optional), `value` (in major units, as the signed definition nets it) and\n`currency`.",
+        "properties": {
+          "content": {
+            "maxLength": 5000000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "format": {
+            "const": "csv",
+            "default": "csv",
+            "title": "Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "BiFile",
         "type": "object"
       },
       "BlockSubject": {
@@ -2648,6 +2826,7 @@
         "type": "object"
       },
       "DeclareRequest": {
+        "description": "What happened, after the fact: one kind of declaration, with the fields of its kind in `detail` (the\ncoordination spec, 5).",
         "discriminator": {
           "mapping": {
             "case.closed": "#/components/schemas/CaseClosed",
@@ -2699,7 +2878,7 @@
             "$ref": "#/components/schemas/SuppressionLifted"
           }
         ],
-        "title": "Body"
+        "title": "DeclareRequest"
       },
       "DeclareResult": {
         "additionalProperties": false,
@@ -3916,6 +4095,37 @@
         "title": "HardConstraint",
         "type": "object"
       },
+      "IdentityCalibration": {
+        "additionalProperties": false,
+        "description": "How often the identity method names the exposure the line's own token names, on the lines where both\nexist: the confidence of that method in this space.",
+        "properties": {
+          "agreeing": {
+            "title": "Agreeing",
+            "type": "integer"
+          },
+          "compared": {
+            "title": "Compared",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "required": [
+          "agreeing",
+          "compared"
+        ],
+        "title": "IdentityCalibration",
+        "type": "object"
+      },
       "Inference": {
         "additionalProperties": false,
         "properties": {
@@ -4570,6 +4780,14 @@
             ],
             "title": "As Of"
           },
+          "axes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Each time axis of the type whose value is known: a date as `YYYY-MM-DD`, an instant in UTC. The platform keeps `known_at` (when the producer first knew of the object) and the time its content last changed.",
+            "title": "Axes",
+            "type": "object"
+          },
           "blocked": {
             "additionalProperties": {
               "items": {
@@ -4845,13 +5063,222 @@
         "title": "OpenObject",
         "type": "object"
       },
+      "OutcomeLink": {
+        "additionalProperties": false,
+        "description": "One outcome attributed to what an agent did, by one method. `line` and `order` are deterministic: the\nexposure token the order line or the order carried, or the agent's own action on the object.\n`identity` and `assisted_handoff` are probable: the same item engaged with or shown within a window, or a\nhandoff that assisted the sale. A link carries its line's value whole or none at all: a value is never\nweighted.",
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "band": {
+            "enum": [
+              "deterministic",
+              "probable"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "exposure_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Id"
+          },
+          "final_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a provisional link becomes final.",
+            "title": "Final At"
+          },
+          "finality": {
+            "description": "`provisional` until the exchange window ends or the object reaches a final state; `expired_without_outcome` when its deadline passed first.",
+            "enum": [
+              "provisional",
+              "final",
+              "expired_without_outcome"
+            ],
+            "title": "Finality",
+            "type": "string"
+          },
+          "handoff_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Id"
+          },
+          "known_at": {
+            "format": "date-time",
+            "title": "Known At",
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "link_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Link Id",
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "line",
+              "order",
+              "identity",
+              "assisted_handoff"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "object": {
+            "pattern": "^[a-z][a-z0-9_]{0,39}:[^:\\s]{1,256}:\\S{1,512}$",
+            "title": "Object",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "The outcome definition of the `measurement` document.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Outcome",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "state": {
+            "description": "The state the object or its line is in.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "State",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "valid_at": {
+            "description": "When the outcome first counted.",
+            "format": "date-time",
+            "title": "Valid At",
+            "type": "string"
+          },
+          "value_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In the currency's minor units; absent: none.",
+            "title": "Value Minor"
+          }
+        },
+        "required": [
+          "link_id",
+          "outcome",
+          "object",
+          "state",
+          "method",
+          "band",
+          "finality",
+          "valid_at",
+          "known_at"
+        ],
+        "title": "OutcomeLink",
+        "type": "object"
+      },
       "OutcomePage": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/OutcomeLink"
             },
             "title": "Items",
             "type": "array"
@@ -5684,6 +6111,9 @@
       "ReconcileRequest": {
         "additionalProperties": false,
         "properties": {
+          "file": {
+            "$ref": "#/components/schemas/BiFile"
+          },
           "since": {
             "format": "date",
             "title": "Since",
@@ -5693,39 +6123,129 @@
             "format": "date",
             "title": "Until",
             "type": "string"
-          },
-          "upload_ref": {
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Upload Ref",
-            "type": "string"
           }
         },
         "required": [
-          "upload_ref",
           "since",
-          "until"
+          "until",
+          "file"
         ],
         "title": "ReconcileRequest",
         "type": "object"
       },
       "ReconcileResult": {
         "additionalProperties": false,
+        "description": "Our value of each line against the BI's, on the lines both know; lines only one side knows are\ncounted apart and never enter the deviation.",
         "properties": {
-          "detail": {
-            "additionalProperties": true,
-            "title": "Detail",
-            "type": "object"
+          "bi_minor": {
+            "title": "Bi Minor",
+            "type": "integer"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           },
           "deviation": {
-            "title": "Deviation",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "|ours - BI| / BI on the lines both know.",
+            "title": "Deviation"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "only_bi": {
+            "title": "Only Bi",
+            "type": "integer"
+          },
+          "only_ours": {
+            "title": "Only Ours",
+            "type": "integer"
+          },
+          "ours_minor": {
+            "title": "Ours Minor",
+            "type": "integer"
+          },
+          "report_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Report Id",
+            "type": "string"
+          },
+          "tolerance": {
+            "title": "Tolerance",
             "type": "number"
+          },
+          "within_tolerance": {
+            "title": "Within Tolerance",
+            "type": "boolean"
+          },
+          "worst": {
+            "description": "The lines that differ most.",
+            "items": {
+              "$ref": "#/components/schemas/ReconciledLine"
+            },
+            "title": "Worst",
+            "type": "array"
           }
         },
         "required": [
-          "deviation"
+          "report_id",
+          "deviation",
+          "tolerance",
+          "within_tolerance",
+          "matched",
+          "only_ours",
+          "only_bi",
+          "ours_minor",
+          "bi_minor"
         ],
         "title": "ReconcileResult",
+        "type": "object"
+      },
+      "ReconciledLine": {
+        "additionalProperties": false,
+        "properties": {
+          "bi_minor": {
+            "title": "Bi Minor",
+            "type": "integer"
+          },
+          "line": {
+            "title": "Line",
+            "type": "string"
+          },
+          "order": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Order",
+            "type": "string"
+          },
+          "ours_minor": {
+            "title": "Ours Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "order",
+          "line",
+          "ours_minor",
+          "bi_minor"
+        ],
+        "title": "ReconciledLine",
         "type": "object"
       },
       "Refetch": {
@@ -7365,6 +7885,20 @@
             ],
             "title": "State",
             "type": "string"
+          },
+          "supersedes_firing_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The firing this one replaces: a timer that already fired fires again once the value that armed it is revised.",
+            "title": "Supersedes Firing Id"
           }
         },
         "required": [
@@ -9213,18 +9747,11 @@
           {
             "in": "query",
             "name": "space",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Space"
+              "format": "uuid",
+              "title": "Space",
+              "type": "string"
             }
           }
         ],
@@ -9238,6 +9765,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such space, or it has no coordination."
           },
           "422": {
             "content": {
@@ -10419,6 +10949,7 @@
     },
     "/v1/measure/attribution": {
       "get": {
+        "description": "Outcomes and value by day, agent, method and band, without a person: deterministic and probable\napart.",
         "operationId": "attribution_v1_measure_attribution_get",
         "parameters": [
           {
@@ -10534,6 +11065,7 @@
     },
     "/v1/measure/outcomes": {
       "get": {
+        "description": "Outcomes attributed to what agents did, newest first: each link with its method, band and finality.",
         "operationId": "outcomes_v1_measure_outcomes_get",
         "parameters": [
           {
@@ -10637,6 +11169,7 @@
     },
     "/v1/measure/reconcile": {
       "post": {
+        "description": "The period's attributed lines against the company's BI file, line by line, with the deviation kept.",
         "operationId": "reconcile_v1_measure_reconcile_post",
         "requestBody": {
           "content": {

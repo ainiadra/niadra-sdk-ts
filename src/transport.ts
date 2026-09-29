@@ -30,6 +30,8 @@ export interface RequestSpec {
   /** A list becomes the parameter repeated, as `?tags=a&tags=b`. */
   query?: Record<string, string | string[] | undefined>;
   body?: unknown;
+  /** A body already encoded, sent as is instead of `body`; `headers` name its type and encoding. */
+  bytes?: Uint8Array<ArrayBuffer>;
   timeoutMs: number;
   retry: RetryPolicy;
   signal?: AbortSignal | undefined;
@@ -146,7 +148,9 @@ export class Transport {
       ...spec.headers,
     };
     const init: RequestInit = { method: spec.method, headers, signal: deadline.signal };
-    if (spec.body !== undefined) {
+    if (spec.bytes !== undefined) {
+      init.body = spec.bytes;
+    } else if (spec.body !== undefined) {
       headers["content-type"] = "application/json";
       init.body = JSON.stringify(spec.body);
     }
