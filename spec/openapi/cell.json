@@ -4128,11 +4128,26 @@
       },
       "Inference": {
         "additionalProperties": false,
+        "description": "One thing the signals infer about the subject, with what it rests on: the subject can see it, correct\nit and delete it. What the subject said is not an inference, and is not listed.",
         "properties": {
           "at": {
+            "description": "When its latest evidence happened.",
             "format": "date-time",
             "title": "At",
             "type": "string"
+          },
+          "attr": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_]{0,39}\\.[a-z][a-z0-9_]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The field whose value is inferred.",
+            "title": "Attr"
           },
           "confidence": {
             "anyOf": [
@@ -4147,16 +4162,25 @@
           },
           "evidence": {
             "additionalProperties": true,
+            "description": "What it rests on, as counts: effective exposure, weighted signal, events, sessions and lift for a value; times for an interest.",
             "title": "Evidence",
             "type": "object"
           },
+          "for": {
+            "default": "self",
+            "pattern": "^(?:self|gift|beneficiary:[A-Za-z0-9_-]{1,64})$",
+            "title": "For",
+            "type": "string"
+          },
           "key": {
+            "description": "A keyed hash that names the inference; it never carries its value.",
             "maxLength": 512,
             "minLength": 1,
             "title": "Key",
             "type": "string"
           },
           "kind": {
+            "description": "`soft_constraint` when the constraints block carries it as a soft entry, `attribute` for the inferred size, `affinity` for a value with evidence and no entry yet, `interest` for an object.",
             "enum": [
               "affinity",
               "soft_constraint",
@@ -4167,12 +4191,42 @@
             "type": "string"
           },
           "origin": {
+            "description": "`interactions`, `implicit_negative` (shown often and never engaged with), or why an interest was kept: `engaged`, `feedback`, `watch`.",
             "maxLength": 256,
             "minLength": 1,
             "title": "Origin",
             "type": "string"
           },
+          "polarity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "prefer",
+                  "avoid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Polarity"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_]{0,39}:[^:\\s]{1,256}:\\S{1,512}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The object of an interest.",
+            "title": "Ref"
+          },
           "used_for": {
+            "description": "The purposes it is used for.",
             "items": {
               "maxLength": 256,
               "minLength": 1,
@@ -4180,6 +4234,27 @@
             },
             "title": "Used For",
             "type": "array"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
           }
         },
         "required": [
@@ -4193,7 +4268,7 @@
       },
       "InferenceCorrection": {
         "additionalProperties": false,
-        "description": "Becomes a stated preference (`source: correction`).",
+        "description": "The value the subject says instead: a stated preference, or a stated attribute for an inferred size\n(`source: correction`). The inference it corrects is deleted. An interest is deleted, not corrected.",
         "properties": {
           "reason": {
             "anyOf": [
@@ -4209,6 +4284,21 @@
             "title": "Reason"
           },
           "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "maxLength": 256,
+                "type": "string"
+              }
+            ],
             "title": "Value"
           }
         },
@@ -4436,6 +4526,15 @@
             ],
             "title": "Released At"
           },
+          "scope": {
+            "enum": [
+              "handle",
+              "object",
+              "conversation"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "active",
@@ -4447,6 +4546,7 @@
         },
         "required": [
           "hold_id",
+          "scope",
           "status",
           "created_at"
         ],
@@ -4455,6 +4555,7 @@
       },
       "LegalHoldCreate": {
         "additionalProperties": false,
+        "description": "Exactly one of `handle`, `object` or `conversation_id`: what is kept from purging while the hold is\nactive.",
         "properties": {
           "conversation_id": {
             "anyOf": [
@@ -4693,6 +4794,28 @@
             "title": "Fields",
             "type": "object"
           },
+          "inputs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxProperties": 20,
+                "propertyNames": {
+                  "maxLength": 256,
+                  "minLength": 1
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a customer's derived object (a quote): the objects its inputs are fields of, by the name its type gives them, as `type:namespace:id` (`{\"lead\": \"lead:crm:L-9\"}`). When a field of one of them changes, the object expires, naming the input.",
+            "title": "Inputs"
+          },
           "provenance": {
             "$ref": "#/components/schemas/Provenance"
           },
@@ -4701,6 +4824,7 @@
           },
           "version": {
             "description": "The source's version of the object. A field moves only when this is greater than the version that last wrote it; a source never reuses a version for other content.",
+            "maximum": 9007199254740991,
             "minimum": 0,
             "title": "Version",
             "type": "integer"
@@ -4986,41 +5110,25 @@
         "title": "ObjectRef",
         "type": "object"
       },
-      "ObjectSnapshotRequest": {
-        "additionalProperties": false,
-        "description": "Reconciliation from an NDJSON file uploaded through the file path that exists (`/v1/ingest`).",
-        "properties": {
-          "type": {
-            "pattern": "^[a-z][a-z0-9_]{0,39}$",
-            "title": "Type",
-            "type": "string"
-          },
-          "upload_ref": {
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Upload Ref",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "upload_ref"
-        ],
-        "title": "ObjectSnapshotRequest",
-        "type": "object"
-      },
       "ObjectSnapshotResponse": {
         "additionalProperties": false,
+        "description": "A snapshot taken in: its lines are applied as pushes of provenance `snapshot`, which never sustain a\nclaim, by the same version rule.",
         "properties": {
           "import_id": {
             "maxLength": 512,
             "minLength": 1,
             "title": "Import Id",
             "type": "string"
+          },
+          "objects": {
+            "description": "The lines taken in.",
+            "title": "Objects",
+            "type": "integer"
           }
         },
         "required": [
-          "import_id"
+          "import_id",
+          "objects"
         ],
         "title": "ObjectSnapshotResponse",
         "type": "object"
@@ -6531,11 +6639,56 @@
             "title": "Created At",
             "type": "string"
           },
+          "decision_receipt_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Receipt Id"
+          },
+          "explanation": {
+            "additionalProperties": true,
+            "description": "Built from receipts: their ids, kinds, surfaces, rules, versions and inputs by reference, never personal content.",
+            "title": "Explanation",
+            "type": "object"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "upheld",
+                  "reversed",
+                  "corrected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
           "profile_id": {
             "maxLength": 512,
             "minLength": 1,
             "title": "Profile Id",
             "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           },
           "request_id": {
             "maxLength": 512,
@@ -6552,7 +6705,20 @@
                 "type": "null"
               }
             ],
+            "description": "The reviewer's note.",
             "title": "Resolution"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
           },
           "status": {
             "enum": [
@@ -6574,19 +6740,19 @@
       },
       "ReviewRequestCreate": {
         "additionalProperties": false,
-        "description": "A request to review an automated decision (LGPD, art. 20), sent to the controller's DPO.",
+        "description": "A request to review an automated decision, sent to the controller's data protection officer.",
         "properties": {
           "decision_receipt_id": {
             "anyOf": [
               {
-                "maxLength": 512,
-                "minLength": 1,
+                "format": "uuid",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "The receipt of the decision; absent, the subject's recent decisions.",
             "title": "Decision Receipt Id"
           },
           "reason": {
@@ -10843,6 +11009,7 @@
     },
     "/v1/legal-holds": {
       "post": {
+        "description": "Keeps a handle's, an object's or a conversation's data from purging until the release.",
         "operationId": "create_legal_hold_v1_legal_holds_post",
         "parameters": [
           {
@@ -10897,6 +11064,7 @@
     },
     "/v1/legal-holds/{hold_id}/release": {
       "post": {
+        "description": "What erasures left waiting under the hold goes once it is released.",
         "operationId": "release_legal_hold_v1_legal_holds__hold_id__release_post",
         "parameters": [
           {
@@ -11356,6 +11524,7 @@
     },
     "/v1/objects/push": {
       "post": {
+        "description": "State from a system of record: a shared object's items are decided against the working set's hot\ncopy with no database statement and written within a second; a customer's, kept in one statement.",
         "operationId": "push_objects_v1_objects_push_post",
         "requestBody": {
           "content": {
@@ -11397,12 +11566,25 @@
     },
     "/v1/objects/snapshot": {
       "post": {
+        "description": "Reconciliation of a shared type from its system of record: NDJSON, one push item per line, applied as\npushes of provenance `snapshot` by the same version rule.",
         "operationId": "snapshot_objects_v1_objects_snapshot_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9_]{0,39}$",
+              "title": "Type",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
-            "application/json": {
+            "application/x-ndjson": {
               "schema": {
-                "$ref": "#/components/schemas/ObjectSnapshotRequest"
+                "type": "string"
               }
             }
           },
@@ -11438,6 +11620,7 @@
     },
     "/v1/profiles/{profile_id}/inferences": {
       "get": {
+        "description": "Every inference about the subject, with its origin, evidence, confidence, use and date.",
         "operationId": "list_inferences_v1_profiles__profile_id__inferences_get",
         "parameters": [
           {
@@ -11510,6 +11693,7 @@
     },
     "/v1/profiles/{profile_id}/inferences/{key}": {
       "delete": {
+        "description": "A tombstone: the same evidence never infers it again.",
         "operationId": "delete_inference_v1_profiles__profile_id__inferences__key__delete",
         "parameters": [
           {
@@ -11555,6 +11739,7 @@
     },
     "/v1/profiles/{profile_id}/inferences/{key}/correct": {
       "post": {
+        "description": "The subject's value becomes a stated preference or attribute; the inference is deleted.",
         "operationId": "correct_inference_v1_profiles__profile_id__inferences__key__correct_post",
         "parameters": [
           {
@@ -11617,6 +11802,7 @@
     },
     "/v1/profiles/{profile_id}/review-requests": {
       "post": {
+        "description": "Sent to the controller's data protection officer with the explanation built from receipts.",
         "operationId": "create_review_request_v1_profiles__profile_id__review_requests_post",
         "parameters": [
           {
@@ -11784,6 +11970,7 @@
     },
     "/v1/review-requests/{request_id}/resolve": {
       "post": {
+        "description": "The controller's decision, recorded once.",
         "operationId": "resolve_review_request_v1_review_requests__request_id__resolve_post",
         "parameters": [
           {

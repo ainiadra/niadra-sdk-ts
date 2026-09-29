@@ -115,6 +115,11 @@ export class Task {
     return this.features.openTurn(params);
   }
 
+  /** The turn in progress for this session: the async context's, else the newest it opened and left open. */
+  activeTurn(): TurnFrame | undefined {
+    return this.features.activeTurn();
+  }
+
   /** Asks before acting. See `Conversation.check()`. */
   check(intent: string, options: CheckOptions): Promise<CheckResult> {
     return this.features.check(intent, options);

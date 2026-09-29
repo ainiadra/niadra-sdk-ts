@@ -218,6 +218,7 @@ export class TurnFrame {
   playback: Playback | null = null;
   closed = false;
   private readonly guardedTexts = new Set<string>();
+  private readonly adoptable: CallCapture[] = [];
   private readonly counters = { b: 0, k: 0, m: 0 };
   private readonly started = performance.now();
 
@@ -251,7 +252,7 @@ export class TurnFrame {
   toolCall(
     name: string,
     args?: unknown,
-    options: { callId?: string | null; attempt?: number; synthetic?: boolean; cacheHit?: boolean; effectKey?: string } = {},
+    options: { callId?: string | null; attempt?: number; synthetic?: boolean; cacheHit?: boolean; effectKey?: string; adoptable?: boolean } = {},
   ): CallCapture {
     const entry: CallEntry = {
       call_id: options.callId ?? `k${++this.counters.k}`,
@@ -266,7 +267,28 @@ export class TurnFrame {
     if (parent?.frame === this) entry.parent_call_id = parent.callId;
     if (args !== undefined) entry.args = this.blob(args);
     if (options.synthetic) this.flag("synthetic");
-    return this.add(entry);
+    const call = this.add(entry);
+    if (options.adoptable) this.adoptable.push(call);
+    return call;
+  }
+
+  /**
+   * The open call of `name` an adapter recorded from its framework's callbacks, taken over by the `tool()`
+   * wrapper running inside it, so the call is recorded once, with the wrapper's arguments.
+   */
+  adopt(name: string, args: unknown): CallCapture | undefined {
+    for (let i = 0; i < this.adoptable.length; i++) {
+      const call = this.adoptable[i];
+      if (call === undefined || call.done || call.entry.name !== name) continue;
+      this.adoptable.splice(i, 1);
+      const before = call.entry.args;
+      if (typeof before === "string") this.blobs.delete(before);
+      const key = args === undefined ? undefined : this.blob(args);
+      if (key === undefined) delete call.entry.args;
+      else call.entry.args = key;
+      return call;
+    }
+    return undefined;
   }
 
   /**

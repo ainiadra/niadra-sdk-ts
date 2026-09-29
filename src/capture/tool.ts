@@ -21,7 +21,7 @@
  * divergence) when not.
  */
 
-import type { CallCapture, Observation } from "./frame.js";
+import type { CallCapture, Observation, TurnFrame } from "./frame.js";
 import { currentTurn } from "./frame.js";
 
 export interface ToolOptions<A extends unknown[], R> {
@@ -33,6 +33,10 @@ export interface ToolOptions<A extends unknown[], R> {
   args?: (...args: A) => unknown;
   /** A replay may run the tool for real when the record has no answer for it. */
   dryRun?: boolean;
+  /** The provider's id of the call, when the framework passes it to the tool. */
+  callId?: (...args: A) => string | null | undefined;
+  /** The turn to record in when the async context does not carry one (a framework that runs tools elsewhere). */
+  frame?: () => TurnFrame | null | undefined;
 }
 
 const isAsyncFunction = (fn: unknown): boolean => Object.prototype.toString.call(fn) === "[object AsyncFunction]";
@@ -44,6 +48,14 @@ function isAsyncIterator(value: unknown): value is AsyncGenerator {
     typeof (value as { next?: unknown }).next === "function" &&
     Symbol.asyncIterator in value
   );
+}
+
+function found(frame: (() => TurnFrame | null | undefined) | undefined): TurnFrame | undefined {
+  try {
+    return frame?.() ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function thenable(value: unknown): value is PromiseLike<unknown> {
@@ -99,15 +111,17 @@ export function tool<A extends unknown[], R>(
   }
 
   const wrapped = function (this: unknown, ...args: A): R {
-    const frame = currentTurn();
+    const frame = currentTurn() ?? found(options.frame);
     if (frame === undefined || frame.closed) return fn.apply(this, args);
     let recorded: unknown;
+    let callId: string | null | undefined;
     try {
       recorded = options.args ? options.args(...args) : args.length === 1 ? args[0] : args;
+      callId = options.callId?.(...args);
     } catch {
       recorded = args;
     }
-    const call = frame.toolCall(name, recorded);
+    const call = frame.adopt(name, recorded) ?? frame.toolCall(name, recorded, typeof callId === "string" && callId ? { callId } : {});
     if (frame.playback !== null) call.played = frame.playback.answer(name, recorded, options.dryRun ?? false);
     if (call.played !== null && !call.played.live) {
       const value = call.played.value;

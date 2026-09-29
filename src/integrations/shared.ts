@@ -7,6 +7,8 @@
  */
 
 import type { AgentMemoryParams } from "../agent-memory.js";
+import type { TurnParams } from "../agent-session.js";
+import type { CallCapture, TurnFrame } from "../capture/frame.js";
 import type { ContextOptions, ContextResult } from "../context.js";
 import { emptyResult } from "../context.js";
 import type { Conversation, TurnOptions } from "../conversation.js";
@@ -304,4 +306,119 @@ export function isRecord(value: unknown): value is Record<PropertyKey, unknown> 
 /** A non-negative integer, or `null`. */
 export function count(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * The turn records an adapter keeps from its framework's callbacks, keyed by the framework's own ids (a
+ * run, a request, a tool call id). A run starting while the session has a turn in progress (yours, from
+ * `conversation.turn()`, or a replay's) records into it; otherwise the adapter opens its own turn and closes
+ * it when the run ends. A tool call recorded here is taken over by a `tool()` wrapper running inside it, so
+ * the call is recorded once. Every method does nothing when turns are off and never throws.
+ */
+export class TurnHooks {
+  /** Runs held open at most; past it the oldest run's turn closes, incomplete (a run whose end never came). */
+  static readonly MAX_OPEN = 100;
+  private readonly frames = new Map<string, { frame: TurnFrame; own: boolean }>();
+  private readonly calls = new Map<string, CallCapture>();
+
+  constructor(
+    readonly adapter: string,
+    readonly enabled: boolean,
+  ) {}
+
+  /** The turn of the run `key`: the session's turn in progress, or a new one of its own. */
+  open(session: Session, key: string, params: TurnParams = {}): TurnFrame | undefined {
+    if (!this.enabled) return undefined;
+    const held = this.frames.get(key);
+    if (held !== undefined) return held.frame;
+    try {
+      const active = session.activeTurn();
+      if (active !== undefined && !this.owns(active)) {
+        this.frames.set(key, { frame: active, own: false });
+        return active;
+      }
+      const frame = session.openTurn({ ...params, adapter: this.adapter });
+      this.frames.set(key, { frame, own: true });
+      if (this.frames.size > TurnHooks.MAX_OPEN) {
+        const [oldest] = this.frames.keys();
+        if (oldest !== undefined) {
+          this.frames.get(oldest)?.frame.incomplete();
+          this.close(oldest);
+        }
+      }
+      return frame;
+    } catch (error) {
+      session.logger.warn(`could not open the turn (${errorName(error)})`);
+      return undefined;
+    }
+  }
+
+  /** The turn of `key`, else the session's turn in progress. */
+  frame(session: Session, key?: string): TurnFrame | undefined {
+    if (!this.enabled) return undefined;
+    const held = key === undefined ? undefined : this.frames.get(key);
+    const frame = held?.frame ?? session.activeTurn();
+    return frame === undefined || frame.closed ? undefined : frame;
+  }
+
+  has(key: string): boolean {
+    return this.frames.has(key);
+  }
+
+  private owns(frame: TurnFrame): boolean {
+    for (const held of this.frames.values()) if (held.own && held.frame === frame) return true;
+    return false;
+  }
+
+  /** Ends the run `key`: a turn the adapter opened closes; the calls it left open failed. */
+  close(key: string, error?: unknown): void {
+    const held = this.frames.get(key);
+    if (held === undefined) return;
+    this.frames.delete(key);
+    for (const [callKey, call] of this.calls) {
+      if (call.frame !== held.frame) continue;
+      this.calls.delete(callKey);
+      if (held.own) call.failed(error ?? "error");
+    }
+    if (held.own) held.frame.close(error);
+  }
+
+  /** A tool call starting, keyed by `callKey`; `callId` is the provider's id of the call, when there is one. */
+  toolStart(session: Session, callKey: string, name: string, args: unknown, options: { frameKey?: string; callId?: string | null } = {}): void {
+    const frame = this.frame(session, options.frameKey);
+    if (frame === undefined) return;
+    try {
+      this.calls.set(callKey, frame.toolCall(name, args, { callId: options.callId ?? null, adoptable: true }));
+    } catch {
+      frame.incomplete();
+    }
+  }
+
+  toolEnd(callKey: string, result?: unknown, error?: unknown): void {
+    const call = this.calls.get(callKey);
+    if (call === undefined) return;
+    this.calls.delete(callKey);
+    try {
+      if (error !== undefined) call.failed(error);
+      else call.result(result);
+    } catch {
+      call.frame.incomplete();
+    }
+  }
+
+  /** A model call that ended, with its tokens when the framework reported them. */
+  model(
+    session: Session,
+    model: string | null | undefined,
+    tokens: { in?: number | null; out?: number | null; cached?: number | null } = {},
+    frameKey?: string,
+  ): void {
+    const frame = this.frame(session, frameKey);
+    if (frame === undefined) return;
+    try {
+      frame.modelCall(model, { tokensIn: tokens.in ?? null, tokensOut: tokens.out ?? null, tokensCached: tokens.cached ?? 0 });
+    } catch {
+      frame.incomplete();
+    }
+  }
 }

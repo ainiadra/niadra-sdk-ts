@@ -192,20 +192,49 @@ export interface CounterfactualRunCreate {
   tool: string;
 }
 
+/**
+ * One thing the signals infer about the subject, with what it rests on: the subject can see it, correct
+ * it and delete it. What the subject said is not an inference, and is not listed.
+ */
 export interface Inference {
+  /** When its latest evidence happened. */
   at: string;
+  /** The field whose value is inferred. */
+  attr?: string | null;
   confidence?: number | null;
+  /**
+   * What it rests on, as counts: effective exposure, weighted signal, events, sessions and lift for a value;
+   * times for an interest.
+   */
   evidence?: Record<string, unknown>;
+  for?: string;
+  /** A keyed hash that names the inference; it never carries its value. */
   key: string;
+  /**
+   * `soft_constraint` when the constraints block carries it as a soft entry, `attribute` for the inferred
+   * size, `affinity` for a value with evidence and no entry yet, `interest` for an object.
+   */
   kind: "affinity" | "soft_constraint" | "attribute" | "interest";
+  /**
+   * `interactions`, `implicit_negative` (shown often and never engaged with), or why an interest was kept:
+   * `engaged`, `feedback`, `watch`.
+   */
   origin: string;
+  polarity?: "prefer" | "avoid" | null;
+  /** The object of an interest. */
+  ref?: string | null;
+  /** The purposes it is used for. */
   used_for?: string[];
+  value?: boolean | number | string | null;
 }
 
-/** Becomes a stated preference (`source: correction`). */
+/**
+ * The value the subject says instead: a stated preference, or a stated attribute for an inferred size
+ * (`source: correction`). The inference it corrects is deleted. An interest is deleted, not corrected.
+ */
 export interface InferenceCorrection {
   reason?: string | null;
-  value: unknown;
+  value: boolean | number | string;
 }
 
 export interface InferencePage {
@@ -221,9 +250,14 @@ export interface LegalHold {
   created_at: string;
   hold_id: string;
   released_at?: string | null;
+  scope: "handle" | "object" | "conversation";
   status: "active" | "released";
 }
 
+/**
+ * Exactly one of `handle`, `object` or `conversation_id`: what is kept from purging while the hold is
+ * active.
+ */
 export interface LegalHoldCreate {
   conversation_id?: string | null;
   handle?: Handle | null;
@@ -325,14 +359,25 @@ export interface ReconcileResult {
 
 export interface ReviewRequest {
   created_at: string;
+  decision_receipt_id?: string | null;
+  /**
+   * Built from receipts: their ids, kinds, surfaces, rules, versions and inputs by reference, never personal
+   * content.
+   */
+  explanation?: Record<string, unknown>;
+  outcome?: "upheld" | "reversed" | "corrected" | null;
   profile_id: string;
+  reason?: string | null;
   request_id: string;
+  /** The reviewer's note. */
   resolution?: string | null;
+  resolved_at?: string | null;
   status: "open" | "resolved";
 }
 
-/** A request to review an automated decision (LGPD, art. 20), sent to the controller's DPO. */
+/** A request to review an automated decision, sent to the controller's data protection officer. */
 export interface ReviewRequestCreate {
+  /** The receipt of the decision; absent, the subject's recent decisions. */
   decision_receipt_id?: string | null;
   reason: string;
 }

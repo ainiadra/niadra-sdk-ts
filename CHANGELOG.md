@@ -52,6 +52,16 @@ built on them.
   answers your tools from the record (`tool(name, fn, { dryRun: true })` lets one run for real when the
   record has no answer), keeps everything the agent sends from leaving, evaluates the assertions and
   reports the run, and Niadra answers with the statistical verdict.
+- Turn records from the framework adapters. LangChain.js and LangGraph.js:
+  `new NiadraCallbackHandler(conversation, { turns: true })` records each top-level run as a turn, with its
+  tool calls (the provider's call ids) and its model calls with their tokens. Mastra:
+  `niadraProcessor({ turns: true })` records each request as a turn. Vercel AI SDK: `niadraMiddleware`
+  records each model call in the turn in progress, `recordTools(tools)` records each tool call with the
+  provider's call id, and `niadraTurn()` keeps a `streamText` turn open until the stream finishes. A run
+  inside a turn in progress records into it, and a function wrapped with `tool()` inside a framework's tool
+  takes over its call, so a replay answers it from the record.
+- `conversation.activeTurn()`: the turn in progress, from the async context or the newest the session
+  opened and has not closed; `tool()` takes `callId` and `frame` for frameworks that run tools elsewhere.
 - `canonicalJson()` and `jsonDigest()`: the digest of a turn record's value, SHA-256 over its canonical
   JSON (RFC 8785), as every producer computes it.
 - `expr`: niadra-expr, the language of the type registry's conditions, timers, keys and readings.

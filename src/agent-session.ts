@@ -41,6 +41,8 @@ export interface TurnParams {
   agent?: string;
   role?: string;
   turnId?: string;
+  /** The framework adapter that opened the turn. */
+  adapter?: string;
 }
 
 export interface ClaimParams {
@@ -59,6 +61,7 @@ export class AgentSession {
   readonly declare: Declarations;
   readonly agentState: AgentStateHandle;
   private readonly checked = new Checked();
+  private opened: TurnFrame[] = [];
 
   constructor(
     private readonly host: AgentHost,
@@ -79,11 +82,29 @@ export class AgentSession {
     if (params.build) options.build = params.build;
     if (params.role) options.role = params.role;
     if (params.turnId) options.turnId = params.turnId;
+    if (params.adapter) options.adapter = params.adapter;
     if (currentTurn() === undefined) {
       if (this.scope.kind === "conversation") options.conversationId = this.scope.id;
       else options.taskId = this.scope.id;
     }
-    return this.host.recorder.open(options);
+    const frame = this.host.recorder.open(options);
+    this.opened = this.opened.filter((f) => !f.closed);
+    this.opened.push(frame);
+    return frame;
+  }
+
+  /**
+   * The turn in progress: the one the async context carries, else the newest this session opened and has
+   * not closed yet (a framework that runs its callbacks where the context does not reach).
+   */
+  activeTurn(): TurnFrame | undefined {
+    const current = currentTurn();
+    if (current !== undefined && !current.closed) return current;
+    for (let i = this.opened.length - 1; i >= 0; i--) {
+      const frame = this.opened[i];
+      if (frame !== undefined && !frame.closed) return frame;
+    }
+    return undefined;
   }
 
   /** Runs `fn` as a turn of this session, from its input to the last thing it emits, and closes it. */
@@ -101,7 +122,7 @@ export class AgentSession {
 
   /** What a read gave the agent, recorded in the current turn: the pack by ETag, the blocks by version. */
   observe(result: ContextResult): void {
-    const frame = currentTurn();
+    const frame = this.activeTurn();
     const response = result.response;
     if (frame === undefined || response === null) return;
     if (response.etag) {
@@ -117,7 +138,7 @@ export class AgentSession {
 
   /** What the agent said, for the turn and its claim check. */
   said(text: string, eventKey: string | null): void {
-    const frame = currentTurn();
+    const frame = this.activeTurn();
     if (frame === undefined) return;
     frame.say(text, { eventKey });
     frame.playback?.say(frame, text);

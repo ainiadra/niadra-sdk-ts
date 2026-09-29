@@ -245,6 +245,12 @@ export interface StateRef {
 
 export interface ObjectPush {
   fields: Record<string, unknown>;
+  /**
+   * For a customer's derived object (a quote): the objects its inputs are fields of, by the name its type
+   * gives them, as `type:namespace:id` (`{"lead": "lead:crm:L-9"}`). When a field of one of them changes, the
+   * object expires, naming the input.
+   */
+  inputs?: Record<string, string> | null;
   provenance: Provenance;
   ref: StateRef;
   /**
@@ -372,14 +378,14 @@ export interface ObjectRead {
   withheld?: Record<string, "access" | "licence" | "scan">;
 }
 
-/** Reconciliation from an NDJSON file uploaded through the file path that exists (`/v1/ingest`). */
-export interface ObjectSnapshotRequest {
-  type: string;
-  upload_ref: string;
-}
-
+/**
+ * A snapshot taken in: its lines are applied as pushes of provenance `snapshot`, which never sustain a
+ * claim, by the same version rule.
+ */
 export interface ObjectSnapshotResponse {
   import_id: string;
+  /** The lines taken in. */
+  objects: number;
 }
 
 export interface RefreshRequest {
