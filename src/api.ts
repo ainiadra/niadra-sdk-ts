@@ -239,8 +239,8 @@ export class Api {
   }
 
   /** `GET /.well-known/niadra-contact-keys.json`. */
-  contactKeys(options: RequestOptions = {}): Promise<ContactKeys> {
-    return this.call({ method: "GET", path: "/.well-known/niadra-contact-keys.json" }, options);
+  contactKeys(params: { space?: string | null } = {}, options: RequestOptions = {}): Promise<ContactKeys> {
+    return this.call({ method: "GET", path: "/.well-known/niadra-contact-keys.json", query: { space: params.space } }, options);
   }
 
   /** `POST /v1/coordination/check`. */
@@ -273,9 +273,9 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/coordination/effects", body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
 
-  /** `POST /v1/coordination/effects/{key}/settle`. */
-  settleEffect(key: string, body: EffectSettle, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<Effect> {
-    return this.call({ method: "POST", path: `/v1/coordination/effects/${segment(key)}/settle`, body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
+  /** `POST /v1/coordination/effects/{effect_id}/settle`. */
+  settleEffect(effectId: string, body: EffectSettle, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<Effect> {
+    return this.call({ method: "POST", path: `/v1/coordination/effects/${segment(effectId)}/settle`, body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
 
   /** `GET /v1/coordination/reports`. */

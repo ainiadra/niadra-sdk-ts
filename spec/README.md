@@ -20,8 +20,7 @@ reads the example. When the specification changes, copy the files again and run 
 `openapi/cell.json` is the part of the server's OpenAPI document with these routes and every schema they
 reach. The script generates the types (`src/types/turns.ts`, `state.ts`, `signals.ts`, `coordination.ts`)
 and the route methods (`src/api.ts`) from it, and `test/generated.test.ts` fails when a generated file
-differs from what the script writes. A route the server has not built yet answers 501, and a module whose
-types the server has not fixed yet says it is a draft.
+differs from what the script writes. A route the server has not built yet answers 501.
 
 `examples/turn-record/` holds the Turn Record spec's examples; the tests read each as a `TurnRecord`.
 

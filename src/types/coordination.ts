@@ -2,11 +2,10 @@
 /**
  * Ownership and effects: the coordination decision, declarations, claims and locks, effects exactly once,
  * handoffs, suppressions and the contact token's public keys.
- *
- * Draft: the server has not fixed these types yet, and their fields may still change.
  */
 
 import type { Handle, ObjectRef } from "./common.js";
+import type { Verification } from "./vocabulary.js";
 
 export interface ChannelState {
   free_form_until?: string | null;
@@ -14,12 +13,24 @@ export interface ChannelState {
   template_required?: boolean;
 }
 
+export type EffectKind = "delivery" | "document" | "notice" | "filing" | "paid_call" | "external_action";
+
+/**
+ * What an agent is about to do. Without a subject there is no budget, suppression or owner to consult:
+ * such a check only asks about the effect key.
+ */
 export interface CheckRequest {
   agent: string;
   channel?: string | null;
+  /**
+   * The token's `rcpt`, computed by a caller that holds the gateway's key, when the destination is not the
+   * subject's handle.
+   */
   destination_hash?: string | null;
   direction: "inbound" | "outbound";
+  /** The business fact's key; reserved atomically when nothing holds it. */
   effect_key?: string | null;
+  effect_kind?: EffectKind;
   gateway_id?: string | null;
   intent: string;
   object?: ObjectRef | null;
@@ -32,12 +43,20 @@ export interface CheckBatchRequest {
   checks: CheckRequest[];
 }
 
+export interface CommitmentRef {
+  id: string;
+  type: string;
+  valid_until?: string | null;
+}
+
 export interface ContactBudget {
   next_allowed_at?: string | null;
   remaining: number;
 }
 
+/** `none` means nothing held the key and this check reserved it: the caller acts and then declares. */
 export interface EffectStatus {
+  attempt?: number | null;
   state: "none" | "in_flight" | "done" | "unknown_outcome";
 }
 
@@ -48,18 +67,43 @@ export interface Lock {
   until: string;
 }
 
+export type ClaimKind = "owner" | "case" | "task_lock";
+
+/**
+ * The three ways in: a declaration through the API, an observation mapped from a webhook, an observation
+ * the company's worker read and sent.
+ */
+export type ClaimVia = "declaration" | "mapping" | "worker";
+
+/**
+ * Who holds the subject or the object now: the most restrictive valid claim, where it came from and
+ * until when. `epoch` fences a release.
+ */
 export interface Owner {
   epoch: number;
   holder: string;
-  kind: string;
+  kind: ClaimKind;
+  level: string;
   since: string;
   source: string;
-  valid_until?: string | null;
+  valid_until: string;
+  via: ClaimVia;
 }
 
+export interface PromiseRef {
+  due?: string | null;
+  id: string;
+  owner: string;
+}
+
+/**
+ * The coordination decision. `reasons` are codes (the coordination spec, 4); `holder` is who to hand
+ * off to with `handoff_to`. `contact_token` comes only with an allowed outbound contact of a purpose that
+ * needs one.
+ */
 export interface CheckResult {
   channel?: ChannelState | null;
-  commitments_active?: (Record<string, unknown>)[];
+  commitments_active?: CommitmentRef[];
   contact_budget?: Record<string, ContactBudget>;
   contact_token?: string | null;
   decision: "allow" | "defer" | "deny" | "handoff_to";
@@ -68,7 +112,7 @@ export interface CheckResult {
   holder?: string | null;
   locks?: Lock[];
   owner?: Owner | null;
-  promises_open?: (Record<string, unknown>)[];
+  promises_open?: PromiseRef[];
   reasons?: string[];
   suppressions?: string[];
   valid_for_s: number;
@@ -82,19 +126,36 @@ export interface ClaimRelease {
   epoch: number;
 }
 
+/**
+ * A declared claim. `level` defaults to the space's least restrictive level for an owner lease and to
+ * `case` for a case; a declaration is refused (409 `lease_held`) while another holder's claim is at least
+ * as restrictive.
+ */
 export interface ClaimRequest {
   holder: string;
   intents?: string[];
-  kind: "owner" | "case" | "task_lock";
+  kind: ClaimKind;
   lease_s: number;
+  level?: string | null;
   object?: ObjectRef | null;
   subject?: Handle | null;
   task?: string | null;
 }
 
-/** The spaces' Ed25519 public keys a gateway checks a contact token with, offline. */
+/** An Ed25519 public key as a JWK (RFC 8037). A `retiring` key still verifies and signs nothing new. */
+export interface ContactKey {
+  crv?: "Ed25519";
+  kid: string;
+  kty?: "OKP";
+  not_after?: string | null;
+  space: string;
+  status?: "active" | "retiring";
+  x: string;
+}
+
+/** A space's public keys a gateway checks a contact token with, offline. */
 export interface ContactKeys {
-  keys: (Record<string, string>)[];
+  keys: ContactKey[];
 }
 
 export interface CoordinationReportPage {
@@ -102,6 +163,7 @@ export interface CoordinationReportPage {
   next_cursor?: string | null;
 }
 
+/** What happened, after the fact. `detail` holds the fields of each kind (the coordination spec, 5). */
 export interface DeclareRequest {
   agent: string;
   detail?: Record<string, unknown>;
@@ -115,10 +177,14 @@ export interface DeclareResult {
   decision_id?: string | null;
 }
 
+/**
+ * `effect_id` is the key's keyed hash: it names the effect in paths, where the key itself, which may
+ * carry a conversation id, never goes.
+ */
 export interface Effect {
   attempt: number;
   done_at?: string | null;
-  effect_key: string;
+  effect_id: string;
   reserved_at: string;
   state: "reserved" | "done" | "failed" | "unknown_outcome";
 }
@@ -127,19 +193,64 @@ export interface EffectReserve {
   cost_units?: number;
   effect_key: string;
   fact?: ObjectRef | null;
-  kind: "delivery" | "document" | "notice" | "filing" | "paid_call" | "external_action";
+  kind: EffectKind;
+}
+
+export interface EffectSeen {
+  effect_id: string;
+  kind: EffectKind;
+  state: "reserved" | "done" | "failed" | "unknown_outcome";
 }
 
 export interface EffectSettle {
+  attempt: number;
   state: "done" | "failed" | "unknown_outcome";
+}
+
+/** The compiled `handoff` view, at the receiving side's policy and verification level. */
+export interface HandoffContext {
+  etag: string;
+  policy_version?: string | null;
+  text: string;
+}
+
+export interface OpenObject {
+  ref: ObjectRef;
+  since?: string | null;
+  state?: string | null;
+}
+
+/** How the receiving side reports back: one of `vocabulary`, by `expected_by`. */
+export interface OutcomeRequest {
+  expected_by?: string | null;
+  vocabulary?: string[];
+}
+
+/** What a handoff carries to whoever receives it (the coordination spec, 7). */
+export interface HandoffPackage {
+  commitments_active?: CommitmentRef[];
+  context: HandoffContext;
+  created_at: string;
+  effects?: EffectSeen[];
+  from_agent: string;
+  handoff_id: string;
+  level: Verification;
+  open_objects?: OpenObject[];
+  outcome?: OutcomeRequest;
+  owner?: Owner | null;
+  promises_open?: PromiseRef[];
+  reason?: string | null;
+  spec?: "handoff-package.v0";
+  suppressions?: string[];
+  target: string;
 }
 
 export interface Handoff {
   created_at: string;
   handoff_id: string;
   outcome?: string | null;
-  package?: Record<string, unknown>;
-  status: "created" | "accepted" | "closed";
+  package?: HandoffPackage | null;
+  status: "created" | "accepted" | "closed" | "expired";
 }
 
 export interface HandoffCreate {
@@ -158,7 +269,8 @@ export interface OwnershipClaim {
   claim_id: string;
   epoch: number;
   holder: string;
-  kind: "owner" | "case" | "task_lock";
+  kind: ClaimKind;
+  level: string;
   valid_until: string;
 }
 
@@ -171,22 +283,34 @@ export interface ShadowRun {
   status: "pending" | "done";
 }
 
+/**
+ * One entry of the suppression list: `key` is the subject's handle keyed with the reading source's salt
+ * (the suppression-list spec); `removed` takes the entry `id` out of the reader's copy. The reason stays
+ * with the producer: a vendor learns that it may not contact, never why.
+ */
 export interface Suppression {
   channel?: string | null;
+  id: string;
   key: string;
   purpose: string;
-  reason: string;
   removed?: boolean;
   since: string;
   until?: string | null;
 }
 
+/**
+ * A page of changes, oldest first. With `reset`, the reader drops its copy before applying `items`:
+ * the salt changed, or the cursor is older than what the list keeps.
+ */
 export interface SuppressionPage {
   items: Suppression[];
   next_cursor?: string | null;
+  reset?: boolean;
+  salt_id: string;
 }
 
 export interface SuppressionSalt {
   salt: string;
+  salt_id: string;
   valid_from: string;
 }
