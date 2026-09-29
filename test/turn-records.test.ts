@@ -34,7 +34,8 @@ describe("turn records", () => {
     expect(record?.conversation_id).toBe("c-1");
     expect(record?.agent).toEqual({ name: "store" });
     expect(record?.build.pins).toEqual({ prompts: { core: "v16" }, model: "gpt-x", niadra: { compiler: "compiler-1", pack_hash: "etag-1" } });
-    expect(record?.reads).toEqual([{ surface: "pack", etag: "etag-1" }]);
+    expect(record?.reads).toEqual([{ surface: "pack", etag: "etag-1", blob: expect.any(String) }]);
+    expect(record?.blobs[record.reads[0].blob]?.content.etag).toBe("etag-1"); // the pack it served
     const [first, second] = record?.calls as Json[];
     expect([first?.name, first?.status, second?.name]).toEqual(["quote", "ok", "stock"]);
     expect(record?.blobs[first?.args].content).toBe("ouro");

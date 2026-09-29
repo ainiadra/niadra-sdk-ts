@@ -25,6 +25,9 @@ import type { LLMResult } from "@langchain/core/outputs";
 import { RunnableLambda } from "@langchain/core/runnables";
 import type { Runnable } from "@langchain/core/runnables";
 import { DynamicStructuredTool } from "@langchain/core/tools";
+import { tool as recorded, recordedTool } from "../capture/tool.js";
+import { NiadraReplayRefusedError } from "../errors.js";
+import { replaying } from "../replay/playback.js";
 import type { ModelUsage } from "../types/events.js";
 import { providerOf } from "../usage.js";
 import { Bridge, TurnHooks, count, errorName, isRecord, resolveSession } from "./shared.js";
@@ -135,8 +138,11 @@ export class NiadraCallbackHandler extends BaseCallbackHandler {
   ) {
     super();
     this.hooks = new TurnHooks("langchain", options.turns ?? false);
-    // A turn's calls are recorded before the tool runs, so a `tool()` inside it takes the call over.
-    if (options.turns) this.awaitHandlers = true;
+    // The handler runs before the tool: a turn's call is recorded first, so a `tool()` inside it takes the call
+    // over, and in a replay the refusal of a tool that would run live stops the run. The handler throws nothing
+    // else.
+    this.awaitHandlers = true;
+    this.raiseError = true;
   }
 
   /** The same handler: the turns it holds open are shared by every run it is passed to. */
@@ -180,6 +186,9 @@ export class NiadraCallbackHandler extends BaseCallbackHandler {
     runName?: string,
     toolCallId?: string,
   ): void {
+    if (replaying() !== null && _metadata?.[RECORDED] !== true) {
+      throw new NiadraReplayRefusedError(runName ?? (isRecord(tool) && typeof tool.name === "string" ? tool.name : "tool"));
+    }
     const current = this.hooks.enabled ? resolveSession(this.session) : null;
     if (!current) return;
     const root = parentRunId === undefined ? undefined : this.rootOf(parentRunId);
@@ -259,6 +268,28 @@ export class NiadraCallbackHandler extends BaseCallbackHandler {
 }
 
 /** The navigation kit as LangChain structured tools, bound to the session's customer. */
+/** The tool metadata key `recordTools()` sets: a replay answers the tool from the record. */
+export const RECORDED = "niadra_recorded";
+
+/**
+ * Your LangChain tools with each call recorded in the turn it runs in, and answered from the record in a replay.
+ * `dryRun` names the tools a replay may run for real when the record has no answer. A tool without a function
+ * of its own (`func`) is refused: wrap what it calls with `tool()`.
+ */
+export function recordTools(tools: readonly DynamicStructuredTool[], options: { dryRun?: readonly string[] } = {}): DynamicStructuredTool[] {
+  return tools.map((item) => {
+    if (typeof item.func !== "function") throw new TypeError(`${item.name} has no function to wrap: wrap what it calls with tool()`);
+    const func = recordedTool(item.func) ? item.func : recorded(item.name, item.func, { args: (input: unknown) => input, dryRun: (options.dryRun ?? []).includes(item.name) });
+    return new DynamicStructuredTool({
+      name: item.name,
+      description: item.description,
+      schema: item.schema,
+      func,
+      metadata: { ...(item.metadata ?? {}), [RECORDED]: true },
+    });
+  });
+}
+
 export function niadraTools(session: Session, options: { agentMemory?: AgentMemoryOption } = {}): DynamicStructuredTool[] {
   return new Bridge(session, undefined, options.agentMemory).tools().map(
     (spec) =>

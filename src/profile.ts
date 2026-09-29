@@ -79,6 +79,26 @@ export class ProfileCache {
     return this.profile?.recording?.required_pins ?? [];
   }
 
+  /**
+   * The fields each type hides from this key (`mask` or `deny`), by type; `null` while no profile was ever read.
+   * When Niadra does not answer, the last profile read keeps applying.
+   */
+  fieldAccess(): Record<string, Record<string, string>> | null {
+    if (this.profile === null) return null;
+    return Object.fromEntries((this.profile.types ?? []).map((t) => [String(t.type), { ...((t.field_access ?? {}) as Record<string, string>) }]));
+  }
+
+  /** Each field's attribute family (`item_variant.size_label` to `size`), from the type registry. */
+  families(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const t of this.profile?.types ?? []) {
+      for (const [name, spec] of Object.entries((t.fields ?? {}) as Record<string, { attribute?: { family?: string } | null }>)) {
+        if (spec.attribute?.family) out[`${String(t.type)}.${name}`] = spec.attribute.family;
+      }
+    }
+    return out;
+  }
+
   /** The content mode the space's recording names for this source, when the profile says it. */
   recordingMode(): ContentMode | null {
     return this.profile?.recording?.content_mode ?? null;
