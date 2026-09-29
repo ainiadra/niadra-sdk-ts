@@ -14,7 +14,8 @@
  *    `WINDOW` words;
  * 4. its clause follows one that is only an opener ("Antes, ele estava em R$ 1.240,00");
  * 5. its clause holds a past word ("foi", "was", "on file"), and a later clause of its sentence holds a
- *    denial followed by a word of continuity ("mas não consigo confirmar se esse total continua igual").
+ *    denial followed by a word of continuity ("mas não consigo confirmar se esse total continua igual");
+ * 6. a negation stands right before it ("$689.00 per month, not $612.00").
  *
  * A hedge that governs something else leaves the number asserted: "O total é R$ 500, mas não consigo
  * confirmar o prazo" states R$ 500. The words match whole words of the folded text, in sequence, with both
@@ -48,14 +49,15 @@ export const DENIALS: readonly string[] = [
 
 /** Beside a number: a value that no longer holds, as the one seen before. */
 export const PAST_MARKERS: readonly string[] = [
-  "valor anterior", "preco anterior", "total anterior", "o anterior", "a anterior", "os anteriores",
-  "anteriormente", "quando visto", "quando vista", "quando voce viu", "antes era", "era antes",
+  "valor anterior", "preco anterior", "total anterior", "valor antigo", "preco antigo", "o anterior",
+  "a anterior", "os anteriores", "anteriormente", "quando visto", "quando vista", "quando voce viu",
+  "antes era", "era antes",
   "previous price", "previous total", "previous value", "earlier price", "earlier total", "earlier value",
-  "old price", "was the earlier", "was previously", "were previously", "previously listed",
-  "previously quoted", "previously shown", "previously priced", "seen previously", "shown previously",
-  "quoted previously", "listed previously", "last shown", "last quoted", "last listed", "when seen",
-  "when you saw it",
-  "precio anterior", "el anterior", "la anterior", "cuando lo vio", "cuando lo viste",
+  "old price", "previous amount", "earlier amount", "old amount", "was the earlier", "was previously",
+  "were previously", "previously listed", "previously quoted", "previously shown", "previously priced",
+  "seen previously", "shown previously", "quoted previously", "listed previously", "last shown",
+  "last quoted", "last listed", "when seen", "when you saw it",
+  "precio anterior", "precio antiguo", "el anterior", "la anterior", "cuando lo vio", "cuando lo viste",
 ];
 
 /** After a number: the output doubts that it still holds. */
@@ -99,6 +101,16 @@ export const CONTINUITY: readonly string[] = [
   "todavia", "aun", "sigue", "siguen", "mismo", "misma", "actual", "mantiene",
 ];
 
+/**
+ * Right before a number: the output says it is not that. Not the Spanish "no": it is also the Portuguese "no"
+ * ("no dia 20").
+ */
+export const NEGATIONS: readonly string[] = [
+  "nao", "em vez de", "ao inves de",
+  "not", "instead of", "rather than",
+  "en vez de", "en lugar de",
+];
+
 /** Between a past marker and a number: the number is the one that holds now. */
 export const PRESENT: readonly string[] = [
   "agora", "hoje", "atual", "atualmente", "novo", "nova", "para",
@@ -136,6 +148,7 @@ const LISTS = {
   openers: phrasesOf(OPENERS),
   pastWords: phrasesOf(PAST_WORDS),
   continuity: phrasesOf(CONTINUITY),
+  negations: phrasesOf(NEGATIONS),
   present: phrasesOf(PRESENT),
   clause: phrasesOf(CLAUSE_WORDS),
 };
@@ -250,5 +263,12 @@ export function hedged(text: string, numbers: readonly Mention[]): ReadonlySet<M
     });
     if (denied) out.add(m);
   });
+
+  // 6. A negation right before the number.
+  for (const hit of hits("negations")) {
+    numbers.forEach((m, k) => {
+      if (indexes[k]?.[0] === hit.past) out.add(m);
+    });
+  }
   return out;
 }
