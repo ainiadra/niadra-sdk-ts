@@ -3,9 +3,10 @@
  * output, their nature, the verdict against what the turn holds, and the action the contract takes for the
  * output's context.
  *
- * Detection: numbers of the category's classes (in a sentence with one of its terms, when it lists terms),
- * each occurrence of a term (when it lists terms and no classes), statute and precedent citations, and the
- * sentences of named document sections. Nature, for a number: `quoted` inside quotation marks; `computed`
+ * Detection: numbers of the category's classes (in a sentence with one of its terms, when it lists terms)
+ * that the output asserts (a hedged number, `hedges.ts`, is no claim), each occurrence of a term (when it
+ * lists terms and no classes), statute and precedent citations, and the sentences of named document
+ * sections. Nature, for a number: `quoted` inside quotation marks; `computed`
  * when the turn holds a value of the same role, or the same value; `model` otherwise. Verdicts that stand
  * (`matched`, `quoted_found`, `anchored`) take no action; `not_checked` is counted; every other one takes the
  * category's action for the context, and `unsupported` the action its natures give to what the model said.
@@ -18,6 +19,7 @@ import type { Actions, ClaimCategory, Detect } from "../types/state.js";
 import type { ClaimRecord } from "../types/turns.js";
 import { MIN_ANCHOR_MATCH, score } from "./anchor.js";
 import { compare, decimal } from "./decimal.js";
+import { hedged } from "./hedges.js";
 import { type Language, type Mention, type MentionClass, type Value, mentions } from "./numbers.js";
 import { NO_ROLE, type Role, rolesOf } from "./roles.js";
 import { type Span, folded, pattern, phraseAt, phrases, quotations, sentenceOf, sentences, slice, units, words } from "./text.js";
@@ -337,6 +339,7 @@ function plainFinding(category: ClaimCategory, output: Output, turn: Turn, start
 export function check(categories: readonly ClaimCategory[], output: Output, turn: Turn = {}): Finding[] {
   const findings: Finding[] = [];
   const text = folded(output.text);
+  const unasserted = hedged(output.text, mentions(output.text, output.lang).filter((m) => m.cls !== "label"));
   for (const category of categories) {
     const agents = category.agents ?? [];
     if (agents.length > 0 && (output.agent == null || !agents.includes(output.agent))) continue;
@@ -350,7 +353,8 @@ export function check(categories: readonly ClaimCategory[], output: Output, turn
         const found = rolesOf(output.text, same, detect.roles ?? {});
         same.forEach((m, i) => roles.set(m, found[i] ?? NO_ROLE));
       }
-      findings.push(...numbers.map((m) => numberFinding(category, output, turn, m, roles.get(m) ?? NO_ROLE)));
+      const asserted = numbers.filter((m) => !unasserted.has(m));
+      findings.push(...asserted.map((m) => numberFinding(category, output, turn, m, roles.get(m) ?? NO_ROLE)));
     } else if ((detect.terms ?? []).length > 0) {
       for (const [start, end] of termHits(output.text, detect.terms ?? [])) {
         findings.push(plainFinding(category, output, turn, start, end));

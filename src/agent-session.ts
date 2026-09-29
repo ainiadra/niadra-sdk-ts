@@ -6,7 +6,7 @@
 import type { InternalText } from "./claims/internal.js";
 import { AgentStateHandle } from "./agent-state.js";
 import type { AgentStates, Scope } from "./agent-state.js";
-import { stateValues } from "./capture/claims.js";
+import { blockValues } from "./capture/claims.js";
 import { ClaimCheck } from "./capture/check.js";
 import { currentTurn } from "./capture/frame.js";
 import type { TurnFrame, TurnKind } from "./capture/frame.js";
@@ -135,10 +135,8 @@ export class AgentSession {
       frame.read("constraints", { version: result.constraints.version, value: result.constraints });
       frame.constraints = result.constraints;
     }
-    if (result.state) {
-      frame.read("state");
-      frame.observeState(stateValues(result.state.objects ?? []));
-    }
+    if (result.state) frame.read("state");
+    if (result.state || result.constraints) frame.observeState(blockValues(result.state, result.constraints));
   }
 
   /** What the agent said, for the turn and its claim check. */

@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Guard, Niadra, TurnFrame, guardStream, guardText, silentLogger } from "../src/index.js";
-import type { ClaimContractSummary, ObjectRead } from "../src/index.js";
-import { stateValues } from "../src/capture/claims.js";
+import type { ClaimContractSummary, ConstraintsBlock, ObjectRead, StateView } from "../src/index.js";
+import { blockValues } from "../src/capture/claims.js";
 import { Cell } from "./support/cell.js";
 import { KEY, marina } from "./helpers.js";
 
@@ -155,7 +155,7 @@ function served(due: string, options: { claimSafe?: boolean; blocked?: boolean }
     blocked: options.blocked ? { claim: ["published_at"] } : {},
   } as unknown as ObjectRead;
   const turn = new TurnFrame(null, { agent: "clerk", conversationId: "c-9" });
-  turn.observeState(stateValues([read]));
+  turn.observeState(blockValues({ objects: [read] }, null));
   return turn;
 }
 
@@ -170,5 +170,45 @@ describe("a computed value the state block served", () => {
     for (const turn of [served("2026-10-21", { claimSafe: false }), served("2026-10-21", { blocked: true }), served("2026-10-22")]) {
       expect(guardText(LEGAL, turn, DEADLINE).claims.map((c) => [c.verdict, c.nature, c.action])).toEqual([["unsupported", "model", "block"]]);
     }
+  });
+});
+
+const PLAN = { type: "health_plan", namespace: "operadora", id: "essencial-200" };
+
+/** A shared plan the subject was shown at R$ 612,00, which costs R$ 689,00 now. */
+function planView(options: { claimSafe?: boolean; withObject?: boolean } = {}): StateView {
+  const price = { v: 689, logic: "yes", status: "fresh", claim_safe: options.claimSafe ?? true, role: "price_full" };
+  const interest: Record<string, unknown> = { ref: PLAN, reason: "presented", at: "2026-09-29T10:00:00Z" };
+  if (options.withObject ?? true) interest.object = { ref: PLAN, fields: { monthly_price: price } };
+  return { interests: [interest], changes_since_seen: [{ ref: PLAN, field: "monthly_price", seen: 612, now: 689 }] } as unknown as StateView;
+}
+
+function blocks(state: StateView | null, constraints: ConstraintsBlock | null = null): TurnFrame {
+  const turn = new TurnFrame(null, { agent: "sales", conversationId: "c-11" });
+  turn.observeState(blockValues(state, constraints));
+  return turn;
+}
+
+describe("the values the include blocks placed in the turn block", () => {
+  it("back the new value of what changed since seen, and the old one said as old is no claim", () => {
+    const text = "O Essencial 200 está por R$ 689,00 por mês; o valor de R$ 612,00 era o anterior.";
+    const guarded = guardText(HEALTH, blocks(planView()), text);
+    expect(guarded.text).toBe(text);
+    expect(guarded.claims.map((c) => [c.verdict, c.action, c.evidence?.ref, c.evidence?.field])).toEqual([["matched", "none", "health_plan:operadora:essencial-200", "monthly_price"]]);
+  });
+
+  it("still flag a value that is not claim-safe, and the value seen before", () => {
+    for (const view of [planView({ claimSafe: false }), planView({ withObject: false })]) {
+      expect(guardText(HEALTH, blocks(view), "O Essencial 200 sai por R$ 689,00 por mês.").claims.map((c) => [c.verdict, c.action])).toEqual([["stale", "warn"]]);
+    }
+    expect(guardText(HEALTH, blocks(planView()), "O Essencial 200 ainda sai por R$ 612,00.").claims.map((c) => [c.verdict, c.action])).toEqual([["unsupported", "block"]]);
+  });
+
+  it("back a claim with a constraint, unless it lost a conflict", () => {
+    const hard = (id: string, value: number): Record<string, unknown> => ({ id, attr: "health_plan.monthly_price", op: "lte", values: [value], source: "stated", scope: "session", origin: { kind: "stated" } });
+    const block = { version: "cv_0123456789abcdef", hard: [hard("h1", 700), hard("h2", 650)], conflicts: [{ by: "current_utterance", ids: ["h1", "h2"], kept: "h1" }] } as unknown as ConstraintsBlock;
+    const [kept, lost] = [700, 650].map((v) => guardText(HEALTH, blocks(null, block), `Você pediu mensalidade de no máximo R$ ${v},00.`).claims);
+    expect(kept?.map((c) => [c.verdict, c.action, c.evidence?.field])).toEqual([["matched", "none", "monthly_price"]]);
+    expect(lost?.map((c) => [c.verdict, c.action])).toEqual([["unsupported", "block"]]);
   });
 });
