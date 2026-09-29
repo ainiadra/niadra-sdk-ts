@@ -25,7 +25,7 @@ export type RetryPolicy =
 type WritePolicy = Extract<RetryPolicy, { kind: "write" }>;
 
 export interface RequestSpec {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   /** A list becomes the parameter repeated, as `?tags=a&tags=b`. */
   query?: Record<string, string | string[] | undefined>;

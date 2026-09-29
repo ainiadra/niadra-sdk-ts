@@ -2,6 +2,25 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+The routes of turn records, typed state, subject signals and coordination, typed, before the calls
+built on them.
+
+### Added
+
+- `niadra.api` (`Api`): one method per route of turn records, replay and scenarios, typed state and the
+  agent's working state, subject signals and measurement, and coordination, named in camelCase as the
+  server names the operation. Unlike the rest of the client they never fail open; the server answers
+  501 until it builds a route, and the method rejects with `NiadraNotAvailableError`.
+- The types of those routes (`TurnRecord`, `StateReadRequest`, `CheckResult` and the rest), generated
+  from the server's OpenAPI document by `scripts/sync-spec.ts`. The signals and coordination types are
+  drafts until the server fixes them.
+- `canonicalJson()` and `jsonDigest()`: the digest of a turn record's value, SHA-256 over its canonical
+  JSON (RFC 8785), as every producer computes it.
+- The conformance vectors of the open specifications, run by `test/vectors.test.ts`, and the design of
+  the turn capture (`docs/design/turn-capture.md`).
+
 ## [0.6.1] - Unreleased
 
 A turn another agent should read reaches the memory as soon as it is said.

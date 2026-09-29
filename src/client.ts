@@ -1,4 +1,5 @@
 import { Admin } from "./admin.js";
+import { Api } from "./api.js";
 import { AgentMemoryCache, blockResult, checkNote, checkTags, emptyBlock } from "./agent-memory.js";
 import type { AgentMemoryParams, AgentMemoryResult, RememberParams } from "./agent-memory.js";
 import { ContextCache } from "./cache.js";
@@ -59,6 +60,7 @@ import { Task } from "./task.js";
 import type { TaskParams } from "./task.js";
 import { bindTools } from "./tools.js";
 import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./tools.js";
+import type { Route } from "./routes.js";
 import { READ_POLICY, Transport } from "./transport.js";
 import { MIN_PREFETCH, NO_PREFETCH, PrefetchSupport, turnText } from "./turns.js";
 import { VoiceLines, compose, rttWarnings, wordsOf } from "./voice.js";
@@ -174,6 +176,11 @@ export class Niadra {
    * fact's history, correct, erase and export. See `Admin`.
    */
   readonly admin: Admin;
+  /**
+   * The routes of turn records, typed state, signals and coordination, one method each. Unlike the rest
+   * of the client they never fail open: they reject with the API's error. See `Api`.
+   */
+  readonly api: Api;
   /** Whether this client's server answers prefetches. */
   private readonly turns: PrefetchSupport = new PrefetchSupport();
   /** Per conversation or task, the prefetch in flight and the newest text waiting behind it. */
@@ -193,6 +200,7 @@ export class Niadra {
       read: (method, path, body, opts) => this.readSpec(method, path, body, this.timeouts.write, opts),
       write: (path, body, key, opts) => this.writeSpec(path, body, key, opts),
     });
+    this.api = new Api((route, opts) => this.route(route, opts));
 
     const setup = this.setup(options);
     if (setup instanceof NiadraConfigError) {
@@ -919,6 +927,33 @@ export class Niadra {
       retry: this.core ? { ...this.core.writes, totalMs: timeout } : READ_POLICY,
       signal: options.signal,
     };
+  }
+
+  /** One route of `niadra.api`: the error rejects, whatever `strict` says. */
+  private async route<T>(route: Route, options: RequestOptions): Promise<T> {
+    if (!this.core) throw this.disabledError();
+    const timeout = options.timeout ?? this.timeouts.write;
+    const key = route.idempotencyKey;
+    const query: Record<string, string> = {};
+    for (const [name, value] of Object.entries(route.query ?? {})) if (value != null) query[name] = String(value);
+    const spec: RequestSpec = {
+      method: route.method,
+      path: route.path,
+      query,
+      headers: { ...options.headers, ...(key ? { "idempotency-key": key } : {}) },
+      timeoutMs: timeout,
+      // Only a keyed write is sent again after a failure: the key makes the repeat harmless.
+      retry: key ? { ...this.core.writes, totalMs: timeout } : READ_POLICY,
+      signal: options.signal,
+    };
+    if (route.body !== undefined) spec.body = route.body;
+    try {
+      return (await this.core.transport.request<T>(spec)).data;
+    } catch (error) {
+      const failure = toNiadraError(error);
+      this.observeAuth(failure, null);
+      throw failure;
+    }
   }
 
   private async navigate<T>(build: () => RequestSpec): Promise<Result<T>> {
