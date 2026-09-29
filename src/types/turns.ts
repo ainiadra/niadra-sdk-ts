@@ -64,6 +64,11 @@ export interface ClaimValue {
 
 /** One claim the SDK found in an output, as the turn record carries it: kinds, spans and verdicts. */
 export interface ClaimRecord {
+  /**
+   * What was done, which the contract's configured action decides: `rewrite_if_unequivocal` is `rewrite` when
+   * the rewrite is unequivocal and `warn` otherwise, `discard_anchor_and_count` is `discard_anchor`, and a
+   * claim that stands (`matched`, `quoted_found`, `anchored`) is `none`.
+   */
   action: "none" | "block" | "warn" | "count" | "rewrite" | "discard_anchor";
   category: string;
   class?: "money" | "percent" | "date" | "duration" | "quantity" | "count" | "dosage" | null;

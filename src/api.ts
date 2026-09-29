@@ -104,12 +104,18 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/notifications", query: { cursor: params.cursor, limit: params.limit ?? 100 } }, options);
   }
 
-  /** `PUT /v1/agent-state`. */
+  /**
+   * `PUT /v1/agent-state`. A write by the agent's code: over the cap it answers `stored: false`, never an
+   * error.
+   */
   writeAgentState(body: AgentStateWrite, options: RequestOptions = {}): Promise<AgentStateWriteResult> {
     return this.call({ method: "PUT", path: "/v1/agent-state", body }, options);
   }
 
-  /** `POST /v1/agent-state/read`. */
+  /**
+   * `POST /v1/agent-state/read`. The working state of one scope and agent: version 0 and an empty body when
+   * it was never written.
+   */
   readAgentState(body: AgentStateReadRequest, options: RequestOptions = {}): Promise<AgentState> {
     return this.call({ method: "POST", path: "/v1/agent-state/read", body }, options);
   }
@@ -134,12 +140,19 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/objects/snapshot", body }, options);
   }
 
-  /** `GET /v1/sdk/profile`. */
+  /**
+   * `GET /v1/sdk/profile`. What the SDK keeps in its local cache, from the configuration alone: no database,
+   * no receipt.
+   */
   sdkProfile(options: RequestOptions = {}): Promise<SdkProfile> {
     return this.call({ method: "GET", path: "/v1/sdk/profile" }, options);
   }
 
-  /** `POST /v1/state/read`. */
+  /**
+   * `POST /v1/state/read`. Objects by reference, each for the read's purpose: values with their logical
+   * value, stamps, source and
+   * freshness computed now, what may not be claimed, and the refusal a `decide` read of a type asks for.
+   */
   stateRead(body: StateReadRequest, options: RequestOptions = {}): Promise<StateReadResponse> {
     return this.call({ method: "POST", path: "/v1/state/read", body }, options);
   }
@@ -164,7 +177,11 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/types/fingerprint", body }, options);
   }
 
-  /** `POST /v1/constraints`. */
+  /**
+   * `POST /v1/constraints`. The constraints block of one subject, the one `include: ["constraints"]` adds to
+   * a context read;
+   * `for` asks for a beneficiary's.
+   */
   constraints(body: ConstraintsRequest, options: RequestOptions = {}): Promise<ConstraintsBlock> {
     return this.call({ method: "POST", path: "/v1/constraints", body }, options);
   }
@@ -275,7 +292,7 @@ export class Api {
   }
 
   /** `POST /v1/coordination/effects`. */
-  reserveEffect(body: EffectReserve, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<Effect> {
+  reserveEffect(body: EffectReserve, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<Effect | null> {
     return this.call({ method: "POST", path: "/v1/coordination/effects", body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
 

@@ -127,6 +127,15 @@ describe("a route of niadra.api", () => {
     expect(server.calls[2]!.method).toBe("DELETE");
   });
 
+  it("resolves null for a success without a body, where the route allows one", async () => {
+    const effect = { effect_id: "e1", attempt: 1, reserved_at: "2026-09-29T10:00:00Z", state: "reserved" };
+    const server = new MockServer().on("POST /v1/coordination/effects", { status: 201, body: effect }, { status: 200 });
+    const client = makeClient(server);
+    const body = { effect_key: "farewell:c-1", kind: "notice" as const };
+    expect(await client.api.reserveEffect(body)).toEqual(effect);
+    expect(await client.api.reserveEffect(body)).toBeNull();
+  });
+
   it("rejects when the client has no key", async () => {
     const client = new Niadra({ apiKey: "", logger: silentLogger, flushOnExit: false });
     await expect(client.api.sdkProfile()).rejects.toBeInstanceOf(NiadraConfigError);
