@@ -17,6 +17,11 @@ built on them.
   from the server's OpenAPI document by `scripts/sync-spec.ts`.
 - `canonicalJson()` and `jsonDigest()`: the digest of a turn record's value, SHA-256 over its canonical
   JSON (RFC 8785), as every producer computes it.
+- `expr`: niadra-expr, the language of the type registry's conditions, timers, keys and readings.
+  `expr.parse()` reads an expression, `expr.compileExpression()` resolves its names against a type's
+  declarations, and `expr.evaluate()` computes it over an object's slots with the four logical values,
+  as the server does; it passes every case of `spec/vectors/niadra-expr.v0.json`. Dates and times are
+  integers (days, milliseconds), never the machine's time zone.
 - The conformance vectors of the open specifications, run by `test/vectors.test.ts`, and the design of
   the turn capture (`docs/design/turn-capture.md`).
 

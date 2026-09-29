@@ -2,6 +2,8 @@ export { Niadra } from "./client.js";
 export { Admin } from "./admin.js";
 export { Api } from "./api.js";
 export { canonicalJson, jsonDigest } from "./digest.js";
+export * as expr from "./state/expr.js";
+export type { Logic } from "./state/logic.js";
 export type { CorrectParams } from "./admin.js";
 export type { OpenParams, WriteResult } from "./client.js";
 export { Conversation } from "./conversation.js";
