@@ -31,3 +31,7 @@ export type {
 } from "./events.js";
 export { MAX_BATCH_ITEMS, MAX_EVENT_TEXT, MAX_MEDIA_BYTES } from "./events.js";
 export type * from "./admin.js";
+export type * from "./turns.js";
+export type * from "./state.js";
+export type * from "./signals.js";
+export type * from "./coordination.js";

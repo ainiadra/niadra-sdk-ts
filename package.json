@@ -259,7 +259,8 @@
     "lint": "eslint .",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "runtimes": "pnpm build && deno run --no-prompt test/runtimes/smoke.mjs && deno run --no-prompt test/runtimes/webhooks.mjs && bun test/runtimes/smoke.mjs && bun test/runtimes/webhooks.mjs && node test/runtimes/workerd.mjs && node test/runtimes/edge.mjs",
-    "prepublishOnly": "pnpm check && pnpm build"
+    "prepublishOnly": "pnpm check && pnpm build",
+    "sync-spec": "node --experimental-strip-types scripts/sync-spec.ts"
   },
   "devDependencies": {
     "@ai-sdk/openai": "4.0.75",

@@ -21,6 +21,7 @@
   "include": [
     "src",
     "test",
+    "scripts",
     "examples",
     "tsup.config.ts",
     "vitest.config.ts",
