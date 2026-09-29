@@ -44,6 +44,7 @@ export class Cell {
   readonly objects = new Map<string, Json>();
   readonly refreshes = new Map<string, Json>();
   readonly pushes: Json[] = [];
+  readonly released: Json[] = [];
   readonly scenarios = new Map<string, Json>();
   readonly runs: Json[] = [];
   readonly constraints = new Map<string, ConstraintsBlock>();
@@ -78,10 +79,11 @@ export class Cell {
     this.objects.set(ref, held);
   }
 
-  requestRefresh(ref: string): void {
+  requestRefresh(ref: string, reason = "claim_pending"): string {
     const [type, namespace, id] = ref.split(":");
-    const requestId = `rr_${this.refreshes.size + 1}`;
-    this.refreshes.set(requestId, { request_id: requestId, ref: { type, namespace, id }, reason: "claim_pending", priority: "normal", budget_units: 1, lease_until: null });
+    const requestId = `rr_${this.refreshes.size + this.released.length + 1}`;
+    this.refreshes.set(requestId, { request_id: requestId, ref: { type, namespace, id }, reason, priority: "normal", budget_units: 1, lease_until: null });
+    return requestId;
   }
 
   createScenario(turnIds: string[], assertions?: Json[]): Json {
@@ -179,6 +181,15 @@ export class Cell {
     if (path.startsWith("/v1/coordination/")) return this.coordination(method, path, body);
     if (path.startsWith("/v1/agent-state")) return this.agentState(path, body);
     if (key === "POST /v1/state/verify" || key === "GET /v1/state/refresh-requests" || key === "POST /v1/objects/push") return this.state(key, body);
+    if (method === "POST" && path.startsWith("/v1/state/refresh-requests/") && path.endsWith("/release")) {
+      this.need("state");
+      const requestId = decodeURIComponent(path.split("/").at(-2) ?? "");
+      const request = this.refreshes.get(requestId);
+      if (request === undefined) return json(404, { code: "not_found", status: 404, title: "not found" });
+      this.refreshes.delete(requestId);
+      this.released.push({ request_id: requestId, outcome: body.outcome });
+      return json(200, { request_id: requestId, reason: request.reason });
+    }
     if (key === "POST /v1/measure/counterfactual-runs") {
       this.need("measurement");
       this.counterfactuals.push(body);
@@ -311,6 +322,7 @@ export class Cell {
       this.observe(ref, item.fields);
       this.pushes.push(item);
       for (const [id, request] of this.refreshes) if (`${request.ref.type}:${request.ref.namespace}:${request.ref.id}` === ref) this.refreshes.delete(id);
+      if (typeof item.request_id === "string") this.refreshes.delete(item.request_id);
     }
     return json(200, { applied: (body.objects as Json[]).length, stale_version: 0, out_of_set: 0 });
   }

@@ -439,6 +439,11 @@ export interface ObjectPush {
   provenance: Provenance;
   ref: StateRef;
   /**
+   * The refresh request this item answers, from the resolver worker's lease: the request is settled, and a
+   * `watch_revalidation` is decided on these values even when they are not newer than the ones held.
+   */
+  request_id?: string | null;
+  /**
    * The source's version of the object. A field moves only when this is greater than the version that last
    * wrote it; a source never reuses a version for other content.
    */
@@ -474,6 +479,20 @@ export interface ObjectSnapshotResponse {
   import_id: string;
   /** The lines taken in. */
   objects: number;
+}
+
+/**
+ * A leased request the resolver worker cannot answer: the object is not at the source, or fetching it
+ * failed. The request leaves at once and its paid call counts; a `watch_revalidation` falls back to the
+ * type's `unconfirmed_watch`.
+ */
+export interface RefreshRelease {
+  outcome: "not_found" | "failed";
+}
+
+export interface RefreshReleased {
+  reason: string;
+  request_id: string;
 }
 
 export interface RefreshRequest {
