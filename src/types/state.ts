@@ -23,6 +23,23 @@ export interface AgentState {
   version: number;
 }
 
+/** One working state of a customer, as the Console shows it: never its content. */
+export interface AgentStateMeta {
+  agent: string;
+  /** The size of the state's body. */
+  bytes: number;
+  schema_version?: string | null;
+  scope_kind: "conversation" | "task" | "object" | "subject";
+  source_id: string;
+  updated_at: string;
+  valid_until: string;
+  version: number;
+}
+
+export interface AgentStateMetaPage {
+  items: AgentStateMeta[];
+}
+
 /**
  * What one working state belongs to. The id travels in the body, never in a URL: a conversation id may
  * look like a phone number.
@@ -193,13 +210,32 @@ export interface ContentReleaseResult {
 }
 
 /**
+ * What changed between the declaration and the type the schema proposes now, as counts: never a new name,
+ * a value or a definition (object-type spec, 8.8.2).
+ */
+export interface DriftChanges {
+  /** The declaration's fields removed or retyped, and its state field when the states differ. */
+  fields?: string[];
+  fields_added: number;
+  fields_removed: number;
+  fields_retyped: number;
+  key_changed: boolean;
+  relations_added: number;
+  relations_removed: number;
+  states_added: number;
+  states_removed: number;
+}
+
+/**
  * The agent features a space turns on: everything is off until the space's `features`
  * document lists it, and `GET /v1/sdk/profile` announces what is on.
  */
 export type Feature = "turns" | "state" | "agent_state" | "signals" | "claims" | "coordination" | "measurement" | "notifications" | "legal_holds";
 
 export interface FieldCoverage {
+  /** The median age, in seconds, of the field's newest observation. */
   age_p50_s?: number | null;
+  /** The share of the type's objects some source observed the field of. */
   coverage: number;
   field: string;
 }
@@ -249,6 +285,11 @@ export interface OutcomeState {
  */
 export interface ReadingResult {
   absent?: string | null;
+  /**
+   * For a reading that includes its inputs: the derived object's inputs, by the name its type gives them, as
+   * `type:namespace:id`.
+   */
+  inputs?: Record<string, string> | null;
   logic: "yes" | "no" | "unobserved" | "known_defect";
   type?: "bool" | "number" | "string" | "duration" | "date" | "datetime" | "list" | null;
   v?: unknown;
@@ -345,9 +386,15 @@ export interface InterestState {
 
 export interface TypeCoverage {
   fields: FieldCoverage[];
+  /** The objects measured: the ones of the type that changed last. */
+  objects: number;
   type: string;
 }
 
+/**
+ * How much of each declared field the objects of each type carry, and how old it is, from the stamps
+ * alone: never a value.
+ */
 export interface ObjectCoverage {
   types: TypeCoverage[];
 }
@@ -508,11 +555,16 @@ export interface StateViewRequest {
   subject: Handle;
 }
 
+/** A deriving tool's check of a declared type: the fingerprint of the schema it read now. */
 export interface TypeFingerprintRequest {
+  changes?: DriftChanges | null;
   fingerprint: string;
   type: string;
 }
 
 export interface TypeFingerprintResponse {
+  /** Whether the fingerprint differs from the declaration's. */
   drift: boolean;
+  /** The data issue of kind `drift` the check opened or counted in, when the type alerts. */
+  issue_id?: string | null;
 }
