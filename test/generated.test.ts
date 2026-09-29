@@ -145,10 +145,14 @@ describe("a route of niadra.api", () => {
 
 describe("the generator", () => {
   it.each([
-    "One entry of the turn record (front A5).",
-    "The features of the agent core wave.",
-    "Built in phase 2.",
-    "As study 23 says.",
+    "One entry of the record (front A9).",
+    "Kept by (A7) for now.",
+    "Shipped with the core wave.",
+    "Planned for the wave after next.",
+    "Built in phase 7.",
+    "Merged by the integrator.",
+    "As study 42 says.",
+    "Veja o estudo.",
   ])("stops on a server description naming internal planning: %s", (text) => {
     expect(() => publicText(text, "Schema.field")).toThrow(/internal planning/);
   });
