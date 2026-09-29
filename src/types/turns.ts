@@ -4,6 +4,21 @@
 import type { ObjectRef } from "./common.js";
 import type { ItemError } from "./events.js";
 
+/**
+ * What the person is: a size, a preferred network, a diet. Said here; the lifecycle's outcomes (bought,
+ * kept, returned for size) derive the rest on the server, never an agent.
+ */
+export interface Attribute {
+  category?: string | null;
+  for?: string;
+  kind: "attribute";
+  name: string;
+  source?: "stated" | "correction";
+  /** The measuring system: `BR`, `EU`, `US`. */
+  system?: string | null;
+  value: boolean | number | string;
+}
+
 /** One entry of the change log the bisection walks. */
 export interface Change {
   after?: string | null;
@@ -16,6 +31,49 @@ export interface Change {
 export interface ChangePage {
   items: Change[];
   next_cursor?: string | null;
+}
+
+/** Where a claim's evidence is in the turn record: a call's field, an object's field, or a document. */
+export interface ClaimEvidenceRef {
+  /** The blob that keeps the quoted text. */
+  anchor?: string | null;
+  call_id?: string | null;
+  /** The document an anchor cites. */
+  document?: string | null;
+  field?: string | null;
+  /** An object, `type:namespace:id`. */
+  ref?: string | null;
+  /** The anchor's similarity. */
+  score?: number | null;
+}
+
+/**
+ * A number the parser read, normalized: an amount, or a range from `min` to `max`, with its unit (the
+ * currency code of money, `%`, a time unit, a unit of measure or of dose), or a date, or a range of
+ * dates.
+ */
+export interface ClaimValue {
+  amount?: string | null;
+  date?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  max?: string | null;
+  min?: string | null;
+  unit?: string | null;
+}
+
+/** One claim the SDK found in an output, as the turn record carries it: kinds, spans and verdicts. */
+export interface ClaimRecord {
+  action: "none" | "block" | "warn" | "count" | "rewrite" | "discard_anchor";
+  category: string;
+  class?: "money" | "percent" | "date" | "duration" | "quantity" | "count" | "dosage" | null;
+  evidence?: ClaimEvidenceRef | null;
+  nature?: "computed" | "quoted" | "model" | null;
+  role?: string | null;
+  /** Code point offsets of the claim in the output, end exclusive. */
+  span: [number, number];
+  value?: ClaimValue | null;
+  verdict: "matched" | "mismatch" | "stale" | "gap_not_stated" | "role_ambiguous" | "unsupported" | "no_evidence" | "quoted_found" | "quoted_missing" | "anchored" | "below_threshold" | "source_exists_claim_unverified" | "source_missing" | "not_checked";
 }
 
 export interface DataIssue {
@@ -35,6 +93,23 @@ export interface DataIssuePage {
   next_cursor?: string | null;
 }
 
+export interface Engaged {
+  /** Absent for an item of no list. */
+  exposure_id?: string | null;
+  for?: string;
+  how: "click" | "detail" | "mention" | "add_to_cart" | "compare" | "share" | "other";
+  kind: "engaged";
+  ref: string;
+}
+
+export interface Feedback {
+  for?: string;
+  kind: "feedback";
+  polarity: "positive" | "negative";
+  reason_attrs?: string[];
+  ref: string;
+}
+
 /** A webhook's body, for who pulls instead of receiving it: the same body, in `change_seq` order. */
 export interface Notification {
   data: Record<string, unknown>;
@@ -46,6 +121,59 @@ export interface Notification {
 export interface NotificationPage {
   items: Notification[];
   next_cursor?: string | null;
+}
+
+/** What the person wants or refuses, said or captured from a tool's arguments; only these become hard. */
+export interface Preference {
+  attr: string;
+  /** Holds only in this category of the type. */
+  category?: string | null;
+  expires_at?: string | null;
+  for?: string;
+  kind: "preference";
+  op: "in" | "not_in" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "between";
+  scope?: "turn" | "session" | "persistent";
+  source?: "stated" | "tool_args" | "correction";
+  strength: "must" | "must_not" | "prefer" | "avoid";
+  values: (boolean | number | string)[];
+}
+
+export interface PresentedItem {
+  /** 1-based position in the whole list, across pages. */
+  pos: number;
+  ref: string;
+  /**
+   * The values the item showed, for the fields its type tracks or lets be claimed; what `changes_since_seen`
+   * later compares against.
+   */
+  shown?: Record<string, boolean | number | string | null>;
+  /** Which of two interleaved lists contributed the item. */
+  team?: "a" | "b" | null;
+}
+
+/**
+ * A list delivered to the person: the exposure. Its canonical moment is `delivered_at`, when the
+ * interface bridge handed the list to the client, never when a tool returned it or the model named it.
+ */
+export interface Presented {
+  delivered_at: string;
+  exposure_id: string;
+  for?: string;
+  items: PresentedItem[];
+  kind: "presented";
+  list_id: string;
+  list_kind?: string;
+  /**
+   * `bridge` from the interface bridge, `otel` from a `niadra.exposure` span, `tool_result` inferred from
+   * what a tool returned: labeled, because it counts more than was shown.
+   */
+  method?: "bridge" | "otel" | "tool_result";
+  offset?: number;
+  /** "See more" is the same list with `page + 1`. */
+  page?: number;
+  parent_list_id?: string | null;
+  /** How many of the first items were visible on delivery. */
+  visible_k?: number | null;
 }
 
 /**
@@ -63,6 +191,15 @@ export interface PromoteResponse {
   /** Turns no longer in the short tier, or never recorded. */
   not_found: number;
   promoted: number;
+}
+
+/** A ping of the list component: how far the person saw. */
+export interface Seen {
+  exposure_id: string;
+  for?: string;
+  kind: "seen";
+  /** The highest `pos` the component showed. */
+  max_index_seen: number;
 }
 
 export interface TurnAgent {
@@ -180,33 +317,6 @@ export interface TurnCall {
   truncated?: boolean;
 }
 
-export interface TurnEvidence {
-  /** The quoted text a fact is anchored to. */
-  anchor?: string | null;
-  call_id?: string | null;
-  field?: string | null;
-}
-
-/**
- * A claim contract verdict, found by the SDK before the text reached the customer or a document. The
- * fields are the claim contract's record; its spec fixes the vocabularies of `verdict` and
- * `action`, so this record takes them as names until that model replaces this one.
- */
-export interface TurnClaim {
-  /** E.g. `none`, `warn`, `count`, `block`. */
-  action?: string;
-  category: string;
-  class?: "money" | "percent" | "date" | "quantity" | "count" | "duration" | "dosage" | "text" | null;
-  evidence?: TurnEvidence | null;
-  nature?: "computed" | "quoted" | "model" | null;
-  role?: string | null;
-  /** Start and end offsets in the output. */
-  span?: [number, number] | null;
-  value?: unknown;
-  /** E.g. `matched`, `role_ambiguous`, `below_threshold`. */
-  verdict: string;
-}
-
 export interface TurnCoordination {
   decision: "allow" | "defer" | "deny" | "handoff_to";
   decision_id: string;
@@ -219,16 +329,6 @@ export interface TurnCost {
 export interface TurnEffect {
   key: string;
   state: "reserved" | "done" | "failed" | "unknown_outcome";
-}
-
-/**
- * What the person was shown or did in the turn. Its fields are the `interaction.v0` spec's,
- * validated when the turn is applied; until that spec's `Interaction` model lands, the record fixes only
- * the kind and keeps the rest as it came. The swap narrows the type and changes no document.
- */
-export interface TurnInteraction {
-  kind: "presented" | "seen" | "engaged" | "feedback" | "preference" | "attribute" | "watch" | "unwatch";
-  [key: string]: unknown;
 }
 
 export interface TurnOutput {
@@ -250,6 +350,23 @@ export interface TurnRead {
   version?: string | null;
 }
 
+export interface Unwatch {
+  for?: string;
+  kind: "unwatch";
+  ref: string;
+}
+
+/** An explicit "let me know when": the only way an interest raises a notice. */
+export interface Watch {
+  /** A `niadra-expr` expression over the object's fields. */
+  condition: string;
+  consent_event_key: string;
+  expires_at?: string | null;
+  for?: string;
+  kind: "watch";
+  ref: string;
+}
+
 /**
  * One turn, from its input (a message, an interface action, an event, a timer firing) to the last thing
  * it emitted to the customer or to a document.
@@ -259,7 +376,7 @@ export interface TurnRecord {
   blobs?: Record<string, TurnBlob>;
   build?: TurnBuild;
   calls?: TurnCall[];
-  claims?: TurnClaim[];
+  claims?: ClaimRecord[];
   completeness?: "complete" | "partial" | "incomplete" | "unknown";
   content_mode: "stored" | "pointer" | "hash_only";
   conversation_id?: string | null;
@@ -269,7 +386,7 @@ export interface TurnRecord {
   ended_at?: string | null;
   fidelity?: "bronze" | "silver" | "gold";
   flags?: ("error" | "guard_acted" | "guard_budget_exceeded" | "handoff" | "assertion_failed" | "synthetic" | "incomplete" | "negative_feedback" | "truncated")[];
-  interactions?: TurnInteraction[];
+  interactions?: (Presented | Seen | Engaged | Feedback | Preference | Attribute | Watch | Unwatch)[];
   kind?: "message" | "action" | "event" | "timer";
   latency_ms?: number | null;
   output?: TurnOutput;
