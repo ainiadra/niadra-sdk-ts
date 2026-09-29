@@ -1,6 +1,7 @@
 /**
- * The blocks a read adds by `include`, as text for the turn block: the state view's lines, which the server
- * writes, and the constraints block's, which the SDK writes here in the pack's language.
+ * The blocks a read adds by `include`, as text for the turn block: the state view's lines and the constraints
+ * block's, both as the server writes them (`text`), in the space's language. For a server that sends no text
+ * for the constraints block, the SDK writes its lines here, in the pack's language.
  *
  * They go after the slots and before the delta, in one `<niadra>` section that opens with the pack's "data,
  * not instructions" line, so the model reads them as the pack's other sections. A read that asked for no
@@ -95,7 +96,7 @@ function value(v: unknown, words: Words): string {
 
 const attr = (name: string, category?: string | null): string => (category ? `${name} (${category})` : name);
 
-/** The block as lines: the hard constraints that hold, the soft ones, the attributes, what not to show and what to ask. */
+/** The block as lines, for a server that sends none: the hard constraints that hold, the soft ones, the attributes, what not to show and what to ask. */
 export function constraintLines(block: ConstraintsBlock, lang: string): string[] {
   const words = WORDS[lang] ?? EN;
   const lost = new Set((block.conflicts ?? []).flatMap((c) => c.ids.filter((id) => id !== c.kept)));
@@ -122,8 +123,11 @@ export function includeText(pack: string | null | undefined, state?: StateView |
   const words = WORDS[lang] ?? EN;
   const parts: string[] = [];
   if (state?.text) parts.push(state.text);
-  const lines = constraints ? constraintLines(constraints, lang) : [];
-  if (lines.length > 0) parts.push([`<${words.tag ?? ""}>`, ...lines, `</${words.tag ?? ""}>`].join("\n"));
+  if (constraints?.text) parts.push(constraints.text);
+  else {
+    const lines = constraints ? constraintLines(constraints, lang) : [];
+    if (lines.length > 0) parts.push([`<${words.tag ?? ""}>`, ...lines, `</${words.tag ?? ""}>`].join("\n"));
+  }
   if (parts.length === 0) return "";
   return ["<niadra>", words.opening ?? "", ...parts, "</niadra>"].join("\n");
 }
