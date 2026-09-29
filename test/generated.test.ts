@@ -3,7 +3,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CUT, ROOT, cut, generate, publicText } from "../scripts/sync-spec.js";
+import { CUT, ROOT, cut, generate, publicText, splitNames } from "../scripts/sync-spec.js";
 import type { Document } from "../scripts/sync-spec.js";
 import { Api, Niadra, NiadraAPIError, NiadraConfigError, NiadraNotAvailableError, silentLogger } from "../src/index.js";
 import type { TurnCall, TurnRecord, TurnsRequest } from "../src/index.js";
@@ -59,8 +59,8 @@ describe("the generated routes", () => {
   it("have one method per operation of the document", () => {
     const operations = Object.values(document.paths).flatMap((methods) => Object.keys(methods));
     const methods = Object.getOwnPropertyNames(Api.prototype).filter((name) => name !== "constructor");
-    expect(operations).toHaveLength(59);
-    expect(methods).toHaveLength(59);
+    expect(operations).toHaveLength(60);
+    expect(methods).toHaveLength(60);
   });
 
   it("type the turn record with exactly the fields of its schema", () => {
@@ -155,6 +155,15 @@ describe("the generator", () => {
     "Veja o estudo.",
   ])("stops on a server description naming internal planning: %s", (text) => {
     expect(() => publicText(text, "Schema.field")).toThrow(/internal planning/);
+  });
+
+  it("names the halves of a model the server documents twice", () => {
+    expect([...splitNames(["Page", "Result-Input"])]).toEqual([["Result-Input", "Result"]]);
+    expect([...splitNames(["Result-Input", "Result-Output"])]).toEqual([
+      ["Result-Input", "Result"],
+      ["Result-Output", "ResultOutput"],
+    ]);
+    expect(() => splitNames(["Result", "Result-Input"])).toThrow(/taken/);
   });
 
   it("publishes a body the server declares inline as its named schema", () => {

@@ -74,9 +74,13 @@ export class ProfileCache {
     return this.claimContract ?? this.profile?.claim_contract ?? null;
   }
 
+  /** The pins the space's recording needs for a turn to be replayable, when the profile says them. */
+  requiredPins(): readonly string[] {
+    return this.profile?.recording?.required_pins ?? [];
+  }
+
   /** The content mode the space's recording names for this source, when the profile says it. */
   recordingMode(): ContentMode | null {
-    const mode = (this.profile?.recording as { content_mode?: unknown } | null | undefined)?.content_mode;
-    return mode === "stored" || mode === "pointer" || mode === "hash_only" ? mode : null;
+    return this.profile?.recording?.content_mode ?? null;
   }
 }

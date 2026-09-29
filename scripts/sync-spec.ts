@@ -190,13 +190,45 @@ export function cut(document: Document): Document {
   const schemas = { ...document.components.schemas };
   for (const methods of Object.values(paths)) for (const op of Object.values(methods)) hoistBody(op, schemas);
   const names = [...reach(paths, schemas)].sort();
+  const renames = splitNames(names);
   const result = {
     openapi: document.openapi,
     info: document.info,
     paths,
-    components: { schemas: Object.fromEntries(names.map((name) => [name, schemas[name]])) },
+    components: { schemas: Object.fromEntries(names.map((name) => [renames.get(name) ?? name, schemas[name]])) },
   };
-  return sortedKeys(published(result, "")) as Document;
+  return sortedKeys(published(renamed(result, renames), "")) as Document;
+}
+
+/**
+ * Names for the halves of a model the server documents twice, as it validates it and as it serializes it
+ * (`Name-Input`, `Name-Output`): the model's own name for one of them, and `NameOutput` when both are reached.
+ */
+export function splitNames(names: readonly string[]): Map<string, string> {
+  const present = new Set(names);
+  const out = new Map<string, string>();
+  for (const name of names) {
+    const match = /^(.+)-(Input|Output)$/.exec(name);
+    if (!match) continue;
+    const [, base = "", half] = match;
+    const both = present.has(`${base}-Input`) && present.has(`${base}-Output`);
+    const target = both && half === "Output" ? `${base}Output` : base;
+    if (present.has(target)) throw new Error(`${name}: the name ${target} is taken`);
+    out.set(name, target);
+  }
+  return out;
+}
+
+function renamed(node: unknown, renames: ReadonlyMap<string, string>): unknown {
+  if (Array.isArray(node)) return node.map((value) => renamed(value, renames));
+  if (typeof node !== "object" || node === null) return node;
+  const out = Object.fromEntries(Object.entries(node).map(([key, value]) => [key, renamed(value, renames)]));
+  const ref = out.$ref;
+  if (typeof ref === "string") {
+    const target = renames.get(refName(ref));
+    if (target !== undefined) out.$ref = `#/components/schemas/${target}`;
+  }
+  return out;
 }
 
 /** A body the server declares inline (a route that parses its own body) as the named schema it is. */

@@ -51,7 +51,7 @@ describe("replay inside the company's boundary", () => {
     expect(run.scenarios[0]?.completed).toBe(5);
     expect(calls).toEqual([]);
     expect(seen[0]?.text).toBe("Quanto sai o plano ouro?");
-    expect(seen.map((s) => s.run)).toEqual([0, 1, 2, 3, 4]);
+    expect(seen.map((s) => s.run)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("regresses when the agent stops calling the tool", async () => {

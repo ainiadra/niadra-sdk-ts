@@ -402,13 +402,25 @@ export interface RefreshRequestPage {
 }
 
 /**
+ * How the calling source records turns, for the SDK's capture: where the values may live, and the pins
+ * a turn needs to be replayable.
+ */
+export interface TurnRecordingSummary {
+  /** `stored`, `pointer` or `hash_only`; a turn may keep less, never more. */
+  content_mode: "stored" | "pointer" | "hash_only";
+  /** Without one of these, a turn is kept not replayable. */
+  required_pins: ("prompts" | "corpus_digest" | "model" | "assembler" | "tool_schemas")[];
+}
+
+/**
  * What the SDK keeps in its local cache: the features on, the source's tool bindings, the summarized
  * type registry, the claim contract and turn recording.
  */
 export interface SdkProfile {
   claim_contract?: ClaimContractSummary | null;
   features: Feature[];
-  recording?: Record<string, unknown> | null;
+  /** How this source records turns, once the space records them. */
+  recording?: TurnRecordingSummary | null;
   tool_bindings?: (Record<string, unknown>)[];
   types?: (Record<string, unknown>)[];
   valid_for_s: number;

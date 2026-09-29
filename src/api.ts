@@ -23,9 +23,9 @@ import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteReq
 export class Api {
   constructor(private readonly call: RouteCall) {}
 
-  /** `GET /v1/changes`. */
-  changes(params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<ChangePage> {
-    return this.call({ method: "GET", path: "/v1/changes", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
+  /** `GET /v1/changes`. What changed between consecutive builds of each agent, newest first. */
+  changes(params: { agent?: string | null; cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<ChangePage> {
+    return this.call({ method: "GET", path: "/v1/changes", query: { agent: params.agent, cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
   /** `GET /v1/data-issues`. */
@@ -38,12 +38,18 @@ export class Api {
     return this.call({ method: "POST", path: `/v1/data-issues/${segment(issueId)}/ack` }, options);
   }
 
-  /** `POST /v1/replay/cases`. */
+  /**
+   * `POST /v1/replay/cases`. One turn with what a runner needs to run it again, once the running build shares
+   * its pins.
+   */
   replayCase(body: ReplayCaseRequest, options: RequestOptions = {}): Promise<ReplayCase> {
     return this.call({ method: "POST", path: "/v1/replay/cases", body }, options);
   }
 
-  /** `POST /v1/scenario-runs`. */
+  /**
+   * `POST /v1/scenario-runs`. The executions the company's CI ran; the answer carries the verdict already
+   * decided.
+   */
   createScenarioRun(body: ScenarioRunCreate, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<ScenarioRun> {
     return this.call({ method: "POST", path: "/v1/scenario-runs", body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
@@ -53,12 +59,15 @@ export class Api {
     return this.call({ method: "GET", path: `/v1/scenario-runs/${segment(runId)}` }, options);
   }
 
-  /** `GET /v1/scenarios`. */
-  listScenarios(params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<ScenarioPage> {
-    return this.call({ method: "GET", path: "/v1/scenarios", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
+  /**
+   * `GET /v1/scenarios`. A status's scenarios, newest first; or the ones named by `ids`, whatever their
+   * status.
+   */
+  listScenarios(params: { ids?: string | null; status?: string; cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<ScenarioPage> {
+    return this.call({ method: "GET", path: "/v1/scenarios", query: { ids: params.ids, status: params.status ?? "active", cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
-  /** `POST /v1/scenarios`. */
+  /** `POST /v1/scenarios`. Keeps the turns as a scenario; without assertions, the ones suggested by rule. */
   createScenario(body: ScenarioCreate, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<Scenario> {
     return this.call({ method: "POST", path: "/v1/scenarios", body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
@@ -66,6 +75,11 @@ export class Api {
   /** `POST /v1/scenarios/from-report`. */
   scenarioFromReport(body: ScenarioFromReport, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<Scenario> {
     return this.call({ method: "POST", path: "/v1/scenarios/from-report", body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
+  }
+
+  /** `GET /v1/scenarios/{scenario_id}`. */
+  readScenario(scenarioId: string, options: RequestOptions = {}): Promise<Scenario> {
+    return this.call({ method: "GET", path: `/v1/scenarios/${segment(scenarioId)}` }, options);
   }
 
   /** `PATCH /v1/scenarios/{scenario_id}`. */
@@ -224,9 +238,12 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/measure/counterfactual-runs", body }, options);
   }
 
-  /** `GET /v1/measure/interleaving`. */
-  interleaving(options: RequestOptions = {}): Promise<InterleavingReport> {
-    return this.call({ method: "GET", path: "/v1/measure/interleaving" }, options);
+  /**
+   * `GET /v1/measure/interleaving`. Interleaved lists of a tool's two rankings: which one engagement
+   * credited, with the sign test.
+   */
+  interleaving(params: { since: string; until: string }, options: RequestOptions = {}): Promise<InterleavingReport> {
+    return this.call({ method: "GET", path: "/v1/measure/interleaving", query: { since: params.since, until: params.until } }, options);
   }
 
   /**

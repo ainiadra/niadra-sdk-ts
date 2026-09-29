@@ -4,6 +4,31 @@
 import type { ObjectRef } from "./common.js";
 import type { ItemError } from "./events.js";
 
+export interface AssertionOutcome {
+  detail?: string | null;
+  id: string;
+  kind: "tool_called" | "tool_not_called" | "hard_respected" | "no_denial_with_results" | "claims_traced" | "claims_match_state" | "no_promise_without_action" | "expected_in_topk" | "handoff_when" | "effect_once" | "budget" | "lexicon" | "tools_offered_match";
+  outcome: "pass" | "fail" | "not_checked";
+}
+
+/**
+ * One assertion over the run's completed executions, against its baseline. `p_value` is the one-sided
+ * Fisher exact test that the run passes less often than the baseline, rounded to 6 decimals.
+ */
+export interface AssertionStats {
+  baseline_failed: number;
+  baseline_passed: number;
+  /** The baseline's pass rate minus the run's. */
+  drop: number;
+  failed: number;
+  flaky: boolean;
+  id: string;
+  not_checked: number;
+  p_value: number;
+  passed: number;
+  regression: boolean;
+}
+
 /**
  * What the person is: a size, a preferred network, a diet. Said here; the lifecycle's outcomes (bought,
  * kept, returned for size) derive the rest on the server, never an agent.
@@ -19,13 +44,18 @@ export interface Attribute {
   value: boolean | number | string;
 }
 
-/** One entry of the change log the bisection walks. */
+/**
+ * One entry of the change log a bisection walks: a pin that changed between two builds of an agent, in
+ * the order the builds were first seen.
+ */
 export interface Change {
   after?: string | null;
   agent?: string | null;
   at: string;
   before?: string | null;
   kind: "prompt" | "model" | "code" | "data" | "config" | "compiler";
+  /** The prompt or the tool, for those kinds. */
+  name?: string | null;
 }
 
 export interface ChangePage {
@@ -196,6 +226,43 @@ export interface PromoteResponse {
   /** Turns no longer in the short tier, or never recorded. */
   not_found: number;
   promoted: number;
+}
+
+/**
+ * A structural check on the replayed turn's record, evaluated by the runner. The replay spec fixes each
+ * kind's `args` and how it is evaluated; a kind the runner cannot evaluate yields `not_checked`.
+ */
+export interface ReplayAssertion {
+  args?: Record<string, unknown>;
+  id: string;
+  kind: "tool_called" | "tool_not_called" | "hard_respected" | "no_denial_with_results" | "claims_traced" | "claims_match_state" | "no_promise_without_action" | "expected_in_topk" | "handoff_when" | "effect_once" | "budget" | "lexicon" | "tools_offered_match";
+  /** Suggested by rule from the recorded turn. */
+  suggested?: boolean;
+  /** The one turn of the scenario it applies to; every turn when absent. */
+  turn_id?: string | null;
+}
+
+/**
+ * Why a turn cannot be run again: `content_mode` (`hash_only` keeps no value), `fidelity` (only a gold
+ * record can be replayed), `completeness` (only a complete one) or `missing_pin` (the pin the recording
+ * requires and the record lacks).
+ */
+export interface ReplayBlocker {
+  reason: "content_mode" | "fidelity" | "completeness" | "missing_pin";
+  /** E.g. `hash_only`, `bronze`, `partial` or the pin's name, `model`. */
+  value: string;
+}
+
+export interface ReplayHistoryEntry {
+  at: string;
+  role: "customer" | "agent" | "human";
+  text?: string | null;
+}
+
+export interface ReplayInput {
+  kind: "message" | "action" | "event" | "timer";
+  /** The customer's message that opened the turn, masked. */
+  text?: string | null;
 }
 
 /** A ping of the list component: how far the person saw. */
@@ -403,46 +470,89 @@ export interface TurnRecord {
 }
 
 /**
- * What the SDK's replay runner needs to run the turn again inside the customer's boundary: the frame,
- * pointers and hashes, pins, the pack and view of the time, the masked history up to the turn and the
- * suggested assertions. A pin that does not match stops the case with `pin_mismatch`.
+ * What the replay runner needs to run a turn again inside the company's boundary: the record, with the
+ * kept values in `stored` mode and the pointers and digests otherwise; the pins; the conversation's masked
+ * history up to the turn, ending with the turn's own input; and the assertions. The pack of the time is
+ * the blob of the record's `pack` read.
  */
 export interface ReplayCase {
-  assertions?: (Record<string, unknown>)[];
+  assertions?: ReplayAssertion[];
   case_id: string;
-  /** After it, the case answers 410 `replay_expired`. */
+  /** When the turn leaves storage; after it, `replay_expired`. */
   expires_at: string;
-  history?: (Record<string, unknown>)[];
+  history?: ReplayHistoryEntry[];
+  input: ReplayInput;
   mode: "hermetic_turn" | "hermetic_conversation" | "era_memory";
   record: TurnRecord;
+  required_pins: ("prompts" | "corpus_digest" | "model" | "assembler" | "tool_schemas")[];
+  scenario_id?: string | null;
+  turn_id: string;
+  vary?: ("prompts" | "corpus_digest" | "model" | "assembler" | "tool_schemas")[];
 }
 
+/**
+ * A case for one turn, alone or as part of a scenario. `build` is the build the runner will run; every
+ * pin the recording requires must match the recorded one, except the pins in `vary`, which the run changes
+ * on purpose.
+ */
 export interface ReplayCaseRequest {
+  build: TurnBuild;
   mode?: "hermetic_turn" | "hermetic_conversation" | "era_memory";
+  scenario_id?: string | null;
+  turn_id: string;
+  vary?: ("prompts" | "corpus_digest" | "model" | "assembler" | "tool_schemas")[];
+}
+
+/**
+ * One execution of one case. `infrastructure_error` (the agent raised, a blob could not be fetched or
+ * did not match its digest, a timeout) is counted apart and never fails an assertion; `pin_mismatch` is a
+ * case the runner stopped at its pin check.
+ */
+export interface ReplayResult {
+  assertions?: AssertionOutcome[];
+  case_id?: string | null;
+  divergent_calls?: number;
+  error?: string | null;
+  latency_ms?: number | null;
+  /** The run's input was a paraphrase of the recorded one. */
+  paraphrase?: boolean;
+  run: number;
+  scenario_id: string;
+  status: "completed" | "pin_mismatch" | "infrastructure_error";
   turn_id: string;
 }
 
 export interface Scenario {
-  assertions: (Record<string, unknown>)[];
+  assertions: ReplayAssertion[];
   created_at: string;
   name: string;
   origin: "manual" | "report";
   scenario_id: string;
   status: "active" | "retired";
   turn_ids: string[];
+  updated_at: string;
+  /** Grows with every change of the name, the assertions or the status. */
   version: number;
 }
 
+/**
+ * Turns kept as a scenario, with the assertions they must keep passing; without assertions, the ones
+ * suggested by rule from the turns.
+ */
 export interface ScenarioCreate {
-  assertions?: (Record<string, unknown>)[];
+  assertions?: ReplayAssertion[];
   name: string;
   turn_ids: string[];
 }
 
-/** A bug report becomes a scenario: its turns are promoted and assertions suggested by rule. */
+/**
+ * A bug report becomes a scenario: its turns are kept and assertions suggested by rule, from the turns
+ * and from words of the description. The description is read, never stored.
+ */
 export interface ScenarioFromReport {
   conversation_id?: string | null;
   description?: string | null;
+  name?: string | null;
   turn_ids?: string[];
 }
 
@@ -451,22 +561,50 @@ export interface ScenarioPage {
   next_cursor?: string | null;
 }
 
-export interface ScenarioRun {
-  run_id: string;
-  status: "pending" | "done";
-  summary?: Record<string, unknown>;
-  verdict?: "pass" | "regression" | "flaky" | "infrastructure_error" | null;
+export interface ScenarioVerdict {
+  assertions: AssertionStats[];
+  /** The earlier run compared against; none when it was the recording. */
+  baseline_run_id?: string | null;
+  completed: number;
+  infrastructure_errors: number;
+  /** An assertion passed and failed across the runs: its next run must include paraphrases. */
+  needs_paraphrase: boolean;
+  pin_mismatches: number;
+  scenario_id: string;
+  verdict: "pass" | "flaky" | "infrastructure_error" | "pin_mismatch" | "regression";
 }
 
-/** The customer's CI reports N executions of the scenarios; the statistics stay with Niadra. */
+export interface ScenarioRunSummary {
+  scenarios?: ScenarioVerdict[];
+}
+
+export interface ScenarioRun {
+  build: TurnBuild;
+  created_at: string;
+  mode: "hermetic_turn" | "hermetic_conversation" | "era_memory";
+  run_id: string;
+  status: "pending" | "done";
+  summary: ScenarioRunSummary;
+  vary?: ("prompts" | "corpus_digest" | "model" | "assembler" | "tool_schemas")[];
+  /** The worst of the scenarios' verdicts. */
+  verdict?: "pass" | "flaky" | "infrastructure_error" | "pin_mismatch" | "regression" | null;
+}
+
+/**
+ * What the company's CI reports after running the scenarios N times: the statistics stay with Niadra.
+ * Every pin the recording requires must match each scenario's recorded build, except those in `vary`.
+ */
 export interface ScenarioRunCreate {
   build: TurnBuild;
-  results: (Record<string, unknown>)[];
+  mode?: "hermetic_turn" | "hermetic_conversation" | "era_memory";
+  results: ReplayResult[];
+  runs?: number | null;
   scenario_ids: string[];
+  vary?: ("prompts" | "corpus_digest" | "model" | "assembler" | "tool_schemas")[];
 }
 
 export interface ScenarioUpdate {
-  assertions?: (Record<string, unknown>)[] | null;
+  assertions?: ReplayAssertion[] | null;
   name?: string | null;
   status?: "active" | "retired" | null;
 }
@@ -503,6 +641,8 @@ export interface TurnSearchResponse {
 export interface TurnView {
   kept_until?: string | null;
   record: TurnRecord;
+  /** Why the turn cannot be run again; empty when it can. */
+  replay_blockers?: ReplayBlocker[];
   /** Every pin the recording requires is there. */
   replayable: boolean;
   tier: "short" | "kept";

@@ -240,6 +240,7 @@ export class Niadra {
     this.turns = new TurnRecorder({ ...DEFAULT_TURNS, ...options.turns }, !(setup instanceof NiadraConfigError), this.logger);
     this.turns.features = () => this.profileCache.features;
     this.turns.recordingMode = () => this.profileCache.recordingMode();
+    this.turns.requiredPins = () => this.profileCache.requiredPins();
     this.turns.claims = (frame) => {
       const contract = this.profileCache.contract();
       return contract === null ? [] : checkTurn(frame, contract);
