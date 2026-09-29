@@ -13,6 +13,10 @@
  *   as a handoff between agents. Partial (streamed) responses and tool calls record nothing.
  * - `tools`: the kit as ADK tools with the canonical JSON Schemas. Each call finds its customer from
  *   the tool's context, never from the model's arguments.
+ * - With `turns: true`, `beforeAgentCallback`, `afterAgentCallback`, `beforeToolCallback` and
+ *   `afterToolCallback` record each agent's run in an invocation as a turn: each tool call with its
+ *   arguments and result, each model call with its tokens. In a replay a tool not wrapped with `tool()`
+ *   answers from the record and never runs.
  *
  * Fail-open: when Niadra is slow or down, the request goes to the model as ADK built it.
  *
@@ -32,7 +36,7 @@ import type { Context, LlmRequest, LlmResponse, ReadonlyContext, RunAsyncToolReq
 import { AGENT_MEMORY_TOOL_DEFINITIONS, TOOL_DEFINITIONS } from "../tools.js";
 import type { ModelUsage } from "../types/events.js";
 import { providerOf } from "../usage.js";
-import { Bridge, count, errorName, isRecord } from "./shared.js";
+import { Bridge, TurnHooks, count, errorName, isRecord } from "./shared.js";
 import type { AgentMemoryOption, ProofSource, Session } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
@@ -52,14 +56,23 @@ export interface NiadraAdkOptions {
   recordAgent?: boolean;
   /** Puts the agent's own notes before the customer's context, and adds its memory tools. */
   agentMemory?: AgentMemoryOption;
+  /** Records each agent's run as a turn, with its tool and model calls. Defaults to `false`. */
+  turns?: boolean;
 }
 
 type BeforeModel = (params: { context: Context; request: LlmRequest }) => Promise<LlmResponse | undefined>;
 type AfterModel = (params: { context: Context; response: LlmResponse }) => Promise<LlmResponse | undefined>;
+type AgentCallback = (context: Context) => undefined;
+type BeforeTool = (params: { tool: BaseTool; args: Record<string, unknown>; context: Context }) => Record<string, unknown> | undefined;
+type AfterTool = (params: { tool: BaseTool; args: Record<string, unknown>; context: Context; response: Record<string, unknown> }) => undefined;
 
 export interface NiadraAdk {
   beforeModelCallback: BeforeModel;
   afterModelCallback: AfterModel;
+  beforeAgentCallback: AgentCallback;
+  afterAgentCallback: AgentCallback;
+  beforeToolCallback: BeforeTool;
+  afterToolCallback: AfterTool;
   /** The navigation kit as ADK tools. */
   tools: BaseTool[];
 }
@@ -75,6 +88,9 @@ const MAX_SESSIONS = 10_000;
 /** The callbacks and tools for one ADK agent, sharing one Niadra session per ADK session. */
 export function niadraAdk(options: NiadraAdkOptions): NiadraAdk {
   const bySession = new Map<string, State | null>();
+  const hooks = new TurnHooks("google-adk", options.turns ?? false);
+  /** One agent's run in one invocation: what its turn is keyed by. */
+  const runKey = (context: Context): string => `${context.invocationId}:${context.agentName}`;
   const fixed = typeof options.session === "function" ? null : newState(options.session, options);
 
   const stateOf = (context: ReadonlyContext): State | null => {
@@ -137,6 +153,8 @@ export function niadraAdk(options: NiadraAdkOptions): NiadraAdk {
   const afterModelCallback: AfterModel = async ({ context, response }) => {
     const state = stateOf(context);
     if (!state || response.partial === true) return undefined;
+    const tokens = response.usageMetadata;
+    hooks.model(state.bridge.session, state.model || null, { in: count(tokens?.promptTokenCount), out: count(tokens?.candidatesTokenCount), cached: count(tokens?.cachedContentTokenCount) ?? 0 }, runKey(context));
     try {
       const parts = response.content?.parts ?? [];
       const transfer = parts.find((part) => part.functionCall?.name === "transfer_to_agent")?.functionCall;
@@ -162,7 +180,35 @@ export function niadraAdk(options: NiadraAdkOptions): NiadraAdk {
     ...(memory ? AGENT_MEMORY_TOOL_DEFINITIONS.slice(0, memory !== true && memory.write ? 2 : 1) : []),
   ];
   const tools = definitions.map(({ function: definition }) => new NiadraTool(definition, (context) => stateOf(context)));
-  return { beforeModelCallback, afterModelCallback, tools };
+  const beforeAgentCallback: AgentCallback = (context) => {
+    const state = stateOf(context);
+    if (state) hooks.open(state.bridge.session, runKey(context), { agent: context.agentName });
+    return undefined;
+  };
+
+  const afterAgentCallback: AgentCallback = (context) => {
+    hooks.close(runKey(context));
+    return undefined;
+  };
+
+  const beforeToolCallback: BeforeTool = ({ tool, args, context }) => {
+    const state = stateOf(context);
+    if (!state) return undefined;
+    const key = context.functionCallId ?? `${tool.name}:${context.invocationId}`;
+    hooks.toolStart(state.bridge.session, key, tool.name, args, { frameKey: runKey(context), callId: context.functionCallId ?? null });
+    const played = hooks.replayed(state.bridge.session, tool.name, args, (tool as { execute?: unknown }).execute, runKey(context));
+    if (played === null) return undefined;
+    const answer = played.recorded && isRecord(played.value) ? played.value : {};
+    hooks.toolEnd(key, answer);
+    return answer;
+  };
+
+  const afterToolCallback: AfterTool = ({ tool, context, response }) => {
+    hooks.toolEnd(context.functionCallId ?? `${tool.name}:${context.invocationId}`, response);
+    return undefined;
+  };
+
+  return { beforeModelCallback, afterModelCallback, beforeAgentCallback, afterAgentCallback, beforeToolCallback, afterToolCallback, tools };
 }
 
 /** `usageMetadata` of an ADK response as a `ModelUsage`: the prompt count includes the cached tokens. */

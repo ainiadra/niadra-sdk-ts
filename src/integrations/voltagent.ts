@@ -9,6 +9,11 @@
  *   lands in VoltAgent's memory.
  * - `onEnd` records the answer with the usage of the whole operation.
  * - `onHandoff` records a delegation to a subagent as a handoff between agents (with a fixed session).
+ * - With `turns: true`, `onStart`, `onToolStart`, `onToolEnd`, `onStepFinish` and `onEnd` record each
+ *   operation as a turn: each tool call with its call id, arguments and result, each model step with its
+ *   tokens. An operation inside a turn in progress (`conversation.turn()` around `generateText`) records
+ *   into it. A function wrapped with `tool()` inside a tool takes over its call, which is how a replay
+ *   answers it: VoltAgent runs a tool before any hook could answer for it.
  *
  * The session comes from the operation's context (`context: { niadra: convo }` on
  * `generateText` or `streamText`), or is fixed when the hooks are built for one conversation.
@@ -29,12 +34,24 @@
  * const { text } = await support.generateText("Where is my replacement?", { context: { niadra: convo }, tools: niadraTools(convo) });
  */
 
-import type { AgentHooks, OnEndHookArgs, OnPrepareModelMessagesHookArgs, OnPrepareModelMessagesHookResult, Tool } from "@voltagent/core";
+import type {
+  AgentHooks,
+  OnEndHookArgs,
+  OnHandoffHookArgs,
+  OnPrepareModelMessagesHookArgs,
+  OnPrepareModelMessagesHookResult,
+  OnStartHookArgs,
+  OnStepFinishHookArgs,
+  OnToolEndHookArgs,
+  OnToolStartHookArgs,
+  Tool,
+  ToolExecuteOptions,
+} from "@voltagent/core";
 import { createTool } from "@voltagent/core";
 import { jsonSchema } from "ai";
 import type { ModelUsage } from "../types/events.js";
 import { providerOf } from "../usage.js";
-import { Bridge, count, errorName, isRecord, resolveSession, textOf } from "./shared.js";
+import { Bridge, TurnHooks, count, errorName, isRecord, resolveSession, textOf } from "./shared.js";
 import type { AgentMemoryOption, ProofSource, Session } from "./shared.js";
 
 export { attestationProof } from "./shared.js";
@@ -58,6 +75,8 @@ export interface NiadraHooksOptions {
   provider?: string;
   /** Puts the agent's own notes before the customer's context. Pass the same to `niadraTools`. */
   agentMemory?: AgentMemoryOption;
+  /** Records each operation as a turn, with its tool calls and model steps. Defaults to `false`. */
+  turns?: boolean;
 }
 
 interface State {
@@ -66,8 +85,11 @@ interface State {
 }
 
 /** The hooks for `new Agent({ hooks })`, or to merge with yours. */
-export function niadraHooks(options: NiadraHooksOptions = {}): Pick<Required<AgentHooks>, "onPrepareModelMessages" | "onEnd" | "onHandoff"> {
+export function niadraHooks(
+  options: NiadraHooksOptions = {},
+): Pick<Required<AgentHooks>, "onPrepareModelMessages" | "onEnd" | "onHandoff" | "onStart" | "onToolStart" | "onToolEnd" | "onStepFinish"> {
   const states = new WeakMap<Session, State>();
+  const hooks = new TurnHooks("voltagent", options.turns ?? false);
   const stateOf = (context: OperationContext | undefined): State | null => {
     const choice = options.session;
     const session =
@@ -83,6 +105,25 @@ export function niadraHooks(options: NiadraHooksOptions = {}): Pick<Required<Age
       states.set(session, state);
     }
     return state;
+  };
+  const callId = (call: ToolExecuteOptions | undefined): string | null => call?.toolContext?.callId ?? null;
+  const callKey = (context: OperationContext, tool: string, call: ToolExecuteOptions | undefined): string =>
+    callId(call) ?? `${context.operationId}:${tool}`;
+
+  const recordAnswer = ({ output, agent, context }: OnEndHookArgs): void => {
+    if (!(options.recordAgent ?? true) || !output || !("text" in output)) return;
+    const state = stateOf(context);
+    if (!state) return;
+    try {
+      const steps = Array.isArray(output.steps) ? (output.steps as unknown[]) : [];
+      const last = steps.at(-1);
+      const response = isRecord(last) && isRecord(last.response) ? last.response : {};
+      const model = typeof response.modelId === "string" ? response.modelId : modelName(agent);
+      const usage = model ? voltAgentUsage(output.totalUsage ?? output.usage, model, options.provider) : null;
+      state.bridge.agent(output.text, usage ? { usage } : {});
+    } catch (error) {
+      state.bridge.logger.warn(`could not record the agent's answer (${errorName(error)})`);
+    }
   };
 
   return {
@@ -100,23 +141,49 @@ export function niadraHooks(options: NiadraHooksOptions = {}): Pick<Required<Age
       }
     },
 
-    onEnd({ output, agent, context }: OnEndHookArgs) {
-      if (!(options.recordAgent ?? true) || !output || !("text" in output)) return;
-      const state = stateOf(context);
+    onStart({ agent, context }: OnStartHookArgs) {
+      const state = hooks.enabled ? stateOf(context) : null;
+      if (state) hooks.open(state.bridge.session, context.operationId, { agent: agent.name });
+    },
+
+    onToolStart({ tool, args, context, options: call }: OnToolStartHookArgs) {
+      const state = hooks.enabled ? stateOf(context) : null;
       if (!state) return;
+      hooks.toolStart(state.bridge.session, callKey(context, tool.name, call), tool.name, args, { frameKey: context.operationId, callId: callId(call) });
+    },
+
+    onToolEnd({ tool, output, error, context, options: call }: OnToolEndHookArgs) {
+      hooks.toolEnd(callKey(context, tool.name, call), output, error);
+      return undefined;
+    },
+
+    onStepFinish({ agent, step, context }: OnStepFinishHookArgs) {
+      const state = hooks.enabled ? stateOf(context) : null;
+      if (!state || !isRecord(step)) return;
+      const response = isRecord(step.response) ? step.response : {};
+      const usage = isRecord(step.usage) ? step.usage : {};
+      const input = isRecord(usage.inputTokens) ? usage.inputTokens : null;
+      hooks.model(
+        state.bridge.session,
+        typeof response.modelId === "string" ? response.modelId : modelName(agent),
+        {
+          in: input ? count(input.total) : count(usage.inputTokens),
+          out: isRecord(usage.outputTokens) ? count(usage.outputTokens.total) : count(usage.outputTokens),
+          cached: (input ? count(input.cacheRead) : count(usage.cachedInputTokens)) ?? 0,
+        },
+        context.operationId,
+      );
+    },
+
+    onEnd(args: OnEndHookArgs) {
       try {
-        const steps = Array.isArray(output.steps) ? (output.steps as unknown[]) : [];
-        const last = steps.at(-1);
-        const response = isRecord(last) && isRecord(last.response) ? last.response : {};
-        const model = typeof response.modelId === "string" ? response.modelId : modelName(agent);
-        const usage = model ? voltAgentUsage(output.totalUsage ?? output.usage, model, options.provider) : null;
-        state.bridge.agent(output.text, usage ? { usage } : {});
-      } catch (error) {
-        state.bridge.logger.warn(`could not record the agent's answer (${errorName(error)})`);
+        recordAnswer(args);
+      } finally {
+        hooks.close(args.context.operationId);
       }
     },
 
-    async onHandoff({ agent, sourceAgent }) {
+    async onHandoff({ agent, sourceAgent }: OnHandoffHookArgs) {
       const state = typeof options.session === "object" ? stateOf(undefined) : null;
       if (state) await state.bridge.handoff("agent", `${sourceAgent.name} to ${agent.name}`);
     },
