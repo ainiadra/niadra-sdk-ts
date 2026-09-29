@@ -24,6 +24,16 @@ built on them.
   integers (days, milliseconds), never the machine's time zone.
 - The conformance vectors of the open specifications, run by `test/vectors.test.ts`, and the design of
   the turn capture (`docs/design/turn-capture.md`).
+- `canonicalDestination()` and `suppressionKey()`: a handle's canonical destination (`phone:+<E.164>`
+  with the Brazilian ninth digit, `email:<address>`) and its key per reader,
+  `base64url(HMAC-SHA256(salt, ...))`, as the suppression list and the contact token compute them.
+  `suppressionKey()` is async (Web Crypto); errors are `NiadraDestinationError`.
+- `exposureToken()` and `parseExposureToken()`: the exposure token a card carries,
+  `nx1.<id>.<position>.<verifier>`, built synchronously and read with the refusals of its spec
+  (`NiadraExposureTokenError`).
+- `renderConstraints()` and `honoredConstraints()`: the constraints block rendered for one tool call
+  through the tool's binding, in advisory or apply mode, and the count of what the call's results
+  honored.
 
 ## [0.6.1] - Unreleased
 
