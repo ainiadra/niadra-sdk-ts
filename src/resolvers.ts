@@ -15,7 +15,9 @@
  * default): the fresh value decides, and it enters the turn as an observation, so the claim contract and the
  * memory see it. A value is never verified from a stale copy: without a resolver, past the budget, or with the
  * resolver's circuit open (5 failures in 30 s open it for 30 s), the answer is `claimSafe: false` with the gap
- * said. The same resolvers serve the resolver worker (`serveRefreshRequests()`).
+ * said. The same resolvers serve the resolver worker (`ResolverWorker`). A resolver that finds the object gone
+ * from its source returns `NOT_FOUND`: the worker tells Niadra so, and a watch on the object is decided
+ * without waiting.
  */
 
 import { currentTurn } from "./capture/frame.js";
@@ -38,7 +40,16 @@ export interface Resolved {
   scope?: "global" | "customer" | "context";
 }
 
-export type Resolver = (ref: StateRef, fields: readonly string[] | null) => Promise<Resolved | Record<string, unknown>> | Resolved | Record<string, unknown>;
+/** What a resolver returns when the object is not at its source any more. */
+export const NOT_FOUND: unique symbol = Symbol.for("niadra.resolvers.not_found");
+
+/** What the worker's read of one object came to: the object, or why there is none. */
+export type Fetched = Resolved | "not_found" | "failed";
+
+export type Resolver = (
+  ref: StateRef,
+  fields: readonly string[] | null,
+) => Promise<Resolved | Record<string, unknown> | typeof NOT_FOUND> | Resolved | Record<string, unknown> | typeof NOT_FOUND;
 
 /** Whether a value may be claimed now, who decided it, and the fresh value a resolver read. */
 export interface ClaimVerdict {
@@ -98,10 +109,20 @@ export class Resolvers {
     return at - now;
   }
 
-  /** Calls the resolver of `ref.type` within `budgetMs`; `null` when it failed, ran out of time or its circuit is open. */
+  /** Calls the resolver of `ref.type` within `budgetMs`; `null` when it failed, ran out of time, found no object or its circuit is open. */
   async resolve(ref: StateRef, fields: readonly string[] | null, budgetMs: number): Promise<Resolved | null> {
+    const found = await this.fetch(ref, fields, budgetMs);
+    return typeof found === "string" ? null : found;
+  }
+
+  /**
+   * `resolve()` that tells why there is no object: `not_found` when the resolver says the source has none
+   * (`NOT_FOUND`), `failed` when it failed, ran out of time or its circuit is open. A missing object never
+   * counts against the circuit.
+   */
+  async fetch(ref: StateRef, fields: readonly string[] | null, budgetMs: number): Promise<Fetched> {
     const entry = this.entries.get(ref.type);
-    if (entry === undefined || this.now() < entry.openUntil) return null;
+    if (entry === undefined || this.now() < entry.openUntil) return "failed";
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<null>((resolve) => {
       timer = setTimeout(() => { resolve(null); }, Math.max(0, budgetMs));
@@ -114,6 +135,10 @@ export class Resolvers {
     } finally {
       clearTimeout(timer);
     }
+    if (found === NOT_FOUND) {
+      entry.failures = [];
+      return "not_found";
+    }
     const resolved = found === null ? null : isResolved(found) ? found : typeof found === "object" ? { fields: found as Record<string, unknown> } : null;
     if (resolved === null) {
       const now = this.now();
@@ -123,7 +148,7 @@ export class Resolvers {
         entry.failures = [];
       }
     } else entry.failures = [];
-    return resolved;
+    return resolved ?? "failed";
   }
 }
 

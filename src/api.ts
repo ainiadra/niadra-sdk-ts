@@ -16,7 +16,7 @@ import { segment } from "./routes.js";
 import type { RouteCall } from "./routes.js";
 import type { CheckBatchRequest, CheckBatchResponse, CheckRequest, CheckResult, ClaimRelease, ClaimRequest, ContactKeys, CoordinationOverview, CoordinationReportPage, DeclareRequest, DeclareResult, Effect, EffectReserve, EffectSettle, Handoff, HandoffCreate, HandoffOutcome, OwnershipClaim, ShadowRequest, ShadowRun, SuppressionPage, SuppressionSalt } from "./types/coordination.js";
 import type { AttributionReport, BiUpload, BiUploadRequest, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, CounterfactualRunPage, ExperimentReport, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
-import type { AgentState, AgentStateMetaPage, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
+import type { AgentState, AgentStateMetaPage, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRelease, RefreshReleased, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
 import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnIndexPage, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
 
 /** The routes of `niadra.api`. See the module. */
@@ -222,6 +222,16 @@ export class Api {
    */
   refreshRequests(params: { limit?: number } = {}, options: RequestOptions = {}): Promise<RefreshRequestPage> {
     return this.call({ method: "GET", path: "/v1/state/refresh-requests", query: { limit: params.limit ?? 50 } }, options);
+  }
+
+  /**
+   * `POST /v1/state/refresh-requests/{request_id}/release`. A leased request the worker cannot answer, the
+   * object not at the source or the fetch failed: it leaves
+   * now, its paid call counted. A request it can answer it answers by pushing the object with the request's
+   * `request_id`.
+   */
+  releaseRefreshRequest(requestId: string, body: RefreshRelease, options: RequestOptions = {}): Promise<RefreshReleased> {
+    return this.call({ method: "POST", path: `/v1/state/refresh-requests/${segment(requestId)}/release`, body }, options);
   }
 
   /**

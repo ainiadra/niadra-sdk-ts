@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Niadra, ResolverWorker, silentLogger } from "../src/index.js";
+import { NOT_FOUND, Niadra, ResolverWorker, silentLogger } from "../src/index.js";
 import type { StateRef } from "../src/index.js";
 import { Cell } from "./support/cell.js";
 import { KEY, marina } from "./helpers.js";
@@ -111,5 +111,48 @@ describe("resolvers and verifyClaim", () => {
     expect(fields.note?.v ?? null).toBeNull();
     expect(fetched).not.toContain("p/2");
     expect(fields.draft?.v ?? null).toBeNull();
+  });
+
+  it("revalidates a watch first, and names the request each push answers", async () => {
+    const { cell, niadra } = setup();
+    cell.requestRefresh("health_quote:op:q-1");
+    const watch = cell.requestRefresh(QUOTE, "watch_revalidation");
+    const seen: string[] = [];
+    niadra.resolvers.register("health_quote", (ref: StateRef) => {
+      seen.push(ref.id);
+      return { price_full: 499.9 };
+    });
+    expect(await new ResolverWorker(niadra).runOnce()).toBe(2);
+    expect(seen).toEqual(["q-77", "q-1"]);
+    expect(cell.pushes[0]?.request_id).toBe(watch);
+    expect(cell.pushes.every((p) => typeof p.request_id === "string")).toBe(true);
+  });
+
+  it("gives back at once what it cannot read: an object gone from its source, or a resolver that fails", async () => {
+    const { cell, niadra } = setup();
+    const gone = cell.requestRefresh(QUOTE, "watch_revalidation");
+    const broken = cell.requestRefresh("health_plan:op:p-1");
+    niadra.resolvers.register("health_quote", () => NOT_FOUND);
+    niadra.resolvers.register("health_plan", () => {
+      throw new Error("down");
+    });
+    const worker = new ResolverWorker(niadra);
+    expect(await worker.runOnce()).toBe(0);
+    expect(worker.released).toBe(2);
+    expect(cell.released).toEqual([{ request_id: gone, outcome: "not_found" }, { request_id: broken, outcome: "failed" }]);
+    expect(niadra.resolvers.available("health_quote")).toBe(true);
+  });
+
+  it("leaves a request to its lease while the resolver's circuit is open", async () => {
+    const { cell, niadra } = setup();
+    niadra.resolvers.register("health_quote", () => {
+      throw new Error("down");
+    });
+    for (let i = 0; i < 5; i++) await niadra.resolvers.fetch({ type: "health_quote", namespace: "op", id: "x" }, null, 1000);
+    cell.requestRefresh(QUOTE);
+    const worker = new ResolverWorker(niadra);
+    expect(await worker.runOnce()).toBe(0);
+    expect([worker.skipped, worker.released]).toEqual([1, 0]);
+    expect(cell.refreshes.size).toBe(1);
   });
 });
