@@ -63,6 +63,11 @@ const EXISTING: Record<string, string> = {
 const INTERNAL =
   /\bfronts? A\d\b|\(A\d\)|\b(?:core|the) wave\b|\bphase \d\b|\bintegrator\b|\bstudy \d+\b|\bestudo\b/i;
 const SUCCESS = ["200", "201", "202", "204", "207"];
+/**
+ * Schemas the server's OpenAPI document publishes under a framework's default name, and the name the
+ * server's code gives them: a body declared as an annotated union is published as `Body`.
+ */
+const RENAMES: Record<string, string> = { Body: "DeclareRequest" };
 
 export interface Schema {
   $ref?: string;
@@ -114,6 +119,8 @@ interface Route {
   path: string;
   body: string | null;
   response: string | null;
+  /** A success answer may come without a body, which resolves `null`. */
+  optional: boolean;
   pathParams: string[];
   query: Parameter[];
   idempotent: boolean;
@@ -187,14 +194,30 @@ export function cut(document: Document): Document {
   }
   const schemas = { ...document.components.schemas };
   for (const methods of Object.values(paths)) for (const op of Object.values(methods)) hoistBody(op, schemas);
-  const names = [...reach(paths, schemas)].sort();
+  let renamed: unknown = { paths, schemas };
+  for (const [old, name] of Object.entries(RENAMES)) {
+    if (old in schemas) renamed = renamedRefs(renamed, old, name);
+  }
+  const named = renamed as { paths: Document["paths"]; schemas: Record<string, Schema> };
+  Object.assign(paths, named.paths);
+  const fromNames = Object.fromEntries(Object.entries(named.schemas).map(([key, value]) => [RENAMES[key] ?? key, value]));
+  const names = [...reach(paths, fromNames)].sort();
   const result = {
     openapi: document.openapi,
     info: document.info,
     paths,
-    components: { schemas: Object.fromEntries(names.map((name) => [name, schemas[name]])) },
+    components: { schemas: Object.fromEntries(names.map((name) => [name, fromNames[name]])) },
   };
   return sortedKeys(published(result, "")) as Document;
+}
+
+function renamedRefs(node: unknown, old: string, name: string): unknown {
+  if (Array.isArray(node)) return node.map((value) => renamedRefs(value, old, name));
+  if (typeof node !== "object" || node === null) return node;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) out[key] = renamedRefs(value, old, name);
+  if (out.$ref === `#/components/schemas/${old}`) out.$ref = `#/components/schemas/${name}`;
+  return out;
 }
 
 /** A body the server declares inline (a route that parses its own body) as the named schema it is. */
@@ -220,8 +243,9 @@ function routes(document: Document): Route[] {
       if (!op.operationId.endsWith(suffix)) throw new Error(`${op.operationId}: not named the way FastAPI names operations`);
       const params = op.parameters ?? [];
       const body = op.requestBody?.content?.["application/json"]?.schema?.$ref;
-      const status = SUCCESS.find((s) => s in op.responses);
-      const answer = status === undefined ? undefined : op.responses[status]?.content?.["application/json"]?.schema?.$ref;
+      const answers = SUCCESS.filter((s) => s in op.responses).map((s) => op.responses[s]?.content?.["application/json"]?.schema?.$ref);
+      if (new Set(answers.filter((a) => a !== undefined)).size > 1) throw new Error(`${op.operationId}: success answers of different shapes`);
+      const answer = answers.find((a) => a !== undefined);
       const tag = (op.tags ?? []).find((t) => t in TAGS);
       if (tag === undefined) throw new Error(`${op.operationId}: no tag this SDK generates`);
       found.push({
@@ -231,6 +255,7 @@ function routes(document: Document): Route[] {
         path,
         body: body ? refName(body) : null,
         response: answer ? refName(answer) : null,
+        optional: answer !== undefined && answers.includes(undefined),
         pathParams: params.filter((p) => p.in === "path").map((p) => p.name),
         query: params.filter((p) => p.in === "query"),
         idempotent: params.some((p) => p.in === "header" && p.name === "Idempotency-Key"),
@@ -403,7 +428,7 @@ function method(route: Route, types: Map<string, Set<string>>, moduleOf: Map<str
     fields.push(`query: { ${values.join(", ")} }`);
   }
   if (route.idempotent) fields.push("idempotencyKey: params.idempotency_key ?? uuidv7()");
-  const returns = route.response ? use(route.response) : "void";
+  const returns = route.response ? `${use(route.response)}${route.optional ? " | null" : ""}` : "void";
   const doc = `\`${route.method} ${route.path}\`.${route.description ? ` ${route.description}` : ""}`;
   return (
     comment(doc, "  ") +

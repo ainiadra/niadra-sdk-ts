@@ -7,6 +7,38 @@
 import type { Handle, ObjectRef } from "./common.js";
 import type { Verification } from "./vocabulary.js";
 
+/** The claim a case closes, with the epoch it got when it was accepted. */
+export interface ReleaseDetail {
+  claim_id: string;
+  epoch: number;
+}
+
+export interface CaseClosed {
+  agent: string;
+  detail: ReleaseDetail;
+  kind: "case.closed";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+/**
+ * An owner lease or a case, held by the declaring agent. `level` defaults to the space's least
+ * restrictive level.
+ */
+export interface LeaseDetail {
+  intents?: string[];
+  lease_s: number;
+  level?: string | null;
+}
+
+export interface CaseOpened {
+  agent: string;
+  detail: LeaseDetail;
+  kind: "case.opened";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
 export interface ChannelState {
   free_form_until?: string | null;
   quiet_until?: string | null;
@@ -127,9 +159,9 @@ export interface ClaimRelease {
 }
 
 /**
- * A declared claim. `level` defaults to the space's least restrictive level for an owner lease and to
- * `case` for a case; a declaration is refused (409 `lease_held`) while another holder's claim is at least
- * as restrictive.
+ * A declared claim, held by `holder`. `level` defaults to the space's least restrictive level; a
+ * declaration is refused (409 `lease_held`) while another holder's claim is at least as restrictive, and the
+ * same holder renews its own. `lease_s` is capped by the space's longest declared lease.
  */
 export interface ClaimRequest {
   holder: string;
@@ -140,6 +172,33 @@ export interface ClaimRequest {
   object?: ObjectRef | null;
   subject?: Handle | null;
   task?: string | null;
+}
+
+export interface CommitmentMadeDetail {
+  commitment_id: string;
+  terms?: Record<string, unknown>;
+  type: string;
+  valid_until?: string | null;
+}
+
+export interface CommitmentMade {
+  agent: string;
+  detail: CommitmentMadeDetail;
+  kind: "commitment.made";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+export interface CommitmentWithdrawnDetail {
+  commitment_id: string;
+}
+
+export interface CommitmentWithdrawn {
+  agent: string;
+  detail: CommitmentWithdrawnDetail;
+  kind: "commitment.withdrawn";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
 }
 
 /** An Ed25519 public key as a JWK (RFC 8037). A `retiring` key still verifies and signs nothing new. */
@@ -158,19 +217,116 @@ export interface ContactKeys {
   keys: ContactKey[];
 }
 
+/**
+ * `jti` is the contact token's; `unchecked` says the contact left without a decision, because the
+ * purpose fails open and none came in time.
+ */
+export interface ContactMadeDetail {
+  channel: string;
+  decision_id?: string | null;
+  gateway_id?: string | null;
+  jti?: string | null;
+  purpose: string;
+  unchecked?: boolean;
+}
+
+export interface ContactMade {
+  agent: string;
+  detail: ContactMadeDetail;
+  kind: "contact.made";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
 export interface CoordinationReportPage {
   items: (Record<string, unknown>)[];
   next_cursor?: string | null;
 }
 
-/** What happened, after the fact. `detail` holds the fields of each kind (the coordination spec, 5). */
-export interface DeclareRequest {
+/** How the attempt the caller holds ended. */
+export interface EffectDetail {
+  attempt: number;
+  effect_key: string;
+  state: "done" | "failed" | "unknown_outcome";
+}
+
+export interface EffectDeclared {
   agent: string;
-  detail?: Record<string, unknown>;
-  kind: "case.opened" | "case.closed" | "lease" | "task_lock" | "contact.made" | "effect" | "commitment.made" | "commitment.withdrawn" | "handoff";
+  detail: EffectDetail;
+  kind: "effect";
   object?: ObjectRef | null;
   subject?: Handle | null;
 }
+
+export interface HandoffDetail {
+  handoff_id: string;
+  outcome?: string | null;
+  status: "created" | "accepted" | "closed";
+}
+
+export interface HandoffDeclared {
+  agent: string;
+  detail: HandoffDetail;
+  kind: "handoff";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+export interface LeaseDeclared {
+  agent: string;
+  detail: LeaseDetail;
+  kind: "lease";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+/**
+ * The subject may not be contacted for `purpose`, on `channel` or on every channel. `until` defaults to
+ * the reason's own interval, or to no end.
+ */
+export interface SuppressionAddedDetail {
+  channel?: string | null;
+  purpose: string;
+  reason: string;
+  until?: string | null;
+}
+
+export interface SuppressionAdded {
+  agent: string;
+  detail: SuppressionAddedDetail;
+  kind: "suppression.added";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+/** Lifts what the same source suppressed for `purpose` and `channel`. */
+export interface SuppressionLiftedDetail {
+  channel?: string | null;
+  purpose: string;
+}
+
+export interface SuppressionLifted {
+  agent: string;
+  detail: SuppressionLiftedDetail;
+  kind: "suppression.lifted";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+export interface TaskLockDetail {
+  lease_s: number;
+  task: string;
+}
+
+export interface TaskLockDeclared {
+  agent: string;
+  detail: TaskLockDetail;
+  kind: "task_lock";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+export type DeclareRequest = CaseOpened | CaseClosed | LeaseDeclared | TaskLockDeclared | ContactMade | EffectDeclared | CommitmentMade | CommitmentWithdrawn | HandoffDeclared | SuppressionAdded | SuppressionLifted;
 
 export interface DeclareResult {
   accepted: boolean;

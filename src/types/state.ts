@@ -48,6 +48,11 @@ export interface AgentStateWrite {
   if_version?: number | null;
   mode: "cas" | "merge_by_key";
   scope: AgentStateScope;
+  /**
+   * The customer the state is about, when its scope does not name them: erasing the customer and their data
+   * package find the state by it.
+   */
+  subject?: Handle | null;
 }
 
 export interface AgentStateWriteResult {
@@ -331,6 +336,12 @@ export interface ValueState {
  */
 export interface ObjectRead {
   as_of?: string | null;
+  /**
+   * What the fields whose value is not known block, as the type declares it (`unobserved_blocks`): each
+   * activity (`model_read`, `derive`, `claim`, or a task of the company such as `decide:close`) with the
+   * fields that block it. Nothing else is blocked.
+   */
+  blocked?: Record<string, string[]>;
   declared_gaps?: string[];
   derived_status?: "current" | "expired_by_input" | null;
   /** The inputs whose change expired it. */
@@ -425,11 +436,12 @@ export interface StateVerifyResponse {
   verdicts: Verdict[];
 }
 
+/** The state of one subject: their objects of the declared types, each as a `display` read serves it. */
 export interface StateView {
   changes_since_seen?: (Record<string, unknown>)[];
   degraded?: boolean;
   interests?: (Record<string, unknown>)[];
-  objects?: (Record<string, unknown>)[];
+  objects?: ObjectRead[];
 }
 
 export interface StateViewRequest {
