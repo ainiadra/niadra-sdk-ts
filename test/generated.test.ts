@@ -59,8 +59,8 @@ describe("the generated routes", () => {
   it("have one method per operation of the document", () => {
     const operations = Object.values(document.paths).flatMap((methods) => Object.keys(methods));
     const methods = Object.getOwnPropertyNames(Api.prototype).filter((name) => name !== "constructor");
-    expect(operations).toHaveLength(66);
-    expect(methods).toHaveLength(66);
+    expect(operations).toHaveLength(67);
+    expect(methods).toHaveLength(67);
   });
 
   it("type the turn record with exactly the fields of its schema", () => {

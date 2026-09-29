@@ -5,8 +5,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderSuffix } from "../src/index.js";
 import type {
+  BudgetBlock,
+  BudgetCut,
+  BudgetPack,
+  BudgetUse,
+  ConstraintsBlock,
   ContextPack,
   ContextResponse,
+  CoordinationBlock,
   PackGuard,
   PackLayer,
   PackSection,
@@ -15,6 +21,7 @@ import type {
   PackStamp,
   SlotChannelRank,
   SlotWhy,
+  StateView,
 } from "../src/index.js";
 
 const read = (path: string): unknown => JSON.parse(readFileSync(new URL(`../spec/${path}`, import.meta.url), "utf8"));
@@ -113,5 +120,99 @@ describe("the Context Pack specification", () => {
     // The producer's example carries no delta, so the slots close the block where a delta would follow.
     expect(answer.delta).toBeNull();
     expect(suffix.endsWith(answer.slots!)).toBe(true);
+  });
+});
+
+// Context Pack v2: the answer with the blocks a read adds by `include`.
+const v2 = read("context-pack.v2.json") as Schema;
+const responseKeys: Record<keyof ContextResponse, true> = {
+  not_modified: true,
+  text: true,
+  variables: true,
+  version: true,
+  etag: true,
+  manifest_hash: true,
+  as_of: true,
+  lag_seconds: true,
+  coverage: true,
+  verification: true,
+  withheld: true,
+  live: true,
+  live_complete: true,
+  delta: true,
+  slots: true,
+  guards: true,
+  cache: true,
+  timing: true,
+  path: true,
+  degraded: true,
+  pack: true,
+  constraints: true,
+  state: true,
+  coordination: true,
+  budget: true,
+};
+const blockKeys: Record<string, Record<string, true>> = {
+  ConstraintsBlock: {
+    already_presented: true,
+    ask: true,
+    attributes: true,
+    conflicts: true,
+    exclude: true,
+    hard: true,
+    precedence: true,
+    relaxation_order: true,
+    rendered: true,
+    rules: true,
+    soft: true,
+    subject: true,
+    version: true,
+  } satisfies Record<keyof ConstraintsBlock, true>,
+  StateView: {
+    changes_since_seen: true,
+    degraded: true,
+    interests: true,
+    objects: true,
+    text: true,
+  } satisfies Record<keyof StateView, true>,
+  CoordinationBlock: {
+    owner: true,
+    suppressions: true,
+    contact_budget: true,
+    commitments_active: true,
+  } satisfies Record<keyof CoordinationBlock, true>,
+  BudgetBlock: {
+    pack: true,
+    conversation: true,
+    case: true,
+    other_agents_turns: true,
+    cut: true,
+    counted: true,
+  } satisfies Record<keyof BudgetBlock, true>,
+  BudgetPack: { total: true, sections: true } satisfies Record<keyof BudgetPack, true>,
+  BudgetUse: {
+    turns: true,
+    model_calls: true,
+    tool_calls: true,
+    tokens_in: true,
+    tokens_cached: true,
+    tokens_out: true,
+    cost_usd: true,
+  } satisfies Record<keyof BudgetUse, true>,
+  BudgetCut: {
+    units: true,
+    applied: true,
+    window_days: true,
+    min_deliveries: true,
+  } satisfies Record<keyof BudgetCut, true>,
+};
+
+describe("the Context Pack v2 specification", () => {
+  it("has exactly the fields of the SDK's answer and of each block", () => {
+    expect(v2.$id).toBe("https://specs.niadra.com/schemas/context-pack.v2.json");
+    expect(Object.keys(responseKeys).sort()).toEqual(Object.keys(v2.properties).sort());
+    for (const [name, keys] of Object.entries(blockKeys)) {
+      expect(Object.keys(keys).sort(), name).toEqual(Object.keys(v2.$defs[name]!.properties).sort());
+    }
   });
 });
