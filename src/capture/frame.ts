@@ -14,6 +14,7 @@
  * progress, so a call made inside a tool names it as `parent_call_id`.
  */
 
+import type { RawBinding } from "../constraints/binding.js";
 import type { ConstraintsBlock } from "../types/signals.js";
 import { uuidv7 } from "../ids.js";
 import type { Playback, Played } from "../replay/playback.js";
@@ -85,6 +86,8 @@ export interface Submit {
   families?: () => Readonly<Record<string, string>>;
   /** The fields each type hides from this key, for a tool's masked output (the SDK profile). */
   fieldAccess?: () => Readonly<Record<string, Readonly<Record<string, string>>>> | null;
+  /** The binding the space serves for a tool, by its name (the SDK profile). */
+  bindings?: (tool: string) => RawBinding | null;
 }
 
 const turns = (): ReturnType<typeof store<TurnFrame>> => store<TurnFrame>("niadra_turn");
@@ -336,7 +339,7 @@ export class TurnFrame {
   }
 
   /** The SDK profile of the client that opened this turn, as far as the tools need it. */
-  get profile(): Pick<Submit, "families" | "fieldAccess"> {
+  get profile(): Pick<Submit, "families" | "fieldAccess" | "bindings"> {
     return this.recorder ?? {};
   }
 

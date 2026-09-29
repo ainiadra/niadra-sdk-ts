@@ -50,6 +50,8 @@ export class Cell {
   readonly views = new Map<string, StateView>();
   /** The declared types, served summarized in the profile, as the server summarizes the registry. */
   types: Json[] = [];
+  /** The tool bindings the profile serves this source. */
+  toolBindings: Json[] = [];
   readonly driftIssues = new Map<string, Json>();
   readonly fingerprints: Json[] = [];
   readonly counterfactuals: Json[] = [];
@@ -145,7 +147,7 @@ export class Cell {
     }
     if (key === "GET /v1/sdk/profile") {
       if (this.features.size === 0) return problem(404, "not_found");
-      return json(200, { features: [...this.features].sort(), claim_contract: this.claimContract, recording: this.recording, types: this.types.map(summary), valid_for_s: 300 });
+      return json(200, { features: [...this.features].sort(), claim_contract: this.claimContract, recording: this.recording, types: this.types.map(summary), tool_bindings: this.toolBindings, valid_for_s: 300 });
     }
     if (key === "POST /v1/types/fingerprint") {
       this.need("state");

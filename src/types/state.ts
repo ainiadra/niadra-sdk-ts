@@ -84,6 +84,25 @@ export interface AnchorEvidence {
   min_match?: number;
 }
 
+export interface Negation {
+  /** The argument that takes the values the field must not have. */
+  param: string;
+}
+
+/**
+ * One argument of the tool and the field it carries. `in` and `eq` render to `param`, `not_in` and `ne`
+ * to the negation's, and a comparison or `between` only when `ops` lists it.
+ */
+export interface BoundArg {
+  /** The field, as `type.field`. */
+  attr: string;
+  negation?: Negation | null;
+  ops?: ("in" | "not_in" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "between")[];
+  param: string;
+  /** The case text is sent in. */
+  transform?: "lower" | "upper" | null;
+}
+
 /** An object of the type registry: a subject's or a shared one, whose key may name a variant. */
 export interface StateRef {
   id: string;
@@ -470,6 +489,34 @@ export interface RefreshRequestPage {
   items: RefreshRequest[];
 }
 
+/** Where a result carries objects of a type, and which key of each item holds which field. */
+export interface ResultObjects {
+  fields?: Record<string, string>;
+  /** The key of the item that holds the object's id. */
+  id?: string;
+  namespace: string;
+  path?: string;
+  type: string;
+}
+
+export interface ToolCapabilities {
+  /** The argument that makes a call change nothing, for a counterfactual. */
+  dry_run_param?: string | null;
+  /** The SDK masks the fields the key may not read in the tool's output. */
+  mask_output?: boolean;
+  /** The tool returns more than asked: the SDK filters the residual from it. */
+  overfetch?: boolean;
+  /** Where the result says the tool relaxed what it was asked. */
+  relax_flag?: string | null;
+}
+
+export interface ToolBinding {
+  args?: BoundArg[];
+  capabilities?: ToolCapabilities;
+  results?: ResultObjects[];
+  tool: string;
+}
+
 /**
  * How the calling source records turns, for the SDK's capture: where the values may live, and the pins
  * a turn needs to be replayable.
@@ -490,7 +537,8 @@ export interface SdkProfile {
   features: Feature[];
   /** How this source records turns, once the space records them. */
   recording?: TurnRecordingSummary | null;
-  tool_bindings?: (Record<string, unknown>)[];
+  /** The bindings of the tools this source's agents call. */
+  tool_bindings?: ToolBinding[];
   types?: (Record<string, unknown>)[];
   valid_for_s: number;
 }

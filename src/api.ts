@@ -255,7 +255,8 @@ export class Api {
   /**
    * `POST /v1/constraints`. The constraints block of one subject, the one `include: ["constraints"]` adds to
    * a context read;
-   * `for` asks for a beneficiary's.
+   * `for` asks for a beneficiary's. With `tool`, it comes rendered through the tool's binding for this
+   * source, in advisory mode; 422 when the space binds no such tool for it.
    */
   constraints(body: ConstraintsRequest, options: RequestOptions = {}): Promise<ConstraintsBlock> {
     return this.call({ method: "POST", path: "/v1/constraints", body }, options);

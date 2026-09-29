@@ -22,7 +22,7 @@ export interface RawBinding {
   tool: string;
   args?: readonly { attr: string; param: string; transform?: "lower" | "upper" | null; negation?: { param?: string } | null; ops?: readonly string[] }[];
   results?: readonly { path?: string; type?: string; namespace?: string; id?: string; fields?: Readonly<Record<string, string>> }[];
-  capabilities?: { overfetch?: boolean; relax_flag?: string; dry_run_param?: string; mask_output?: boolean };
+  capabilities?: { overfetch?: boolean; relax_flag?: string | null; dry_run_param?: string | null; mask_output?: boolean };
   overfetch?: boolean;
 }
 

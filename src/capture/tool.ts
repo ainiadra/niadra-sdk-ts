@@ -16,12 +16,13 @@
  * pass through unchanged. An async generator is recorded piece by piece, and its result is the list of
  * pieces once it is consumed.
  *
- * With `binding` (the tool's binding, as `constraints/binding.ts` reads it), a call in a turn that read the
- * constraints block records what it did with the block: the hard constraints its arguments sent, and over the
+ * With a binding (the tool's binding, as `constraints/binding.ts` reads it: `binding`, else the one the SDK
+ * profile serves for the tool's name), a call in a turn that read the constraints block records what it did
+ * with the block: the hard constraints its arguments sent, and over the
  * objects its result shows, how many were checked, broke one, or lacked the field. Nothing is changed.
  *
  * With `maskOutput: true`, the fields the key may not read never reach the model (`capture/mask.ts`); the record
- * keeps what the model saw.
+ * keeps what the model saw. Left unset, the binding's `capabilities.mask_output` decides.
  *
  * In a replay (`replay/`) the call answers from the record when its arguments match a recorded call of the
  * tool; otherwise it runs only when `dryRun: true` says running it again is safe, and answers `undefined` (a
@@ -49,9 +50,11 @@ export interface ToolOptions<A extends unknown[], R> {
   callId?: (...args: A) => string | null | undefined;
   /** The turn to record in when the async context does not carry one (a framework that runs tools elsewhere). */
   frame?: () => TurnFrame | null | undefined;
-  /** The tool's binding, to measure the constraints block against its calls. */
+  /** The tool's binding, to measure the constraints block against its calls; wins over the one the profile serves. */
   binding?: RawBinding;
-  /** Keeps the fields this key may not read from the model. */
+  /** The bindings the SDK profile serves, by tool name; by default the client's (`niadra.tool`) or the turn's. */
+  served?: (tool: string) => RawBinding | null;
+  /** Keeps the fields this key may not read from the model; left unset, the binding's capability decides. */
   maskOutput?: boolean;
   /** With no profile ever read: `pass` (the default) lets the result through, `block` withholds it. */
   onUnknown?: OnUnknown;
@@ -105,9 +108,19 @@ export function tool<A extends unknown[], R>(
 ): (...args: A) => R {
   const isAsync = isAsyncFunction(fn);
 
+  /** The tool's binding: the one the code gives, else the one the SDK profile serves for its name. */
+  function bindingOf(frame: TurnFrame | undefined): RawBinding | null {
+    return options.binding ?? (options.served ?? frame?.profile.bindings)?.(name) ?? null;
+  }
+
+  /** Whether the output is masked: `maskOutput` when the code says it, else the binding's capability. */
+  function masks(frame: TurnFrame | undefined): boolean {
+    return options.maskOutput ?? bindingOf(frame)?.capabilities?.mask_output ?? false;
+  }
+
   /** The result as the model may get it. */
   function shield(result: unknown, frame: TurnFrame | undefined): unknown {
-    if (!options.maskOutput) return result;
+    if (!masks(frame)) return result;
     const access = options.access ?? frame?.profile.fieldAccess ?? ((): null => null);
     return protect(result, access(), typesOf(result), options.onUnknown ?? "pass");
   }
@@ -167,7 +180,7 @@ export function tool<A extends unknown[], R>(
   const wrapped = function (this: unknown, ...args: A): R {
     const frame = currentTurn() ?? found(options.frame);
     if (frame === undefined || frame.closed) {
-      if (!options.maskOutput) return fn.apply(this, args);
+      if (!masks(frame)) return fn.apply(this, args);
       const out = fn.apply(this, args);
       if (isAsyncIterator(out)) return maskedPieces(out, frame) as R;
       return (thenable(out) ? Promise.resolve(out).then((v) => shield(v, frame)) : shield(out, frame)) as R;
@@ -181,7 +194,8 @@ export function tool<A extends unknown[], R>(
       recorded = args;
     }
     const call = frame.adopt(name, recorded) ?? frame.toolCall(name, recorded, typeof callId === "string" && callId ? { callId } : {});
-    if (options.binding && frame.constraints !== null) call.measure = measure(frame, options.binding, recorded);
+    const binding = bindingOf(frame);
+    if (binding !== null && frame.constraints !== null) call.measure = measure(frame, binding, recorded);
     if (frame.playback !== null) call.played = frame.playback.answer(name, recorded, options.dryRun ?? false);
     if (call.played !== null && !call.played.live) {
       const value = call.played.value;
