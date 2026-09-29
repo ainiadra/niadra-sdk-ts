@@ -3,6 +3,7 @@
  * coordination, the working state and claim verification, for its own scope and agent.
  */
 
+import type { InternalText } from "./claims/internal.js";
 import { AgentStateHandle } from "./agent-state.js";
 import type { AgentStates, Scope } from "./agent-state.js";
 import { stateValues } from "./capture/claims.js";
@@ -27,6 +28,7 @@ export interface AgentHost {
   coordinator: Coordinator;
   states: AgentStates;
   contract(): Promise<ClaimContractSummary | null>;
+  internalText: InternalText;
   check(request: CheckRequest, timeoutMs: number): Promise<CheckResult>;
   claim(request: ClaimRequest, timeoutMs: number): Promise<OwnershipClaim>;
   verifyClaim(ref: StateRef | string, field: string, value: unknown, options: { subject?: Handle; budgetMs?: number }): Promise<ClaimVerdict>;
@@ -71,7 +73,7 @@ export class AgentSession {
     private readonly object: ObjectRef | null,
     private readonly channel: string | null,
   ) {
-    this.claims = new ClaimCheck(() => host.contract());
+    this.claims = new ClaimCheck(() => host.contract(), host.internalText);
     this.declare = new Declarations(host.coordinator, this.checked, { agent, subject, object });
     this.agentState = new AgentStateHandle(host.states, scope, agent, subject);
   }

@@ -1,4 +1,5 @@
 import { Admin } from "./admin.js";
+import { InternalText } from "./claims/internal.js";
 import { AgentStates } from "./agent-state.js";
 import type { AgentHost } from "./agent-session.js";
 import { checkTurn } from "./capture/claims.js";
@@ -211,6 +212,12 @@ export class Niadra {
   readonly turns: TurnRecorder;
   /** The company's resolvers by object type: `resolvers.register(type, fn)` (`resolvers.ts`). */
   readonly resolvers = new Resolvers();
+  /**
+   * Fingerprints of the company's own prompt, by version: `internalText.register("prompts@v16", text)`. An
+   * output that repeats a passage of it gives way to the claim contract's line; the prompt never leaves the
+   * process (`claims/internal.ts`).
+   */
+  readonly internalText = new InternalText();
   /** The company's content resolver, for content kept by pointer: `content.register(fetch)`. */
   readonly content = new ContentResolver();
   private readonly profileCache = new ProfileCache();
@@ -243,7 +250,7 @@ export class Niadra {
     this.turns.requiredPins = () => this.profileCache.requiredPins();
     this.turns.claims = (frame) => {
       const contract = this.profileCache.contract();
-      return contract === null ? [] : checkTurn(frame, contract);
+      return contract === null ? [] : checkTurn(frame, contract, this.internalText);
     };
     this.outbox = new Outbox(this.logger);
     this.coordinator = new Coordinator(this.outbox, this.suppressions, (body, key) =>
@@ -499,6 +506,7 @@ export class Niadra {
       coordinator: this.coordinator,
       states: this.states,
       contract: () => this.currentContract(),
+      internalText: this.internalText,
       check: (request, timeoutMs) => this.api.check(request, { timeout: timeoutMs }),
       claim: (request, timeoutMs) => this.api.claim(request, {}, { timeout: timeoutMs }),
       verifyClaim: (ref, field, value, options) => this.verifyClaim(ref, field, value, options),

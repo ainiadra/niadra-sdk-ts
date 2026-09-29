@@ -25,6 +25,8 @@ import {
   verifyContactToken,
 } from "../src/index.js";
 import type { ClaimCategory, ConstraintBinding, ConstraintCall, ConstraintsBlock, ContactKey } from "../src/index.js";
+import { DeriveError, changes, derive } from "../src/introspect/derive.js";
+import type { Catalog } from "../src/introspect/derive.js";
 import { scenarioVerdict } from "./support/stats.js";
 import type { Execution } from "./support/stats.js";
 
@@ -500,6 +502,11 @@ const EXPECTED: Record<string, Expected> = {
     expectFields: ["overlap"],
     run: counterfactualOverlapCase,
   },
+  "type-derive.v0": {
+    caseFields: ["id", "op", "description", "catalog", "options", "declared", "live", "expect"],
+    expectFields: ["fingerprint", "type", "review", "changes"],
+    run: typeDeriveCase,
+  },
   "regression-stats.v0": {
     caseFields: ["id", "description", "executions", "baseline", "expect"],
     expectFields: ["verdict", "completed", "infrastructure_errors", "pin_mismatches", "needs_paraphrase", "assertions"],
@@ -512,6 +519,28 @@ const EXPECTED: Record<string, Expected> = {
   },
 };
 const NEGATIVE_CORPUS = ["retail", "legal", "health-plan-sales"];
+
+// Derivation by introspection (`spec/object-type.md`, section 8): a proposal, its fingerprint and review, or
+// the changes a drift check counts.
+async function typeDeriveCase(c: Case): Promise<void> {
+  if (c.op === "changes") {
+    expect(changes(c.declared as Record<string, unknown>, c.live as Record<string, unknown>)).toEqual((c.expect!).changes);
+    return;
+  }
+  const options = c.options as Record<string, string>;
+  expect(Object.keys(options).filter((k) => !["type", "system", "ownership"].includes(k))).toEqual([]);
+  const expected = c.expect!;
+  if ("error" in expected) {
+    const refused = await derive(c.catalog as Catalog, options).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(DeriveError);
+    expect((refused as DeriveError).code).toBe(expected.error);
+    return;
+  }
+  expect(await derive(c.catalog as Catalog, options)).toEqual(expected);
+}
 
 const published = (name: string): boolean => existsSync(new URL(`${name}.json`, VECTORS));
 const load = (name: string): VectorFile => JSON.parse(readFileSync(new URL(`${name}.json`, VECTORS), "utf8")) as VectorFile;

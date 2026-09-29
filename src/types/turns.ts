@@ -108,7 +108,7 @@ export interface ClaimRecord {
   /** Code point offsets of the claim in the output, end exclusive. */
   span: [number, number];
   value?: ClaimValue | null;
-  verdict: "matched" | "mismatch" | "stale" | "gap_not_stated" | "role_ambiguous" | "unsupported" | "no_evidence" | "quoted_found" | "quoted_missing" | "anchored" | "below_threshold" | "source_exists_claim_unverified" | "source_missing" | "not_checked";
+  verdict: "matched" | "mismatch" | "stale" | "gap_not_stated" | "role_ambiguous" | "unsupported" | "no_evidence" | "quoted_found" | "quoted_missing" | "anchored" | "below_threshold" | "source_exists_claim_unverified" | "source_missing" | "not_checked" | "internal_text_found";
 }
 
 export interface DataIssue {

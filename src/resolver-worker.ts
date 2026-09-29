@@ -16,6 +16,7 @@
 
 import type { Niadra } from "./client.js";
 import { pushItem } from "./resolvers.js";
+import type { Resolvers } from "./resolvers.js";
 import type { ObjectPush } from "./types/state.js";
 
 const PUSH_MAX = 1000;
@@ -28,8 +29,12 @@ export class ResolverWorker {
 
   constructor(
     private readonly niadra: Niadra,
-    private readonly options: { limit?: number; pollMs?: number; budgetMs?: number } = {},
+    private readonly options: { limit?: number; pollMs?: number; budgetMs?: number; resolvers?: Resolvers } = {},
   ) {}
+
+  private get resolvers(): Resolvers {
+    return this.options.resolvers ?? this.niadra.resolvers;
+  }
 
   /** Leases the waiting requests, resolves them and pushes what was read. Resolves with how many were pushed. */
   async runOnce(): Promise<number> {
@@ -38,7 +43,7 @@ export class ResolverWorker {
     const objects: ObjectPush[] = [];
     for (const request of page.items) {
       const type = request.ref.type;
-      if (!this.niadra.resolvers.has(type)) {
+      if (!this.resolvers.has(type)) {
         if (!this.missing.has(type)) {
           this.missing.add(type);
           this.niadra.logger.warn(`no resolver for objects of type ${type}; their requests wait`);
@@ -46,13 +51,13 @@ export class ResolverWorker {
         this.skipped++;
         continue;
       }
-      const wait = this.niadra.resolvers.wait(type);
+      const wait = this.resolvers.wait(type);
       if (Date.now() + wait - leasedAt >= LEASE_MS) {
         this.skipped++; // past the lease: another worker may take it
         continue;
       }
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-      const resolved = await this.niadra.resolvers.resolve(request.ref, null, this.options.budgetMs ?? 5000);
+      const resolved = await this.resolvers.resolve(request.ref, null, this.options.budgetMs ?? 5000);
       if (resolved === null) {
         this.skipped++;
         continue;

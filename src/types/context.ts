@@ -1,6 +1,7 @@
 /** The read side: `POST /v1/context` and the history navigation calls. */
 
 import type { Handle, ObjectRef, SourceCoverage } from "./common.js";
+import type { CommitmentRef, ContactBudget, Owner } from "./coordination.js";
 import type { ConstraintsBlock } from "./signals.js";
 import type { StateView } from "./state.js";
 import type { DeliveryPath, EventKind, HistoryItemKind, Verification, View } from "./vocabulary.js";
@@ -206,6 +207,14 @@ export interface CacheDirectives {
   salt: string;
 }
 
+/** What coordination knows of the subject, read beside the pack by `include`: advice for the turn, never a decision. */
+export interface CoordinationBlock {
+  owner?: Owner | null;
+  suppressions?: string[];
+  contact_budget?: Record<string, ContactBudget>;
+  commitments_active?: CommitmentRef[];
+}
+
 /** Body of a `POST /v1/context` response. */
 export interface ContextResponse {
   /** `true` when `known_etag` still matches; `text` is then omitted. */
@@ -238,6 +247,11 @@ export interface ContextResponse {
   constraints?: ConstraintsBlock | null;
   /** With `include: ["state"]`: the subject's objects of the declared types, as a `display` read serves them. */
   state?: StateView | null;
+  /**
+   * With `include: ["coordination"]`: who holds the subject, the purposes it may not be contacted for, the
+   * contacts each purpose with a budget has left and the commitments that hold. Advice: only a check decides.
+   */
+  coordination?: CoordinationBlock | null;
   cache?: CacheDirectives | null;
   timing: Record<string, number>;
   path: DeliveryPath;

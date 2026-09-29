@@ -48,6 +48,10 @@ export class Cell {
   readonly runs: Json[] = [];
   readonly constraints = new Map<string, ConstraintsBlock>();
   readonly views = new Map<string, StateView>();
+  /** The declared types, served summarized in the profile, as the server summarizes the registry. */
+  types: Json[] = [];
+  readonly driftIssues = new Map<string, Json>();
+  readonly fingerprints: Json[] = [];
   requiredPins = ["model"];
   private failures: { prefix: string; status: number; times: number }[] = [];
 
@@ -140,7 +144,21 @@ export class Cell {
     }
     if (key === "GET /v1/sdk/profile") {
       if (this.features.size === 0) return problem(404, "not_found");
-      return json(200, { features: [...this.features].sort(), claim_contract: this.claimContract, recording: this.recording, valid_for_s: 300 });
+      return json(200, { features: [...this.features].sort(), claim_contract: this.claimContract, recording: this.recording, types: this.types.map(summary), valid_for_s: 300 });
+    }
+    if (key === "POST /v1/types/fingerprint") {
+      this.need("state");
+      this.fingerprints.push(body);
+      const declared = this.types.find((t) => t.type === body.type);
+      if (declared === undefined) return problem(404, "not_found");
+      const mirror = declared.mirror_of ?? {};
+      if (!mirror.fingerprint) return problem(422, "no_fingerprint");
+      if (mirror.fingerprint === body.fingerprint) return json(200, { drift: false, issue_id: null });
+      if (mirror.drift === "ignore") return json(200, { drift: true, issue_id: null });
+      const issue = this.driftIssues.get(declared.type) ?? { issue_id: `di_${this.driftIssues.size + 1}`, occurrences: 0 };
+      issue.occurrences++;
+      this.driftIssues.set(declared.type, issue);
+      return json(200, { drift: true, issue_id: issue.issue_id });
     }
     if (key === "GET /v1/suppressions/salt") {
       this.need("coordination");
@@ -372,4 +390,10 @@ function problem(status: number, code: string, extra: Json = {}): Response {
 async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+const SUMMARY = ["type", "version", "ownership", "nature", "key", "inputs", "fields", "values", "sources", "union", "states", "purposes", "readings", "agent_state"];
+
+function summary(declared: Json): Json {
+  return Object.fromEntries(SUMMARY.filter((k) => k in declared).map((k) => [k, declared[k]]));
 }

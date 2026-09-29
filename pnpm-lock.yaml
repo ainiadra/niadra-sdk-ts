@@ -70,6 +70,9 @@ importers:
       '@types/node':
         specifier: ^24.13.6
         version: 24.13.6
+      '@types/pg':
+        specifier: ^8.6.1
+        version: 8.6.1
       '@vapi-ai/server-sdk':
         specifier: 2.0.1
         version: 2.0.1
@@ -97,6 +100,9 @@ importers:
       miniflare:
         specifier: 4.20260730.0
         version: 4.20260730.0
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
       retell-sdk:
         specifier: 6.0.1
         version: 6.0.1
@@ -5611,9 +5617,20 @@ packages:
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
 
+  pg-cloudflare@1.4.0:
+    resolution: {integrity: sha512-Vo7z/6rrQYxpNRylp4Tlob2elzbh+N/MOQbxFVWCxS7oEx6jF53GTJFxK2WWpKuBRkmiin4Mt+xofFDjx09R0A==}
+
+  pg-connection-string@2.14.0:
+    resolution: {integrity: sha512-XwWDGcLRGCXAR8F/AM5bG7Q+A3Wm2s6QeEjlOKZLlH3UYcguiqCWKyWXVag5TLTIjR7oOJUY8kcADaZgWPyLeg==}
+
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
+
+  pg-pool@3.14.0:
+    resolution: {integrity: sha512-gKtPkFdQPU3DksooVLi9LsjZxrsBUZIpa+7aVx+LV5pNh0KzP4Zleud2po+ConrxbuXGBJ6Hfer6hdgpIBpBaw==}
+    peerDependencies:
+      pg: '>=8.0'
 
   pg-protocol@1.16.0:
     resolution: {integrity: sha512-sILXutLVjCLjcDuOmvhX5e2Z4cS5qG/6Bu3VkpFwdf/633ElGLpEh9bgmuI5I4sqKqkifQiGyiCcx1HdtrK7tg==}
@@ -5621,6 +5638,18 @@ packages:
   pg-types@2.2.0:
     resolution: {integrity: sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==}
     engines: {node: '>=4'}
+
+  pg@8.23.0:
+    resolution: {integrity: sha512-Ip2EQCngowJLGOfCwkFhPXU7/ljlhn6Rxlmy4XYfL2Y+vyRM59+8uR2xqRWKdYmbXmxCFOAmKxBuSUCdF34qLg==}
+    engines: {node: '>= 16.0.0'}
+    peerDependencies:
+      pg-native: '>=3.0.1'
+    peerDependenciesMeta:
+      pg-native:
+        optional: true
+
+  pgpass@1.0.5:
+    resolution: {integrity: sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -10391,7 +10420,6 @@ snapshots:
       '@types/node': 24.13.6
       pg-protocol: 1.16.0
       pg-types: 2.2.0
-    optional: true
 
   '@types/pidusage@2.0.5': {}
 
@@ -13113,11 +13141,18 @@ snapshots:
 
   pathe@2.0.3: {}
 
-  pg-int8@1.0.1:
+  pg-cloudflare@1.4.0:
     optional: true
 
-  pg-protocol@1.16.0:
-    optional: true
+  pg-connection-string@2.14.0: {}
+
+  pg-int8@1.0.1: {}
+
+  pg-pool@3.14.0(pg@8.23.0):
+    dependencies:
+      pg: 8.23.0
+
+  pg-protocol@1.16.0: {}
 
   pg-types@2.2.0:
     dependencies:
@@ -13126,7 +13161,20 @@ snapshots:
       postgres-bytea: 1.0.1
       postgres-date: 1.0.7
       postgres-interval: 1.2.0
-    optional: true
+
+  pg@8.23.0:
+    dependencies:
+      pg-connection-string: 2.14.0
+      pg-pool: 3.14.0(pg@8.23.0)
+      pg-protocol: 1.16.0
+      pg-types: 2.2.0
+      pgpass: 1.0.5
+    optionalDependencies:
+      pg-cloudflare: 1.4.0
+
+  pgpass@1.0.5:
+    dependencies:
+      split2: 4.2.0
 
   picocolors@1.1.1: {}
 
@@ -13243,19 +13291,15 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  postgres-array@2.0.0:
-    optional: true
+  postgres-array@2.0.0: {}
 
-  postgres-bytea@1.0.1:
-    optional: true
+  postgres-bytea@1.0.1: {}
 
-  postgres-date@1.0.7:
-    optional: true
+  postgres-date@1.0.7: {}
 
   postgres-interval@1.2.0:
     dependencies:
       xtend: 4.0.2
-    optional: true
 
   posthog-node@5.53.0:
     dependencies:
@@ -14351,8 +14395,7 @@ snapshots:
 
   xmlhttprequest-ssl@2.1.2: {}
 
-  xtend@4.0.2:
-    optional: true
+  xtend@4.0.2: {}
 
   xxhash-wasm@1.1.0: {}
 

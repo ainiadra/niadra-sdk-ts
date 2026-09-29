@@ -1,4 +1,5 @@
 import { NiadraValidationError } from "./errors.js";
+import { includeText } from "./constraints/text.js";
 import type { NiadraError } from "./errors.js";
 import { toObjectRef } from "./handles.js";
 import type { Handle, ObjectRef } from "./types/common.js";
@@ -7,6 +8,7 @@ import type {
   ContextPack,
   ContextRequest,
   ContextResponse,
+  CoordinationBlock,
   Include,
   LiveTurn,
   PrefetchRequest,
@@ -124,7 +126,8 @@ export interface ContextResult {
   /**
    * The parts that change turn by turn and belong at the end of the prompt, after the
    * conversation: the live turns from other channels, this turn's slots (what the customer's last
-   * turn selected from memory) and the delta, in that order, as the API places them. Empty when there are none.
+   * turn selected from memory), the blocks asked for by `include` (the state view, the constraints) and the
+   * delta, in that order, as the API places them. Empty when there are none.
    */
   suffix: string;
   /** Named values from the pack, for templates that place them individually. */
@@ -140,6 +143,8 @@ export interface ContextResult {
   constraints?: ConstraintsBlock | null;
   /** With `include: ["state"]`: the state of the subject's objects. */
   state?: StateView | null;
+  /** With `include: ["coordination"]`: what coordination knows of the subject. */
+  coordination?: CoordinationBlock | null;
 }
 
 const VIEW = /^(voice|chat|brief|full|custom|account|partner|task:[a-z0-9_]{1,40})$/;
@@ -252,6 +257,7 @@ export function mergeNotModified(cached: ContextResponse, fresh: ContextResponse
     // The blocks sit outside the pinned pack: a fresh block wins, and a missing one keeps the cached.
     constraints: fresh.constraints ?? cached.constraints ?? null,
     state: fresh.state ?? cached.state ?? null,
+    coordination: fresh.coordination ?? cached.coordination ?? null,
   };
 }
 
@@ -264,12 +270,16 @@ export function resultFrom(
   const holdout = response.path === "holdout";
   const text = holdout ? "" : (response.text ?? "");
   const pack = holdout ? null : (response.pack ?? null);
-  const blocks = { constraints: response.constraints ?? null, state: response.state ?? null };
+  const blocks = {
+    constraints: response.constraints ?? null,
+    state: response.state ?? null,
+    coordination: response.coordination ?? null,
+  };
   return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, response, error, ...blocks };
 }
 
 export function emptyResult(error: NiadraError | null): ContextResult {
-  return { text: "", suffix: "", variables: {}, pack: null, source: "none", response: null, error, constraints: null, state: null };
+  return { text: "", suffix: "", variables: {}, pack: null, source: "none", response: null, error, constraints: null, state: null, coordination: null };
 }
 
 /**
@@ -279,7 +289,8 @@ export function emptyResult(error: NiadraError | null): ContextResult {
  */
 export function renderSuffix(response: ContextResponse): string {
   if (response.path === "holdout") return "";
-  return [renderLive(response), response.slots ?? "", response.delta ?? ""].filter(Boolean).join("\n\n");
+  const included = includeText(response.text, response.state, response.constraints);
+  return [renderLive(response), response.slots ?? "", included, response.delta ?? ""].filter(Boolean).join("\n\n");
 }
 
 /**
