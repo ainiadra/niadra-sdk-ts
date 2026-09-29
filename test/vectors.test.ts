@@ -9,7 +9,20 @@
 // - a file nothing expects, a case field its spec does not define and a malformed envelope fail.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { canonicalJson, expr, jsonDigest } from "../src/index.js";
+import {
+  NiadraDestinationError,
+  NiadraExposureTokenError,
+  canonicalDestination,
+  canonicalJson,
+  expr,
+  exposureToken,
+  honoredConstraints,
+  jsonDigest,
+  parseExposureToken,
+  renderConstraints,
+  suppressionKey,
+} from "../src/index.js";
+import type { ConstraintBinding, ConstraintCall, ConstraintsBlock } from "../src/index.js";
 
 const SPEC = new URL("../spec/", import.meta.url);
 const VECTORS = new URL("vectors/", SPEC);
@@ -200,6 +213,83 @@ async function exprCase(c: Case): Promise<void> {
   expect(result).toStrictEqual(c.expect);
 }
 
+async function suppressionKeyCase(c: Case): Promise<void> {
+  let got: Record<string, unknown>;
+  try {
+    const canonical = canonicalDestination(c.type as string, c.value as string);
+    got = { canonical, key: await suppressionKey(c.salt as string, canonical) };
+  } catch (error) {
+    if (!(error instanceof NiadraDestinationError)) throw error;
+    got = { error: error.code };
+  }
+  expect(got).toStrictEqual(c.expect);
+}
+
+async function exposureTokenCase(c: Case): Promise<void> {
+  if (c.op === "build") {
+    expect(Object.keys(c).sort()).toEqual(["description", "expect", "exposure_id", "id", "op", "position"]);
+    const token = exposureToken(c.exposure_id as string, c.position as number);
+    expect({ token }).toStrictEqual(c.expect);
+    expect(token.length).toBe(32 + String(c.position).length);
+    return;
+  }
+  expect(c.op).toBe("parse");
+  expect(Object.keys(c).sort()).toEqual(["description", "expect", "id", "op", "token"]);
+  let got: Record<string, unknown>;
+  try {
+    const { exposureId, position } = parseExposureToken(c.token as string);
+    got = { exposure_id: exposureId, position };
+  } catch (error) {
+    if (!(error instanceof NiadraExposureTokenError)) throw error;
+    got = { error: error.code };
+  }
+  expect(got).toStrictEqual(c.expect);
+}
+
+const unknownFields = (value: object, known: string[]): string[] => Object.keys(value).filter((k) => !known.includes(k));
+
+function bindingOf(raw: Record<string, any>, families: Record<string, string>): ConstraintBinding {
+  expect(unknownFields(raw, ["tool", "args", "overfetch"])).toEqual([]);
+  const args = (raw.args as Record<string, any>[]).map((arg) => {
+    expect(unknownFields(arg, ["attr", "param", "transform", "negation", "ops"])).toEqual([]);
+    return {
+      attr: arg.attr as string,
+      param: arg.param as string,
+      transform: arg.transform ?? null,
+      negation: (arg.negation?.param as string | undefined) ?? null,
+      ops: (arg.ops as string[] | undefined) ?? [],
+      family: families[arg.attr as string] ?? null,
+    };
+  });
+  return { tool: raw.tool as string, args, overfetch: raw.overfetch === true };
+}
+
+async function constraintRenderCase(c: Case): Promise<void> {
+  const block = c.block as ConstraintsBlock;
+  const raw = c.call as Record<string, any>;
+  expect(unknownFields(raw, ["args", "for", "category", "asked"])).toEqual([]);
+  const call: ConstraintCall = { args: raw.args, for: raw.for, category: raw.category ?? null, asked: raw.asked ?? [] };
+  const binding = bindingOf(c.binding as Record<string, any>, c.families as Record<string, string>);
+  const got = renderConstraints(block, binding, call, c.mode as "advisory" | "apply");
+  const rendered: Record<string, unknown> = {
+    applies: got.applies,
+    args: got.args,
+    suggested: got.suggested,
+    injected: got.injected,
+    hard_sent: got.hardSent,
+    residual: got.residual,
+    post_filter: got.postFilter,
+    conflicts: got.conflicts,
+  };
+  if ("results" in c) {
+    const seen = honoredConstraints(block, got.hardSent, c.results as Record<string, unknown>[]);
+    rendered.honored = { results_checked: seen.resultsChecked, violations: seen.violations, unverifiable: seen.unverifiable };
+  }
+  expect(rendered).toStrictEqual(c.expect);
+  const inferred = (block.attributes ?? []).filter((a) => a.source !== "stated" && a.source !== "correction").map((a) => a.id);
+  expect(got.injected.filter((id) => inferred.includes(id)), "an inferred attribute is never injected, whatever the mode").toEqual([]);
+}
+
 const EXPECTED: Record<string, Expected> = {
   "turn-record-digest.v0": {
     caseFields: ["id", "note", "value", "expect"],
@@ -214,18 +304,26 @@ const EXPECTED: Record<string, Expected> = {
   "claim-parser.v0": pending("id lang text roles evidence expect", "mentions", "the claim contract's number and role parser"),
   "claim-detect.v0": pending("id contract output turn expect", "findings", "the claim contract's detection"),
   "claim-anchor.v0": pending("id quote document expect", "normalized_quote_length distance holds", "the claim contract's text anchor"),
-  "constraint-render.v0": pending(
-    "id block binding families call mode results expect",
-    "applies args suggested injected hard_sent residual post_filter conflicts honored",
-    "the constraints block's rendering per tool binding",
-  ),
-  "exposure-token.v0": pending("id op description exposure_id position token expect", "token exposure_id position", "the exposure token"),
+  "constraint-render.v0": {
+    caseFields: ["id", "block", "binding", "families", "call", "mode", "results", "expect"],
+    expectFields: ["applies", "args", "suggested", "injected", "hard_sent", "residual", "post_filter", "conflicts", "honored"],
+    run: constraintRenderCase,
+  },
+  "exposure-token.v0": {
+    caseFields: ["id", "op", "description", "exposure_id", "position", "token", "expect"],
+    expectFields: ["token", "exposure_id", "position"],
+    run: exposureTokenCase,
+  },
   "contact-token.v0": pending(
     "id op description seed claims keys gateway token destination channel now seen_jti expect",
     "token claims",
     "the contact token's issue and offline check",
   ),
-  "suppression-key.v0": pending("id description salt type value expect", "canonical key", "the suppression list's per-source key"),
+  "suppression-key.v0": {
+    caseFields: ["id", "description", "salt", "type", "value", "expect"],
+    expectFields: ["canonical", "key"],
+    run: suppressionKeyCase,
+  },
 };
 const NEGATIVE_CORPUS = ["retail", "legal", "health-plan-sales"];
 

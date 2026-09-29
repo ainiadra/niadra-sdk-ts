@@ -4,6 +4,17 @@ export { Api } from "./api.js";
 export { canonicalJson, jsonDigest } from "./digest.js";
 export * as expr from "./state/expr.js";
 export type { Logic } from "./state/logic.js";
+export { NiadraDestinationError, canonicalDestination, suppressionKey } from "./coordination/destination.js";
+export { NiadraExposureTokenError, exposureToken, parseExposureToken } from "./exposure.js";
+export type { ExposureTokenRefusal } from "./exposure.js";
+export { honored as honoredConstraints, render as renderConstraints, satisfies as satisfiesConstraint } from "./constraints/render.js";
+export type {
+  Binding as ConstraintBinding,
+  BindingArg as ConstraintBindingArg,
+  Call as ConstraintCall,
+  Honored as ConstraintsHonored,
+  Rendering as ConstraintRendering,
+} from "./constraints/render.js";
 export type { CorrectParams } from "./admin.js";
 export type { OpenParams, WriteResult } from "./client.js";
 export { Conversation } from "./conversation.js";
