@@ -110,6 +110,9 @@ built on them.
   (`POST /v1/state/refresh-requests/{id}/release`), as `not_found` when the resolver returns `NOT_FOUND` and
   `failed` when it fails. A type without a resolver, or whose resolver's circuit is open, still waits out its
   lease. `Resolvers.fetch()` says why a read brought no object; `resolve()` is unchanged.
+- `ConstraintsBlock.text`: the constraints block as the server writes it for a model, each field by its
+  type's label and each operator in words, in the space's language. The suffix places it as it places the
+  state view's text; the SDK writes its own lines only for a server that sends none.
 
 ### Fixed
 

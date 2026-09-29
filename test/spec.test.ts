@@ -166,6 +166,7 @@ const blockKeys: Record<string, Record<string, true>> = {
     rules: true,
     soft: true,
     subject: true,
+    text: true,
     version: true,
   } satisfies Record<keyof ConstraintsBlock, true>,
   StateView: {

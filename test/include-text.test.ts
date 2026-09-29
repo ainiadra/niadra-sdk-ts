@@ -66,4 +66,12 @@ describe("the blocks by include in the turn block", () => {
   it("gives a holdout nothing", () => {
     expect(renderSuffix(context({ path: "holdout", state: { text: STATE_PT }, constraints: BLOCK }))).toBe("");
   });
+
+  it("places the constraints text the server writes, and its own lines only for a server that sends none", () => {
+    const served = ["<restrições>", "- exigido: sem coparticipação", "- exigido: mensalidade de no máximo 700", "</restrições>"].join("\n");
+    const withText = renderSuffix(context({ state: { text: STATE_PT }, constraints: { ...BLOCK, text: served } }));
+    expect(withText).toContain(`${STATE_PT}\n${served}\n</niadra>`);
+    expect(withText).not.toContain("item_variant.color");
+    expect(renderSuffix(context({ constraints: BLOCK }))).toContain(constraintLines(BLOCK, "pt").join("\n"));
+  });
 });
