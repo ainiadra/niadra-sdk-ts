@@ -23,6 +23,7 @@
  * The same rules as the Python SDK's `niadra.constraints.render`.
  */
 
+import { fold } from "../claims/text.js";
 import type { ConstraintsBlock, HardConstraint } from "../types/signals.js";
 
 type Op = HardConstraint["op"];
@@ -308,25 +309,4 @@ function compare(a: Key | undefined, b: Key | undefined): number | null {
 
 function holds(order: number | null, test: (order: number) => boolean): boolean {
   return order !== null && test(order);
-}
-
-const MARKS = /\p{M}/gu;
-
-function isAscii(text: string): boolean {
-  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) > 127) return false;
-  return true;
-}
-
-/**
- * Lower case without accents, one code unit per code unit, as the claim contract folds text: a character
- * that folds to more than one (`ß`) becomes `?`.
- */
-function fold(text: string): string {
-  if (isAscii(text)) return text.toLowerCase();
-  let out = "";
-  for (let i = 0; i < text.length; i++) {
-    const plain = text.charAt(i).normalize("NFKD").replace(MARKS, "").toLowerCase();
-    out += plain.length === 1 ? plain : "?";
-  }
-  return out;
 }

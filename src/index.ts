@@ -3,6 +3,7 @@ export { Admin } from "./admin.js";
 export { Api } from "./api.js";
 export { canonicalJson, jsonDigest } from "./digest.js";
 export * as expr from "./state/expr.js";
+export * as claims from "./claims/index.js";
 export type { Logic } from "./state/logic.js";
 export { NiadraDestinationError, canonicalDestination, suppressionKey } from "./coordination/destination.js";
 export { NiadraExposureTokenError, exposureToken, parseExposureToken } from "./exposure.js";
