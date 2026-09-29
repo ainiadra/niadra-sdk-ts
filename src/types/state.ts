@@ -167,6 +167,10 @@ export interface ContentReleaseResult {
   released: boolean;
 }
 
+/**
+ * The agent features a space turns on: everything is off until the space's `features`
+ * document lists it, and `GET /v1/sdk/profile` announces what is on.
+ */
 export type Feature = "turns" | "state" | "agent_state" | "signals" | "claims" | "coordination" | "measurement" | "notifications" | "legal_holds";
 
 export interface FieldCoverage {

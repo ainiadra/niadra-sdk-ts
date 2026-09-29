@@ -3,7 +3,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CUT, ROOT, generate } from "../scripts/sync-spec.js";
+import { CUT, ROOT, cut, generate, publicText } from "../scripts/sync-spec.js";
 import type { Document } from "../scripts/sync-spec.js";
 import { Api, Niadra, NiadraAPIError, NiadraConfigError, NiadraNotAvailableError, silentLogger } from "../src/index.js";
 import type { TurnCall, TurnRecord, TurnsRequest } from "../src/index.js";
@@ -130,5 +130,39 @@ describe("a route of niadra.api", () => {
   it("rejects when the client has no key", async () => {
     const client = new Niadra({ apiKey: "", logger: silentLogger, flushOnExit: false });
     await expect(client.api.sdkProfile()).rejects.toBeInstanceOf(NiadraConfigError);
+  });
+
+});
+
+describe("the generator", () => {
+  it.each([
+    "One entry of the turn record (front A5).",
+    "The features of the agent core wave.",
+    "Built in phase 2.",
+    "As study 23 says.",
+  ])("stops on a server description naming internal planning: %s", (text) => {
+    expect(() => publicText(text, "Schema.field")).toThrow(/internal planning/);
+  });
+
+  it("publishes a body the server declares inline as its named schema", () => {
+    const body = { $id: "u", title: "ThingRequest", type: "object", properties: { n: { type: "string" } } };
+    const operation = {
+      tags: ["turns"],
+      operationId: "record_things_v1_things_post",
+      requestBody: { content: { "application/json": { schema: body } } },
+      responses: { "200": {} },
+    };
+    const result = cut({
+      openapi: "3.1.0",
+      info: {},
+      paths: { "/v1/things": { post: operation } },
+      components: { schemas: {} },
+    });
+    expect(result.paths["/v1/things"]?.post?.requestBody?.content?.["application/json"]?.schema).toEqual({
+      $ref: "#/components/schemas/ThingRequest",
+    });
+    const { $id: _id, ...named } = body;
+    expect(result.components.schemas.ThingRequest).toEqual(named);
+    expect(operation.requestBody.content["application/json"].schema).toBe(body);
   });
 });

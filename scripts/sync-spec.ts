@@ -59,8 +59,9 @@ const EXISTING: Record<string, string> = {
   SubjectKind: "./vocabulary.js",
   Verification: "./vocabulary.js",
 };
-const INTERNAL = /\bfront A\d\b|\bcore wave\b|\bphase \d\b|\bintegrator\b/i;
-const FRONT_REF = /\s*\(front A\d\)/g;
+/** Words that name how the server was planned and built, never what it does: a public SDK carries none. */
+const INTERNAL =
+  /\bfronts? A\d\b|\(A\d\)|\b(?:core|the) wave\b|\bphase \d\b|\bintegrator\b|\bstudy \d+\b|\bestudo\b/i;
 const SUCCESS = ["200", "201", "202", "204", "207"];
 
 export interface Schema {
@@ -78,6 +79,9 @@ export interface Schema {
   additionalProperties?: Schema | boolean;
   patternProperties?: Record<string, Schema>;
   default?: unknown;
+  title?: string;
+  oneOf?: Schema[];
+  discriminator?: { propertyName: string; mapping?: Record<string, string> };
 }
 
 interface Parameter {
@@ -140,15 +144,14 @@ function reach(roots: unknown, schemas: Record<string, Schema>): Set<string> {
   return seen;
 }
 
-/** The server's text as a public SDK may carry it: a description naming internal planning is left out. */
+/** The server's text, which a public SDK carries as it is: one naming internal planning stops the run. */
 export function publicText(text: string | undefined, where: string): string | null {
   if (!text) return null;
-  const cleaned = text.replace(FRONT_REF, "").trim();
-  if (INTERNAL.test(cleaned)) {
-    console.warn(`warning: left out the description of ${where}: it names internal planning`);
-    return null;
+  const found = INTERNAL.exec(text);
+  if (found) {
+    throw new Error(`the description of ${where} names internal planning (${JSON.stringify(found[0])}); fix it on the server`);
   }
-  return cleaned;
+  return text.trim();
 }
 
 function published(node: unknown, where: string): unknown {
@@ -177,10 +180,13 @@ function sortedKeys(node: unknown): unknown {
 export function cut(document: Document): Document {
   const paths: Document["paths"] = {};
   for (const [path, methods] of Object.entries(document.paths)) {
-    const kept = Object.entries(methods).filter(([, op]) => (op.tags ?? []).some((tag) => tag in TAGS));
+    const kept = Object.entries(methods)
+      .filter(([, op]) => (op.tags ?? []).some((tag) => tag in TAGS))
+      .map(([method, op]) => [method, structuredClone(op)] as const);
     if (kept.length > 0) paths[path] = Object.fromEntries(kept);
   }
-  const schemas = document.components.schemas;
+  const schemas = { ...document.components.schemas };
+  for (const methods of Object.values(paths)) for (const op of Object.values(methods)) hoistBody(op, schemas);
   const names = [...reach(paths, schemas)].sort();
   const result = {
     openapi: document.openapi,
@@ -189,6 +195,20 @@ export function cut(document: Document): Document {
     components: { schemas: Object.fromEntries(names.map((name) => [name, schemas[name]])) },
   };
   return sortedKeys(published(result, "")) as Document;
+}
+
+/** A body the server declares inline (a route that parses its own body) as the named schema it is. */
+function hoistBody(op: Operation, schemas: Record<string, Schema>): void {
+  const content = op.requestBody?.content?.["application/json"];
+  if (!content?.schema || content.schema.$ref) return;
+  const { $id: _id, ...schema } = content.schema as Schema & { $id?: string };
+  const name = schema.title;
+  const known = name === undefined ? undefined : schemas[name];
+  if (!name || (known && JSON.stringify(sortedKeys(known)) !== JSON.stringify(sortedKeys(schema)))) {
+    throw new Error(`${op.operationId}: an inline body with no title of its own`);
+  }
+  schemas[name] = schema;
+  content.schema = { $ref: `#/components/schemas/${name}` };
 }
 
 function routes(document: Document): Route[] {
@@ -294,6 +314,8 @@ class TypeWriter {
       // `integer` and `number` are both `number`: each constituent once.
       return [...new Set(schema.anyOf.map((option) => this.type(option)))].join(" | ");
     }
+    // A discriminated union is a union: each member's own literal `kind` tells them apart.
+    if (schema.oneOf) return schema.oneOf.map((option) => this.type(option)).join(" | ");
     if (schema.const !== undefined) return JSON.stringify(schema.const);
     if (schema.enum) return schema.enum.map((value) => JSON.stringify(value)).join(" | ");
     switch (schema.type) {

@@ -73,22 +73,28 @@ export class Api {
     return this.call({ method: "PATCH", path: `/v1/scenarios/${segment(scenarioId)}`, body }, options);
   }
 
-  /** `POST /v1/turns`. */
+  /**
+   * `POST /v1/turns`. Up to 50 turn records, the body in zstd, gzip or plain JSON. The same turn sent twice
+   * is one turn.
+   */
   recordTurns(body: TurnsRequest, options: RequestOptions = {}): Promise<TurnsResponse> {
     return this.call({ method: "POST", path: "/v1/turns", body }, options);
   }
 
-  /** `POST /v1/turns/promote`. */
+  /**
+   * `POST /v1/turns/promote`. Promoting is idempotent by itself: a turn promoted again counts as
+   * `already_kept`.
+   */
   promoteTurns(body: PromoteRequest, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<PromoteResponse> {
     return this.call({ method: "POST", path: "/v1/turns/promote", body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
 
-  /** `POST /v1/turns/search`. */
+  /** `POST /v1/turns/search`. The kept tier, newest first, by conversation, agent, time and flags. */
   searchTurns(body: TurnSearchRequest, options: RequestOptions = {}): Promise<TurnSearchResponse> {
     return this.call({ method: "POST", path: "/v1/turns/search", body }, options);
   }
 
-  /** `GET /v1/turns/{turn_id}`. */
+  /** `GET /v1/turns/{turn_id}`. One turn from either tier, by its id: 404 once its tier let it go. */
   readTurn(turnId: string, options: RequestOptions = {}): Promise<TurnView> {
     return this.call({ method: "GET", path: `/v1/turns/${segment(turnId)}` }, options);
   }
