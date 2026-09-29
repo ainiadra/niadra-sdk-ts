@@ -18,6 +18,7 @@ import {
   exposureToken,
   honoredConstraints,
   jsonDigest,
+  overlapAtK,
   parseExposureToken,
   renderConstraints,
   suppressionKey,
@@ -243,6 +244,11 @@ async function contactTokenCase(c: Case): Promise<void> {
     got = { error: error.code };
   }
   expect(got).toEqual(c.expect);
+}
+
+async function counterfactualOverlapCase(c: Case): Promise<void> {
+  expect(overlapAtK(c.a as string[], c.b as string[], c.k as number)).toBeCloseTo((c.expect as { overlap: number }).overlap, 6);
+  await Promise.resolve();
 }
 
 async function regressionStatsCase(c: Case): Promise<void> {
@@ -488,6 +494,11 @@ const EXPECTED: Record<string, Expected> = {
     caseFields: ["id", "op", "description", "seed", "claims", "keys", "gateway", "token", "destination", "channel", "now", "seen_jti", "expect"],
     expectFields: ["token", "claims"],
     run: contactTokenCase,
+  },
+  "counterfactual-overlap.v0": {
+    caseFields: ["id", "description", "a", "b", "k", "expect"],
+    expectFields: ["overlap"],
+    run: counterfactualOverlapCase,
   },
   "regression-stats.v0": {
     caseFields: ["id", "description", "executions", "baseline", "expect"],

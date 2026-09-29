@@ -53,6 +53,8 @@ built on them.
   record has no answer), keeps everything the agent sends from leaving, evaluates the assertions and
   reports the run, and Niadra answers with the statistical verdict. Runs are numbered from 1, as the
   replay spec numbers them.
+- `overlapAtK()`: the depth-weighted overlap of two ranked lists that the tool counterfactual reports
+  (`spec/counterfactual.md`, 4); it passes the `counterfactual-overlap` vectors.
 - The recording the SDK profile serves: a turn leaves in the content mode the space names for the source,
   and a turn without a pin the space requires for replay is kept with a warning, once.
 - Turn records from the framework adapters. LangChain.js and LangGraph.js:
