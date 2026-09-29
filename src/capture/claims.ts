@@ -8,8 +8,8 @@
  * everything the turn said that the guard did not see, and on demand (`conversation.claims.check()`). The
  * guard (`conversation.claims.guard()`, `capture/guard.ts`) acts, and records the act it took.
  *
- * The evidence is what the turn's tools returned, in their results and in the objects they showed, and the
- * fields its state reads served, each fresh for a claim or not:
+ * The evidence is what the turn's tools returned, in their results and in the objects they showed, and what
+ * the include blocks of its reads placed in the turn block (`blockValues`), each fresh for a claim or not:
  *
  * - a field named like a role of a category is a value of that role and of that category's classes, so a
  *   number said with the role and a different value is a `mismatch`, and one with the same value `matched`;
@@ -24,7 +24,8 @@ import type { Finding, Turn, TurnValue } from "../claims/check.js";
 import { decimal, decimalText } from "../claims/decimal.js";
 import { mentions } from "../claims/numbers.js";
 import type { Language, Mention, MentionClass, Value } from "../claims/numbers.js";
-import type { ClaimContractSummary, ObjectRead } from "../types/state.js";
+import type { ConstraintsBlock } from "../types/signals.js";
+import type { ClaimContractSummary, StateView } from "../types/state.js";
 import type { ClaimRecord } from "../types/turns.js";
 import type { Said, StateValue, TurnFrame } from "./frame.js";
 
@@ -82,25 +83,47 @@ export function recordOf(finding: Finding, act: ClaimRecord["action"]): ClaimRec
 }
 
 /**
- * The fields and computed values of objects a state read served, as the claim check's evidence. A computed
- * value (a deadline the company's rule recomputed) backs a claim by its name, and only while it is claim-safe
- * and no unknown field of its object blocks claims. A field that is not claim-safe stays as a copy too old to
- * back one, so a claim that repeats it is `stale`. A masked or unknown value backs nothing.
+ * Every value a read's include blocks placed in the turn block, as the claim check's evidence: the fields and
+ * computed values of the state view's objects and of the shared objects the subject showed interest in, the
+ * new value of each field that changed since they saw it, and the values of the constraints block's lines
+ * (what the subject requires, prefers and is).
+ *
+ * A value backs a claim only while it is claim-safe. A field that is not stays as a copy too old to back one,
+ * so a claim that repeats it is `stale`; a computed value that is not backs nothing. A changed field's new
+ * value is as claim-safe as the object's field, and not at all without the object; the value it was seen at
+ * is not evidence. The subject's own constraints always back a claim, except one that lost a conflict and was
+ * left out of the block. A masked or unknown value backs nothing.
  */
-export function stateValues(objects: readonly ObjectRead[]): StateValue[] {
+export function blockValues(state: StateView | null | undefined, constraints: ConstraintsBlock | null | undefined): StateValue[] {
   const out: StateValue[] = [];
-  for (const item of objects) {
-    const ref = `${item.ref.type}:${item.ref.namespace}:${item.ref.id}`;
-    const gaps = item.declared_gaps ?? [];
-    const claimable = (item.blocked?.claim ?? []).length === 0;
-    for (const [name, field] of Object.entries(item.fields ?? {})) {
-      if (field.masked || field.logic !== "yes" || field.v == null) continue;
-      out.push({ ref, field: name, value: field.v, claimSafe: field.claim_safe && claimable, role: field.role ?? null, declaredGaps: gaps });
+  if (state) {
+    const objects = [...(state.objects ?? []), ...(state.interests ?? []).flatMap((i) => (i.object ? [i.object] : []))];
+    for (const item of objects) {
+      const ref = `${item.ref.type}:${item.ref.namespace}:${item.ref.id}`;
+      const gaps = item.declared_gaps ?? [];
+      const claimable = (item.blocked?.claim ?? []).length === 0;
+      for (const [name, field] of Object.entries(item.fields ?? {})) {
+        if (field.masked || field.logic !== "yes" || field.v == null) continue;
+        out.push({ ref, field: name, value: field.v, claimSafe: field.claim_safe && claimable, role: field.role ?? null, declaredGaps: gaps });
+      }
+      for (const [name, value] of Object.entries(item.values ?? {})) {
+        if (value.logic !== "yes" || value.v == null || !(value.claim_safe && claimable)) continue;
+        out.push({ ref, field: name, value: value.v, claimSafe: true, role: null, declaredGaps: [...new Set([...gaps, ...(value.declared_gaps ?? [])])] });
+      }
     }
-    for (const [name, value] of Object.entries(item.values ?? {})) {
-      if (value.logic !== "yes" || value.v == null || !(value.claim_safe && claimable)) continue;
-      out.push({ ref, field: name, value: value.v, claimSafe: true, role: null, declaredGaps: [...new Set([...gaps, ...(value.declared_gaps ?? [])])] });
+    const served = new Set(out.map((v) => `${v.ref ?? ""}\n${v.field}`));
+    for (const change of state.changes_since_seen ?? []) {
+      const ref = `${change.ref.type}:${change.ref.namespace}:${change.ref.id}`;
+      if (change.now != null && !served.has(`${ref}\n${change.field}`)) out.push({ ref, field: change.field, value: change.now, claimSafe: false });
     }
+  }
+  if (constraints) {
+    const lost = new Set((constraints.conflicts ?? []).flatMap((c) => c.ids.filter((i) => i !== c.kept)));
+    const said: [string, unknown][] = (constraints.hard ?? []).filter((h) => !lost.has(h.id)).flatMap((h) => h.values.map((v): [string, unknown] => [h.attr, v]));
+    for (const s of constraints.soft ?? []) said.push([s.attr, s.value]);
+    for (const a of constraints.attributes ?? []) said.push([a.name, a.value]);
+    // A constraint names a field of a type (`health_plan.monthly_price`), and backs a claim by the field.
+    for (const [attr, value] of said) out.push({ ref: null, field: attr.split(".").pop() ?? attr, value, claimSafe: true });
   }
   return out;
 }
@@ -129,7 +152,7 @@ function evidence(frame: TurnFrame, contract: ClaimContractSummary, spoken: read
     }
   }
   for (const item of frame.state) {
-    // A field read from state backs a claim only while it is fresh enough for one.
+    // A value from a block backs a claim only while it is fresh enough for one.
     const name = item.role && roles.has(item.role) ? item.role : item.field;
     for (const [key, leaf] of leaves(item.value, name)) {
       for (const found of valuesOf(key, leaf, item.ref, null, roles, spoken, lang)) {

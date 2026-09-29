@@ -89,6 +89,33 @@ describe("the warm cache", () => {
     expect(claims[0]?.evidence).toEqual({ call_id: "k1", field: "price_sale", ref: "product:store:PX-4471" });
   });
 
+  it("stands a claim on what the blocks placed in the turn block", async () => {
+    const cell = store();
+    for (const feature of ["state", "claims"]) cell.features.add(feature);
+    const product = { type: "product", namespace: "store", id: "PX-4471" };
+    const price = { v: 189.9, logic: "yes", status: "fresh", claim_safe: true, role: "price_sale" };
+    cell.views.set(`${marina.type}:${marina.value}`, {
+      interests: [{ ref: product, reason: "presented", at: "2026-09-29T10:00:00Z", object: { ref: product, fields: { price_sale: price } } }],
+      changes_since_seen: [{ ref: product, field: "price_sale", seen: 199.9, now: 189.9 }],
+      text: "- product:store:PX-4471: price_sale 189.90 (was 199.90 when seen)",
+    } as never);
+    cell.constraints.set(`${marina.type}:${marina.value}`, {
+      version: "cv_0123456789abcdef",
+      hard: [{ id: "h1", attr: "cart.total", op: "lte", values: [500], source: "stated", scope: "session", origin: { kind: "stated" } }],
+    } as never);
+    const niadra = client(cell);
+    const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-5" });
+    const text = "O PX está por R$ 189,90; o valor de R$ 199,90 era o anterior. Seu limite é R$ 500,00.";
+    const claims = await conversation.turn({}, async () => {
+      await conversation.context({ include: ["state", "constraints"] });
+      return conversation.claims.check(text);
+    });
+    expect(claims.map((c) => [c.value?.amount, c.verdict])).toEqual([
+      ["189.9", "matched"],
+      ["500", "matched"],
+    ]);
+  });
+
   it("keeps the example agent working with Niadra down, checks claims locally and holds the opt-out", async () => {
     const cell = store();
     await cell.suppress(marina, "marketing");

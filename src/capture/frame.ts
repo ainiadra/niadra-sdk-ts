@@ -58,11 +58,11 @@ export interface Said {
 }
 
 /**
- * A field of an object a read served the turn: the claim check's evidence, with whether it may back a claim
- * now (`claimSafe`) and the gaps its object declares.
+ * A value a read's include blocks served the turn: the claim check's evidence, with whether it may back a
+ * claim now (`claimSafe`) and the gaps its object declares. A constraint has no `ref`.
  */
 export interface StateValue {
-  ref: string;
+  ref: string | null;
   field: string;
   value: unknown;
   claimSafe: boolean;
@@ -227,7 +227,7 @@ export class TurnFrame {
   readonly effects = new Map<string, string>();
   readonly eventKeys: string[] = [];
   readonly flags = new Set<Flag>();
-  /** Fields of objects the turn read from state, for the claim check. */
+  /** Values the turn's reads placed in the turn block, for the claim check: each with its freshness. */
   readonly state: StateValue[] = [];
   completeness: "complete" | "partial" | "incomplete" = "complete";
   handoffId: string | null = null;
