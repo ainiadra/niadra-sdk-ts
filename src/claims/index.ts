@@ -12,3 +12,4 @@ export { WINDOW, rolesOf } from "./roles.js";
 export type { Role } from "./roles.js";
 export { MIN_ANCHOR_MATCH, distance, normalize, score } from "./anchor.js";
 export type { Span } from "./text.js";
+export { InternalText, shingles } from "./internal.js";

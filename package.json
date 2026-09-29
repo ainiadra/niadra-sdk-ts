@@ -38,6 +38,9 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "niadra": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": {
@@ -283,6 +286,7 @@
     "@openai/agents": "0.18.0",
     "@strands-agents/sdk": "1.19.0",
     "@types/node": "^24.13.6",
+    "@types/pg": "^8.6.1",
     "@vapi-ai/server-sdk": "2.0.1",
     "@voltagent/core": "2.10.0",
     "agents": "0.24.0",
@@ -292,6 +296,7 @@
     "genkit": "1.42.0",
     "hono": "4.13.9",
     "miniflare": "4.20260730.0",
+    "pg": "8.23.0",
     "retell-sdk": "6.0.1",
     "tsup": "^8.5.1",
     "twilio": "6.1.1",
@@ -373,7 +378,8 @@
     "@voltagent/core": "^2.10.0",
     "agents": ">=0.24.0 <1",
     "ai": "^5.0.0 || ^6.0.0 || ^7.0.0",
-    "genkit": "^1.42.0"
+    "genkit": "^1.42.0",
+    "pg": "^8.11.0"
   },
   "peerDependenciesMeta": {
     "@livekit/agents": {
@@ -407,6 +413,9 @@
       "optional": true
     },
     "genkit": {
+      "optional": true
+    },
+    "pg": {
       "optional": true
     }
   }

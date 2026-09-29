@@ -67,6 +67,24 @@ export interface AnchorEvidence {
   min_match?: number;
 }
 
+/** An object of the type registry: a subject's or a shared one, whose key may name a variant. */
+export interface StateRef {
+  id: string;
+  namespace: string;
+  type: string;
+  variant?: string | null;
+}
+
+/** A field of an interest whose value is not the one the subject was shown. */
+export interface ChangeSinceSeen {
+  field: string;
+  now?: unknown;
+  /** When the source observed the value now held. */
+  observed_at?: string | null;
+  ref: StateRef;
+  seen?: unknown;
+}
+
 /** A value in the turn record, from a tool's result or from state, that the number is checked against. */
 export interface ValueEvidence {
   /** The value is within its type's `claim_max_age`, or the claim is `stale`. */
@@ -133,7 +151,9 @@ export interface ClaimOutputs {
 
 /**
  * Fingerprints of the company's own prompt: hashes of every `n` words, computed by the SDK, never the
- * prompt itself. An output that repeats one gives way to `redact`.
+ * prompt itself. An output that repeats one gives way to `redact`, recorded as a claim of the category
+ * `internal_text` with the verdict `internal_text_found`, the action taken and, as evidence, the
+ * `shingle_hashes_ref` in `document`.
  */
 export interface InternalText {
   n?: number;
@@ -214,71 +234,6 @@ export interface FieldState {
   v?: unknown;
   valid_at?: string | null;
   was?: PreviousValue | null;
-}
-
-export interface TypeCoverage {
-  fields: FieldCoverage[];
-  type: string;
-}
-
-export interface ObjectCoverage {
-  types: TypeCoverage[];
-}
-
-/**
- * Where pushed values come from: only a `live` source sustains a claim, and the age of every value counts
- * from `source_observed_at`.
- */
-export interface Provenance {
-  scope?: "global" | "customer" | "context";
-  source: "live" | "snapshot" | "cache";
-  source_observed_at: string;
-}
-
-/** An object of the type registry: a subject's or a shared one, whose key may name a variant. */
-export interface StateRef {
-  id: string;
-  namespace: string;
-  type: string;
-  variant?: string | null;
-}
-
-export interface ObjectPush {
-  fields: Record<string, unknown>;
-  /**
-   * For a customer's derived object (a quote): the objects its inputs are fields of, by the name its type
-   * gives them, as `type:namespace:id` (`{"lead": "lead:crm:L-9"}`). When a field of one of them changes, the
-   * object expires, naming the input.
-   */
-  inputs?: Record<string, string> | null;
-  provenance: Provenance;
-  ref: StateRef;
-  /**
-   * The source's version of the object. A field moves only when this is greater than the version that last
-   * wrote it; a source never reuses a version for other content.
-   */
-  version: number;
-}
-
-export interface ObjectPushRequest {
-  objects: ObjectPush[];
-}
-
-/**
- * How many items of the request each decision took, against the hot layer, with no database statement.
- *
- * A shared object's item is `applied` when at least one of its fields moved forward: reads serve it at once,
- * and the consolidator writes it within a second with the same per-field rule, so the stored object never
- * disagrees with the answer. `stale_version`: every field was already written by this version or a greater
- * one, as a retried request finds. `out_of_set`: the object is not in the working set, and nothing is kept.
- * A subject's object is `recorded`: accepted as a system event about it, in the request's one statement,
- * and its fields move by the same rule when the event is applied.
- */
-export interface ObjectPushResponse {
-  applied: number;
-  out_of_set: number;
-  recorded?: number;
-  stale_version: number;
 }
 
 export interface OutcomeState {
@@ -378,6 +333,73 @@ export interface ObjectRead {
   withheld?: Record<string, "access" | "licence" | "scan">;
 }
 
+/** A shared object the subject showed interest in, as it stands now. */
+export interface InterestState {
+  at: string;
+  /** The object as a `display` read serves it; absent once it left the working set. */
+  object?: ObjectRead | null;
+  /** `presented`, `engaged`, `feedback` or `watch`. */
+  reason: string;
+  ref: StateRef;
+}
+
+export interface TypeCoverage {
+  fields: FieldCoverage[];
+  type: string;
+}
+
+export interface ObjectCoverage {
+  types: TypeCoverage[];
+}
+
+/**
+ * Where pushed values come from: only a `live` source sustains a claim, and the age of every value counts
+ * from `source_observed_at`.
+ */
+export interface Provenance {
+  scope?: "global" | "customer" | "context";
+  source: "live" | "snapshot" | "cache";
+  source_observed_at: string;
+}
+
+export interface ObjectPush {
+  fields: Record<string, unknown>;
+  /**
+   * For a customer's derived object (a quote): the objects its inputs are fields of, by the name its type
+   * gives them, as `type:namespace:id` (`{"lead": "lead:crm:L-9"}`). When a field of one of them changes, the
+   * object expires, naming the input.
+   */
+  inputs?: Record<string, string> | null;
+  provenance: Provenance;
+  ref: StateRef;
+  /**
+   * The source's version of the object. A field moves only when this is greater than the version that last
+   * wrote it; a source never reuses a version for other content.
+   */
+  version: number;
+}
+
+export interface ObjectPushRequest {
+  objects: ObjectPush[];
+}
+
+/**
+ * How many items of the request each decision took, against the hot layer, with no database statement.
+ *
+ * A shared object's item is `applied` when at least one of its fields moved forward: reads serve it at once,
+ * and the consolidator writes it within a second with the same per-field rule, so the stored object never
+ * disagrees with the answer. `stale_version`: every field was already written by this version or a greater
+ * one, as a retried request finds. `out_of_set`: the object is not in the working set, and nothing is kept.
+ * A subject's object is `recorded`: accepted as a system event about it, in the request's one statement,
+ * and its fields move by the same rule when the event is applied.
+ */
+export interface ObjectPushResponse {
+  applied: number;
+  out_of_set: number;
+  recorded?: number;
+  stale_version: number;
+}
+
 /**
  * A snapshot taken in: its lines are applied as pushes of provenance `snapshot`, which never sustain a
  * claim, by the same version rule.
@@ -464,12 +486,21 @@ export interface StateVerifyResponse {
   verdicts: Verdict[];
 }
 
-/** The state of one subject: their objects of the declared types, each as a `display` read serves it. */
+/**
+ * The state of one subject (the `now` view): their objects of the declared types, each as a `display`
+ * read serves it; the shared objects they showed interest in, and what changed since they saw them; and
+ * the same as short lines for the turn block.
+ */
 export interface StateView {
-  changes_since_seen?: (Record<string, unknown>)[];
+  changes_since_seen?: ChangeSinceSeen[];
   degraded?: boolean;
-  interests?: (Record<string, unknown>)[];
+  interests?: InterestState[];
   objects?: ObjectRead[];
+  /**
+   * The view as lines for the turn block, after `slots`: never part of the pack's `text`, so the cached
+   * prefix keeps its bytes. Absent when there is nothing to say.
+   */
+  text?: string | null;
 }
 
 export interface StateViewRequest {

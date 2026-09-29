@@ -4,6 +4,7 @@
  * the SDK profile and stays in the local cache: with Niadra down the checks go on with the last one read.
  */
 
+import type { InternalText } from "../claims/internal.js";
 import type { ClaimContractSummary } from "../types/state.js";
 import type { ClaimRecord } from "../types/turns.js";
 import { checkSaid } from "./claims.js";
@@ -19,7 +20,10 @@ export interface CheckOptions {
 }
 
 export class ClaimCheck {
-  constructor(private readonly contract: () => Promise<ClaimContractSummary | null>) {}
+  constructor(
+    private readonly contract: () => Promise<ClaimContractSummary | null>,
+    private readonly internal?: InternalText,
+  ) {}
 
   /**
    * Classifies and counts the claims of `text` (a message before it goes, a document before it is saved)
@@ -32,7 +36,7 @@ export class ClaimCheck {
     if (contract === null) return [];
     try {
       const said = { text, context: options.context ?? "chat", immutable: options.immutable ?? false, agent: options.agent ?? frame?.agent ?? null };
-      const records = checkSaid(frame, contract, said);
+      const records = checkSaid(frame, contract, said, this.internal);
       frame?.addClaims(records);
       return records;
     } catch {
@@ -50,7 +54,7 @@ export class ClaimCheck {
     const frame = currentTurn();
     const contract = await this.contract();
     if (contract === null) return { text, claims: [], review: false };
-    return guardText(contract, frame, text, options);
+    return guardText(contract, frame, text, { ...options, ...(this.internal ? { internal: this.internal } : {}) });
   }
 
   /**
@@ -65,6 +69,6 @@ export class ClaimCheck {
       for await (const chunk of stream) yield chunk;
       return;
     }
-    yield* guardStream(new Guard(contract, frame, options), stream);
+    yield* guardStream(new Guard(contract, frame, { ...options, ...(this.internal ? { internal: this.internal } : {}) }), stream);
   }
 }

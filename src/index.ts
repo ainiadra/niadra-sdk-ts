@@ -4,6 +4,7 @@ export { Api } from "./api.js";
 export { canonicalJson, jsonDigest } from "./digest.js";
 export * as expr from "./state/expr.js";
 export * as claims from "./claims/index.js";
+export * as introspect from "./introspect/derive.js";
 export type { Logic } from "./state/logic.js";
 export { NiadraDestinationError, canonicalDestination, suppressionKey } from "./coordination/destination.js";
 export { ContactGateway, MemorySeen, NiadraContactTokenError, recipientHash, verifyContactToken } from "./coordination/token.js";

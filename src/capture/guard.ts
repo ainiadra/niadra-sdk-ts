@@ -28,6 +28,8 @@
  * replaces an answer with an error: a check that fails lets the text through. Offsets are code points.
  */
 
+import { internalRecord } from "../claims/internal.js";
+import type { InternalText } from "../claims/internal.js";
 import type { Finding } from "../claims/check.js";
 import { decimalText } from "../claims/decimal.js";
 import { mentions, toDecimal } from "../claims/numbers.js";
@@ -35,7 +37,7 @@ import type { Language } from "../claims/numbers.js";
 import { folded, pattern, phrases, units } from "../claims/text.js";
 import type { ClaimCategory, ClaimContractSummary } from "../types/state.js";
 import type { ClaimRecord } from "../types/turns.js";
-import { findingsOf, recordOf } from "./claims.js";
+import { findingsOf, passages, recordOf } from "./claims.js";
 import type { TurnFrame } from "./frame.js";
 
 export const HOLD_MS = 150;
@@ -64,6 +66,8 @@ export interface GuardOptions {
   holdMs?: number;
   messageMs?: number;
   now?: () => number;
+  /** The company's prompt fingerprints: a passage the output repeats gives way to the contract's line. */
+  internal?: InternalText;
 }
 
 const cps = (text: string): number => units(text).length;
@@ -95,6 +99,7 @@ export class Guard {
   private caveatSent = false;
   private readonly records: ClaimRecord[] = [];
   private review = false;
+  private readonly internal: InternalText | undefined;
 
   constructor(
     private readonly contract: ClaimContractSummary,
@@ -108,9 +113,13 @@ export class Guard {
     this.messageMs = options.messageMs ?? MESSAGE_MS;
     this.now = options.now ?? (() => performance.now());
     this.categories = (contract.categories ?? []).filter((c) => (c.agents ?? []).length === 0 || (this.agent !== null && (c.agents ?? []).includes(this.agent)));
-    this.candidate = candidates(this.categories);
+    this.internal = options.internal;
+    // A repeated passage of the company's prompt can be anywhere: every sentence is held and checked.
+    const ref = contract.internal_text?.shingle_hashes_ref;
+    const watching = ref !== undefined && this.internal?.has(ref) === true;
+    this.candidate = watching ? /[a-z0-9]/g : candidates(this.categories);
     // Where a context blocks, text goes sentence by sentence: a blocked claim takes its whole sentence.
-    this.whole = !this.immutable && this.categories.some((c) => blocks(c, this.context));
+    this.whole = !this.immutable && (watching || this.categories.some((c) => blocks(c, this.context)));
   }
 
   /** Milliseconds the current hold may still last; infinite while nothing is held. */
@@ -227,8 +236,13 @@ export class Guard {
     const text = cut(this.text, 0, upto);
     let piece = cut(text, low);
     try {
-      const findings = this.findings(text).filter((f) => low <= f.start && f.start < upto);
-      piece = this.act(text, low, findings);
+      const repeated = passages(this.contract, this.internal, text)
+        .filter(([[, e]]) => e > low)
+        .map(([[s, e], ref]): [[number, number], string] => [[Math.max(s, low), e], ref]);
+      const findings = this.findings(text).filter(
+        (f) => low <= f.start && f.start < upto && !repeated.some(([[s, e]]) => s <= f.start && f.start < e),
+      );
+      piece = this.act(text, low, findings, repeated);
     } catch {
       this.frame?.incomplete();
     }
@@ -241,7 +255,7 @@ export class Guard {
     return findingsOf(this.frame, this.contract, { text, context: this.context, immutable: this.immutable, agent: this.agent });
   }
 
-  private act(text: string, low: number, findings: readonly Finding[]): string {
+  private act(text: string, low: number, findings: readonly Finding[], repeated: readonly [[number, number], string][]): string {
     const rewrites = new Map<string, [number, number, string]>();
     const blocked = new Map<string, [number, number, string | null]>();
     for (const finding of findings) {
@@ -260,6 +274,13 @@ export class Guard {
         }
       }
       this.records.push(recordOf(finding, act));
+    }
+    // A passage of the company's own prompt gives way to the contract's line; a document goes to a person.
+    const redact = this.contract.internal_text?.redact ?? "";
+    for (const [[start, end], ref] of repeated) {
+      this.records.push(internalRecord([start, end], ref, "block"));
+      if (this.immutable) this.review = true;
+      else rewrites.set(String(start), [start, end, redact]);
     }
     const spans = [...blocked.values()];
     const edits: [number, number, string][] = [...rewrites.values()].filter(([s]) => !spans.some(([b, c]) => b <= s && s < c));
@@ -296,6 +317,9 @@ export class Guard {
       if (!this.unchecked.some(([s, e]) => s <= finding.start && finding.start < e)) continue;
       const act = ["none", "count", "discard_anchor"].includes(finding.action) ? finding.action : "warn";
       this.records.push(recordOf(finding, act));
+    }
+    for (const [span, ref] of passages(this.contract, this.internal, this.text)) {
+      if (this.unchecked.some(([s, e]) => s <= span[0] && span[0] < e)) this.records.push(internalRecord(span, ref, "warn"));
     }
   }
 }

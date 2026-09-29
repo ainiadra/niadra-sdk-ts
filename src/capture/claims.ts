@@ -17,6 +17,8 @@
  *   output gives it.
  */
 
+import { internalRecord } from "../claims/internal.js";
+import type { InternalText } from "../claims/internal.js";
 import { check, sameValue } from "../claims/check.js";
 import type { Finding, Turn, TurnValue } from "../claims/check.js";
 import { decimal, decimalText } from "../claims/decimal.js";
@@ -31,13 +33,24 @@ const MAX_TEXT = 200;
 const STANDING = new Set(["matched", "quoted_found", "anchored"]);
 
 /** The claims of everything the turn said, as the record carries them, in count mode. */
-export function checkTurn(frame: TurnFrame, contract: ClaimContractSummary): ClaimRecord[] {
-  return frame.said.flatMap((said) => checkSaid(frame, contract, said));
+export function checkTurn(frame: TurnFrame, contract: ClaimContractSummary, internal?: InternalText): ClaimRecord[] {
+  return frame.said.flatMap((said) => checkSaid(frame, contract, said, internal));
 }
 
-/** The claims of one output in count mode: a claim that stands records `none`, any other `count`. */
-export function checkSaid(frame: TurnFrame | undefined, contract: ClaimContractSummary, said: Said): ClaimRecord[] {
-  return findingsOf(frame, contract, said).map((f) => recordOf(f, STANDING.has(f.verdict) ? "none" : "count"));
+/**
+ * The claims of one output in count mode: a claim that stands records `none`, any other `count`, and so does a
+ * passage of the company's own prompt it repeats.
+ */
+export function checkSaid(frame: TurnFrame | undefined, contract: ClaimContractSummary, said: Said, internal?: InternalText): ClaimRecord[] {
+  const records = findingsOf(frame, contract, said).map((f) => recordOf(f, STANDING.has(f.verdict) ? "none" : "count"));
+  return [...records, ...passages(contract, internal, said.text).map(([span, ref]) => internalRecord(span, ref, "count"))];
+}
+
+/** Where `text` repeats the company's prompt the contract names, with the prompt's version. */
+export function passages(contract: ClaimContractSummary, internal: InternalText | undefined, text: string): [[number, number], string][] {
+  const config = contract.internal_text;
+  if (!config || internal === undefined) return [];
+  return internal.passages(text, config.shingle_hashes_ref, config.n ?? 8).map((span) => [span, config.shingle_hashes_ref]);
 }
 
 /** The claims of one output, with the verdict and the act its category's action gives. */

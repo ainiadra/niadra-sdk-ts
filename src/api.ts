@@ -15,7 +15,7 @@ import { uuidv7 } from "./ids.js";
 import { segment } from "./routes.js";
 import type { RouteCall } from "./routes.js";
 import type { CheckBatchRequest, CheckBatchResponse, CheckRequest, CheckResult, ClaimRelease, ClaimRequest, ContactKeys, CoordinationReportPage, DeclareRequest, DeclareResult, Effect, EffectReserve, EffectSettle, Handoff, HandoffCreate, HandoffOutcome, OwnershipClaim, ShadowRequest, ShadowRun, SuppressionPage, SuppressionSalt } from "./types/coordination.js";
-import type { AttributionReport, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
+import type { AttributionReport, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, CounterfactualRunPage, ExperimentReport, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
 import type { AgentState, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
 import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
 
@@ -179,17 +179,29 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/state/read", body }, options);
   }
 
-  /** `GET /v1/state/refresh-requests`. */
+  /**
+   * `GET /v1/state/refresh-requests`. The company's resolver worker takes what to fetch again: the higher
+   * priorities and the older first,
+   * each leased to it for 60 seconds; a request it does not answer is offered again, three times at most.
+   */
   refreshRequests(params: { limit?: number } = {}, options: RequestOptions = {}): Promise<RefreshRequestPage> {
     return this.call({ method: "GET", path: "/v1/state/refresh-requests", query: { limit: params.limit ?? 50 } }, options);
   }
 
-  /** `POST /v1/state/verify`. */
+  /**
+   * `POST /v1/state/verify`. A verdict per object and field for a claim, without waiting for the source:
+   * whether it may be claimed
+   * now, whether a value given matches the one held, and what may not be said with data this old.
+   */
   stateVerify(body: StateVerifyRequest, options: RequestOptions = {}): Promise<StateVerifyResponse> {
     return this.call({ method: "POST", path: "/v1/state/verify", body }, options);
   }
 
-  /** `POST /v1/state/view`. */
+  /**
+   * `POST /v1/state/view`. The subject's `now` view for the read's purpose: their objects, the shared objects
+   * they showed
+   * interest in and what changed since they saw them, and the same as lines for the turn block.
+   */
   stateView(body: StateViewRequest, options: RequestOptions = {}): Promise<StateView> {
     return this.call({ method: "POST", path: "/v1/state/view", body }, options);
   }
@@ -233,9 +245,32 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/measure/attribution", query: { since: params.since, until: params.until } }, options);
   }
 
-  /** `POST /v1/measure/counterfactual-runs`. */
+  /** `GET /v1/measure/counterfactual-runs`. */
+  counterfactualRuns(params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<CounterfactualRunPage> {
+    return this.call({ method: "GET", path: "/v1/measure/counterfactual-runs", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
+  }
+
+  /**
+   * `POST /v1/measure/counterfactual-runs`. What a runner in the company's CI measured: whether an element
+   * changes what a tool returns, against the
+   * tool's own noise. Positions and overlaps only (the tool counterfactual spec).
+   */
   counterfactualRun(body: CounterfactualRunCreate, options: RequestOptions = {}): Promise<CounterfactualRun> {
     return this.call({ method: "POST", path: "/v1/measure/counterfactual-runs", body }, options);
+  }
+
+  /** `GET /v1/measure/counterfactual-runs/{run_id}`. */
+  counterfactualRunRead(runId: string, options: RequestOptions = {}): Promise<CounterfactualRun> {
+    return this.call({ method: "GET", path: `/v1/measure/counterfactual-runs/${segment(runId)}` }, options);
+  }
+
+  /**
+   * `GET /v1/measure/experiments`. Each experiment on an element or an agent, arm by arm against `control`:
+   * CUPED-adjusted, with the
+   * mixture sequential test, whose p-value and interval hold however often the report is read.
+   */
+  experiments(options: RequestOptions = {}): Promise<ExperimentReport> {
+    return this.call({ method: "GET", path: "/v1/measure/experiments" }, options);
   }
 
   /**
@@ -254,7 +289,10 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/measure/outcomes", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
-  /** `POST /v1/measure/power`. */
+  /**
+   * `POST /v1/measure/power`. How many days of the space's traffic a relative difference needs, looked at
+   * once or every day.
+   */
   power(body: PowerRequest, options: RequestOptions = {}): Promise<PowerResult> {
     return this.call({ method: "POST", path: "/v1/measure/power", body }, options);
   }

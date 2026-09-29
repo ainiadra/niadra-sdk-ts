@@ -161,7 +161,8 @@ export interface ClaimRelease {
 /**
  * A declared claim, held by `holder`. `level` defaults to the space's least restrictive level; a
  * declaration is refused (409 `lease_held`) while another holder's claim is at least as restrictive, and the
- * same holder renews its own. `lease_s` is capped by the space's longest declared lease.
+ * same holder renews its own. `lease_s` is capped by the space's longest declared lease. A task lock names
+ * an object and its `task`, and is refused (409 `task_locked`) while another holder has that task.
  */
 export interface ClaimRequest {
   holder: string;
@@ -170,12 +171,35 @@ export interface ClaimRequest {
   lease_s: number;
   level?: string | null;
   object?: ObjectRef | null;
+  /** When the source saw it; an observation older than the source's last is ignored. */
+  observed_at?: string | null;
+  /**
+   * An observation of this ownership source, read and sent by the company's worker: never refused, replacing
+   * what the source said before, and capped by the source's validity.
+   */
+  source?: string | null;
   subject?: Handle | null;
   task?: string | null;
 }
 
+/** The person accepted or declined a commitment, maybe in a later conversation. */
+export interface CommitmentDecidedDetail {
+  commitment_id: string;
+  outcome: "accepted" | "declined";
+}
+
+export interface CommitmentDecided {
+  agent: string;
+  detail: CommitmentDecidedDetail;
+  kind: "commitment.decided";
+  object?: ObjectRef | null;
+  subject?: Handle | null;
+}
+
+/** `score` ranks commitments of a `best_wins` type: the higher holds. */
 export interface CommitmentMadeDetail {
   commitment_id: string;
+  score?: number | null;
   terms?: Record<string, unknown>;
   type: string;
   valid_until?: string | null;
@@ -238,8 +262,21 @@ export interface ContactMade {
   subject?: Handle | null;
 }
 
+/**
+ * A shadow run: the space's policy applied to its outbound messages already ingested, with nothing
+ * enforced. `summary` holds the conflicts found and per 1,000 customers a month, without anyone in them.
+ */
+export interface CoordinationReport {
+  days: number;
+  finished_at?: string | null;
+  report_id: string;
+  requested_at: string;
+  status: "pending" | "done" | "failed";
+  summary?: Record<string, unknown>;
+}
+
 export interface CoordinationReportPage {
-  items: (Record<string, unknown>)[];
+  items: CoordinationReport[];
   next_cursor?: string | null;
 }
 
@@ -330,7 +367,7 @@ export interface TaskLockDeclared {
  * What happened, after the fact: one kind of declaration, with the fields of its kind in `detail` (the
  * coordination spec, 5).
  */
-export type DeclareRequest = CaseOpened | CaseClosed | LeaseDeclared | TaskLockDeclared | ContactMade | EffectDeclared | CommitmentMade | CommitmentWithdrawn | HandoffDeclared | SuppressionAdded | SuppressionLifted;
+export type DeclareRequest = CaseOpened | CaseClosed | LeaseDeclared | TaskLockDeclared | ContactMade | EffectDeclared | CommitmentMade | CommitmentWithdrawn | CommitmentDecided | HandoffDeclared | SuppressionAdded | SuppressionLifted;
 
 export interface DeclareResult {
   accepted: boolean;
@@ -367,9 +404,12 @@ export interface EffectSettle {
   state: "done" | "failed" | "unknown_outcome";
 }
 
-/** The compiled `handoff` view, at the receiving side's policy and verification level. */
+/**
+ * The compiled `handoff` view, at the receiving side's policy and verification level. `etag` is the
+ * pack's it was compiled from, absent for a subject the memory knows nothing of yet.
+ */
 export interface HandoffContext {
-  etag: string;
+  etag?: string | null;
   policy_version?: string | null;
   text: string;
 }
@@ -401,20 +441,32 @@ export interface HandoffPackage {
   promises_open?: PromiseRef[];
   reason?: string | null;
   spec?: "handoff-package.v0";
+  /** Whom the handoff is about. */
+  subject?: Handle | null;
   suppressions?: string[];
   target: string;
 }
 
 export interface Handoff {
   created_at: string;
+  expected_by?: string | null;
   handoff_id: string;
   outcome?: string | null;
   package?: HandoffPackage | null;
   status: "created" | "accepted" | "closed" | "expired";
 }
 
+/**
+ * Hands the subject to `target`. The package is compiled at `level`, the verification the receiving
+ * side has of the subject, so it never carries what that side could not read.
+ */
 export interface HandoffCreate {
+  /** The agent handing off; the calling key's name when absent. */
+  agent?: string | null;
   conversation_id?: string | null;
+  /** When the outcome is due; the space's default wait when absent. */
+  expected_by?: string | null;
+  level?: Verification;
   reason?: string | null;
   subject: Handle;
   target: string;

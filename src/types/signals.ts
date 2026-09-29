@@ -6,6 +6,44 @@
 
 import type { Handle, ObjectRef } from "./common.js";
 
+/**
+ * One arm against `control` on one metric, adjusted by CUPED when the history varies, with the mixture
+ * sequential test: its p-value and interval hold at any look, so the report may be read every day.
+ */
+export interface ArmComparison {
+  arm: string;
+  arm_mean: number;
+  ci_high: number;
+  /** The always-valid interval of `difference` at the test's `alpha`. */
+  ci_low: number;
+  /** Per person, before the adjustment. */
+  control_mean: number;
+  /** `p_value` at or below `alpha`: the difference is real. */
+  decided: boolean;
+  /** The arm minus the control, per person, adjusted. */
+  difference: number;
+  /** The daily looks kept before this one. */
+  looks: number;
+  metric: "conversion" | "value";
+  /** The running minimum over the daily looks and this one. */
+  p_value: number;
+  /** `difference` over the control's mean. */
+  relative: number | null;
+  /** The share of the variance CUPED removed; absent when it did not apply. */
+  variance_reduction: number | null;
+}
+
+/** The people one arm holds and what they did after they were assigned, from the outcome links. */
+export interface ArmOutcomes {
+  arm: string;
+  /** People with an outcome in a success state. */
+  converted: number;
+  outcomes: number;
+  people: number;
+  /** Their lines' money, each line once whatever the method. */
+  value_minor: number;
+}
+
 export interface AttributeEntry {
   apply: "always" | "when_asked";
   category?: string | null;
@@ -179,17 +217,136 @@ export interface ConstraintsRequest {
   tool?: string | null;
 }
 
-export interface CounterfactualRun {
-  limits?: string[];
-  noise_floor?: number | null;
-  overlap_at_k?: number | null;
-  run_id: string;
+/**
+ * An item the person engaged with in the recorded turn, by its 1-based position in each live list;
+ * absent where the list does not hold it.
+ */
+export interface CounterfactualEngaged {
+  base?: number | null;
+  variant?: number | null;
 }
 
-export interface CounterfactualRunCreate {
-  element: string;
-  results: (Record<string, unknown>)[];
+/**
+ * One recorded tool call run live three times at the same moment: twice with the element (the base,
+ * whose two lists measure the tool's own noise) and once without it (the variant). Positions and
+ * overlaps only: never an item, an argument or a result.
+ */
+export interface CounterfactualCase {
+  /** Items in the base's first list. */
+  base_count?: number | null;
+  call_id: string;
+  /** The calls ran as the tool's dry run. */
+  dry_run?: boolean;
+  engaged?: CounterfactualEngaged[];
+  /** The positions compared: the recorded list's `visible_k`, else the run's `k`. */
+  k?: number | null;
+  /** overlap@k of the base's two lists: the tool's own noise. */
+  noise?: number | null;
+  /** overlap@k of the base's first list and the variant's. */
+  overlap?: number | null;
+  /**
+   * `no_dry_run` for a tool that writes state and has no dry run: it is never called. `tool_error` when a
+   * call failed, `infrastructure_error` when the runner could not run the case.
+   */
+  status: "completed" | "no_dry_run" | "tool_error" | "infrastructure_error";
+  turn_id: string;
+  /** Items in the variant's list. */
+  variant_count?: number | null;
+}
+
+/** Where the items the person engaged with went without the element, over the completed cases. */
+export interface CounterfactualEngagement {
+  /** Within the variant's first `k` and not the base's. */
+  gained: number;
+  items: number;
+  /** Within the first `k` of both lists. */
+  kept: number;
+  /** Within the base's first `k` and not the variant's. */
+  lost: number;
+  /**
+   * The variant's position minus the base's, averaged over the items both lists hold; positive when they
+   * fell.
+   */
+  mean_shift?: number | null;
+  /** Within the first `k` of the base's list. */
+  shown: number;
+}
+
+/**
+ * Whether the element changes what the tool returns, beyond the tool's own noise. It never says whether
+ * the result got better, nor how the model reacts: `limits` says so, and what else holds the answer
+ * back.
+ */
+export interface CounterfactualRun {
+  above_noise: number;
+  /** Completed cases whose overlap is below their own noise. */
+  below_noise: number;
+  cases: number;
+  completed: number;
+  created_at: string;
+  /** `noise_floor - overlap`: how much of the first positions the element moves beyond noise. */
+  effect: number | null;
+  element: "constraints" | "hard" | "size" | "exclude";
+  engaged: CounterfactualEngagement;
+  label?: string | null;
+  limits: ("not_quality" | "model_reaction_not_measured" | "trivial_for_hard" | "few_cases" | "noisy_tool" | "cases_skipped" | "dry_run")[];
+  /** Mean overlap@k of the base with itself. */
+  noise_floor: number | null;
+  /** Mean overlap@k of the base and the variant. */
+  overlap: number | null;
+  /**
+   * The two-sided sign test of `below_noise` against `above_noise`: how likely a split this uneven is when
+   * the element changes nothing.
+   */
+  p_value: number | null;
+  run_id: string;
+  /** The cases not completed. */
+  skipped?: Record<string, number>;
+  ties: number;
   tool: string;
+}
+
+/**
+ * What a runner measured in the company's CI for one tool and one element (the tool counterfactual
+ * spec).
+ */
+export interface CounterfactualRunCreate {
+  cases: CounterfactualCase[];
+  element: "constraints" | "hard" | "size" | "exclude";
+  /** The positions compared when a recorded list has no `visible_k`. */
+  k?: number;
+  /** A name for the run, such as the commit or the build it ran on. */
+  label?: string | null;
+  tool: string;
+}
+
+export interface CounterfactualRunPage {
+  items: CounterfactualRun[];
+  next_cursor?: string | null;
+}
+
+export interface ExperimentResult {
+  agent?: string | null;
+  alpha: number;
+  arms: ArmOutcomes[];
+  /** Empty until each arm holds enough people for the normal approximation. */
+  comparisons: ArmComparison[];
+  /** The days before each person's assignment taken as the covariate. */
+  cuped_days: number;
+  element?: string | null;
+  ends_at?: string | null;
+  experiment: string;
+  kind: "element" | "agent";
+  starts_at: string;
+}
+
+/**
+ * Every experiment on an element or an agent, arm by arm, from what people did after they were assigned:
+ * incremental, as only a holdout says.
+ */
+export interface ExperimentReport {
+  as_of: string;
+  experiments: ExperimentResult[];
 }
 
 /**
@@ -310,6 +467,11 @@ export interface OutcomeLink {
   action_id?: string | null;
   agent?: string | null;
   band: "deterministic" | "probable";
+  /**
+   * Of an `identity` link: how often that method names the exposure a line's own token names in this space,
+   * where both exist. Beside the value, never multiplied by it.
+   */
+  confidence?: number | null;
   currency?: string | null;
   exposure_id?: string | null;
   /** When a provisional link becomes final. */
@@ -342,16 +504,45 @@ export interface OutcomePage {
   next_cursor?: string | null;
 }
 
+/**
+ * How long the space's traffic takes to detect a difference of `effect` (relative: 0.1 is 10%) on
+ * `metric`. The traffic and the baseline come from the space's history, the named experiment's or the
+ * busiest one's of the last 28 days, unless given.
+ */
 export interface PowerRequest {
   alpha?: number;
+  /** Per person: a rate for `conversion`, minor units for `value`. */
+  baseline_mean?: number | null;
+  /** Per person, for `value`; a rate's follows from its mean. */
+  baseline_sd?: number | null;
+  control_fraction?: number;
+  /** New people a day entering the test. */
+  daily_people?: number | null;
+  /** The relative difference to detect: 0.1 is 10%. */
   effect: number;
-  metric: string;
+  /** The experiment whose history to use. */
+  experiment?: string | null;
+  metric?: "conversion" | "value";
   power?: number;
 }
 
 export interface PowerResult {
+  baseline_from: "given" | "history";
+  baseline_mean: number;
+  baseline_sd: number;
+  daily_people: number;
+  /** At a fixed horizon, looked at once, at the end. */
   days: number | null;
-  sample_size: number | null;
+  days_sequential: number | null;
+  effect: number;
+  /** The experiment whose history was used. */
+  experiment?: string | null;
+  metric: "conversion" | "value";
+  /** Both arms together, at a fixed horizon. */
+  people: number | null;
+  /** Both arms together, for the daily-looked sequential test to have decided with `power`. */
+  people_sequential: number | null;
+  traffic_from: "given" | "history";
 }
 
 export interface ReconcileRequest {
