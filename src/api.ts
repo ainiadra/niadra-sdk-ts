@@ -15,9 +15,9 @@ import { uuidv7 } from "./ids.js";
 import { segment } from "./routes.js";
 import type { RouteCall } from "./routes.js";
 import type { CheckBatchRequest, CheckBatchResponse, CheckRequest, CheckResult, ClaimRelease, ClaimRequest, ContactKeys, CoordinationReportPage, DeclareRequest, DeclareResult, Effect, EffectReserve, EffectSettle, Handoff, HandoffCreate, HandoffOutcome, OwnershipClaim, ShadowRequest, ShadowRun, SuppressionPage, SuppressionSalt } from "./types/coordination.js";
-import type { AttributionReport, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, CounterfactualRunPage, ExperimentReport, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
-import type { AgentState, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
-import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
+import type { AttributionReport, BiUpload, BiUploadRequest, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, CounterfactualRunPage, ExperimentReport, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
+import type { AgentState, AgentStateMetaPage, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
+import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnIndexPage, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
 
 /** The routes of `niadra.api`. See the module. */
 export class Api {
@@ -28,12 +28,18 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/changes", query: { agent: params.agent, cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
-  /** `GET /v1/data-issues`. */
-  dataIssues(params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<DataIssuePage> {
-    return this.call({ method: "GET", path: "/v1/data-issues", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
+  /**
+   * `GET /v1/data-issues`. Newest opened first: data problems, drift, divergence and rule conflicts, with no
+   * personal data.
+   */
+  dataIssues(params: { status?: string; kind?: string | null; cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<DataIssuePage> {
+    return this.call({ method: "GET", path: "/v1/data-issues", query: { status: params.status ?? "open", kind: params.kind, cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
-  /** `POST /v1/data-issues/{issue_id}/ack`. */
+  /**
+   * `POST /v1/data-issues/{issue_id}/ack`. Closes the issue; the next occurrence of the same problem opens a
+   * new one.
+   */
   acknowledgeDataIssue(issueId: string, options: RequestOptions = {}): Promise<DataIssue> {
     return this.call({ method: "POST", path: `/v1/data-issues/${segment(issueId)}/ack` }, options);
   }
@@ -96,6 +102,15 @@ export class Api {
   }
 
   /**
+   * `GET /v1/turns/index/{day}`. The rows the kept tier took on a UTC day with their digests, which make the
+   * `turns.root` of the day's
+   * `audit.root` event: the company anchors them in its own audit chain.
+   */
+  turnIndex(day: string, params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<TurnIndexPage> {
+    return this.call({ method: "GET", path: `/v1/turns/index/${segment(day)}`, query: { cursor: params.cursor, limit: params.limit ?? 500 } }, options);
+  }
+
+  /**
    * `POST /v1/turns/promote`. Promoting is idempotent by itself: a turn promoted again counts as
    * `already_kept`.
    */
@@ -113,7 +128,11 @@ export class Api {
     return this.call({ method: "GET", path: `/v1/turns/${segment(turnId)}` }, options);
   }
 
-  /** `GET /v1/notifications`. */
+  /**
+   * `GET /v1/notifications`. The events the webhooks carry, oldest first, from `cursor` (the start of the
+   * feed without one); a
+   * poll with nothing new answers the same cursor. Events stay 7 days.
+   */
   notifications(params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<NotificationPage> {
     return this.call({ method: "GET", path: "/v1/notifications", query: { cursor: params.cursor, limit: params.limit ?? 100 } }, options);
   }
@@ -134,12 +153,20 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/agent-state/read", body }, options);
   }
 
-  /** `POST /v1/content/{ref}/release`. */
+  /**
+   * `POST /v1/content/{ref}/release`. A person clears content the scan flagged or holds, with a reason and a
+   * receipt; the object's reads
+   * serve it from then on.
+   */
   releaseContent(ref: string, body: ContentRelease, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<ContentReleaseResult> {
     return this.call({ method: "POST", path: `/v1/content/${segment(ref)}/release`, body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
   }
 
-  /** `GET /v1/objects/coverage`. */
+  /**
+   * `GET /v1/objects/coverage`. Each declared type's fields, the share of its objects that carry each and how
+   * old it is: the Console's
+   * Types screen. Stamps only, never a value.
+   */
   objectCoverage(options: RequestOptions = {}): Promise<ObjectCoverage> {
     return this.call({ method: "GET", path: "/v1/objects/coverage" }, options);
   }
@@ -160,6 +187,15 @@ export class Api {
    */
   snapshotObjects(params: { type: string }, options: RequestOptions = {}): Promise<ObjectSnapshotResponse> {
     return this.call({ method: "POST", path: "/v1/objects/snapshot", query: { type: params.type } }, options);
+  }
+
+  /**
+   * `GET /v1/profiles/{profile_id}/agent-state`. The customer's working states, as the Console shows them:
+   * size, version and dates, never the
+   * content.
+   */
+  profileAgentStates(profileId: string, options: RequestOptions = {}): Promise<AgentStateMetaPage> {
+    return this.call({ method: "GET", path: `/v1/profiles/${segment(profileId)}/agent-state` }, options);
   }
 
   /**
@@ -206,7 +242,12 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/state/view", body }, options);
   }
 
-  /** `POST /v1/types/fingerprint`. */
+  /**
+   * `POST /v1/types/fingerprint`. A deriving tool's check of a declared type: a fingerprint other than the
+   * declaration's is drift, and a
+   * type that alerts opens a data issue of kind `drift`, or counts the open one, and announces `type.drift`.
+   * Only the fingerprint and the counts of what changed travel: never a name, a value or a definition.
+   */
   typeFingerprint(body: TypeFingerprintRequest, options: RequestOptions = {}): Promise<TypeFingerprintResponse> {
     return this.call({ method: "POST", path: "/v1/types/fingerprint", body }, options);
   }
@@ -305,9 +346,21 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/measure/reconcile", body }, options);
   }
 
-  /** `GET /v1/measure/unmet-demand`. */
-  unmetDemand(params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<UnmetDemandPage> {
-    return this.call({ method: "GET", path: "/v1/measure/unmet-demand", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
+  /**
+   * `POST /v1/measure/reconcile/uploads`. Where to upload the company's BI file for a reconciliation: a
+   * short-lived link for those bytes only.
+   */
+  reconcileUpload(body: BiUploadRequest, options: RequestOptions = {}): Promise<BiUpload> {
+    return this.call({ method: "POST", path: "/v1/measure/reconcile/uploads", body }, options);
+  }
+
+  /**
+   * `GET /v1/measure/unmet-demand`. What people asked the tools for and did not get, by week and combination
+   * of what was asked, where at
+   * least the space's minimum of distinct people asked it: never per person.
+   */
+  unmetDemand(params: { since: string; until: string; tool?: string | null; cursor?: string | null; limit?: number }, options: RequestOptions = {}): Promise<UnmetDemandPage> {
+    return this.call({ method: "GET", path: "/v1/measure/unmet-demand", query: { since: params.since, until: params.until, tool: params.tool, cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
 
   /**

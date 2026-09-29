@@ -44,6 +44,12 @@ export interface ArmOutcomes {
   value_minor: number;
 }
 
+export interface AskedAttribute {
+  attr: string;
+  op: "in" | "not_in" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "between";
+  values: (boolean | number | string)[];
+}
+
 export interface AttributeEntry {
   apply: "always" | "when_asked";
   category?: string | null;
@@ -103,13 +109,27 @@ export interface AttributionReport {
 }
 
 /**
- * The company's BI export for the period, as CSV with a header: `order` (the id the company knows the
- * object by), `line` (optional), `value` (in major units, as the signed definition nets it) and
- * `currency`.
+ * The company's BI export for the period, uploaded first (`POST /v1/measure/reconcile/uploads`), as CSV
+ * with a header: `order` (the id the company knows the object by), `line` (optional), `value` (in major
+ * units, as the signed definition nets it) and `currency`. It is read once and deleted.
  */
 export interface BiFile {
-  content: string;
   format?: "csv";
+  upload_id: string;
+}
+
+export interface BiUpload {
+  expires_at: string;
+  /** Send exactly these headers; the storage refuses other bytes. */
+  upload_headers?: Record<string, string>;
+  upload_id: string;
+  upload_url: string;
+}
+
+/** Reserves the upload of the company's BI file: its size and SHA-256, which the storage checks. */
+export interface BiUploadRequest {
+  sha256: string;
+  size_bytes: number;
 }
 
 export interface BlockSubject {
@@ -613,7 +633,31 @@ export interface ReviewResolution {
   outcome: "upheld" | "reversed" | "corrected";
 }
 
+/**
+ * One combination people asked a tool for, in one week, that came back with nothing or with fewer than
+ * three results. Never a person: a combination fewer than the space's minimum of people asked is left
+ * out.
+ */
+export interface UnmetDemand {
+  /**
+   * What the tool's arguments asked, on the type registry's fields, values normalized; empty when the
+   * arguments named none.
+   */
+  asked: AskedAttribute[];
+  calls: number;
+  /** Calls that returned nothing; the rest returned one or two results. */
+  empty: number;
+  /** Distinct people who asked it that week. */
+  people: number;
+  tool: string;
+  /** The Monday the week starts on. */
+  week: string;
+}
+
 export interface UnmetDemandPage {
-  items: (Record<string, unknown>)[];
+  items: UnmetDemand[];
+  min_people: number;
   next_cursor?: string | null;
+  since: string;
+  until: string;
 }
