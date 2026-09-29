@@ -215,6 +215,56 @@ export interface CoordinationBlock {
   commitments_active?: CommitmentRef[];
 }
 
+/** What this agent's recorded turns added up to, in one conversation or one case. */
+export interface BudgetUse {
+  turns: number;
+  /** Each one reads the prompt's prefix again. */
+  model_calls: number;
+  tool_calls: number;
+  tokens_in: number;
+  tokens_cached: number;
+  tokens_out: number;
+  cost_usd: number;
+}
+
+/** What the pack of this read costs, in estimated tokens, whole and per section. */
+export interface BudgetPack {
+  total: number;
+  sections: Record<string, number>;
+}
+
+/**
+ * What the measurement of context use says this agent leaves unused, by unit of items: delivered in enough
+ * measured conversations and never used.
+ */
+export interface BudgetCut {
+  units: string[];
+  /** The pack already leaves them out. */
+  applied: boolean;
+  window_days: number;
+  min_deliveries: number;
+}
+
+/**
+ * The context budget of one read, beside the pack by `include`: what the pack costs, what this agent already
+ * spent in the conversation and the case, and what can go without loss. Shown, never enforced: the agent's
+ * loop decides.
+ */
+export interface BudgetBlock {
+  /** Absent when the read served no pack. */
+  pack?: BudgetPack | null;
+  /** This agent's turns in the conversation; absent without one. */
+  conversation?: BudgetUse | null;
+  /** This agent's turns in the case (`task_id`). */
+  case?: BudgetUse | null;
+  /** Turns other agents recorded in the same conversation. */
+  other_agents_turns?: number;
+  /** Absent until the measurement found a unit. */
+  cut?: BudgetCut | null;
+  /** False when the counters could not be read: the numbers above are then missing, not zero. */
+  counted: boolean;
+}
+
 /** Body of a `POST /v1/context` response. */
 export interface ContextResponse {
   /** `true` when `known_etag` still matches; `text` is then omitted. */
@@ -252,6 +302,11 @@ export interface ContextResponse {
    * contacts each purpose with a budget has left and the commitments that hold. Advice: only a check decides.
    */
   coordination?: CoordinationBlock | null;
+  /**
+   * With `include: ["budget"]`: what the pack costs per section, what this agent already spent in the
+   * conversation and the case, and what the measurement says can go; shown, never enforced.
+   */
+  budget?: BudgetBlock | null;
   cache?: CacheDirectives | null;
   timing: Record<string, number>;
   path: DeliveryPath;

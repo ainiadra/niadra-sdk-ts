@@ -6,8 +6,8 @@
  *
  * `--server` cuts the routes tagged in `TAGS` out of the server's OpenAPI document (`openapi/cell.json`)
  * into `spec/openapi/cell.json`, with every schema they reach and its text as a public SDK may carry it.
- * `--spec` copies the conformance vectors (`vectors/*.json`) and the claim contract and turn record
- * examples. Every run then writes the types of those routes (`src/types/<module>.ts`) and their methods
+ * `--spec` copies the Context Pack schemas the SDK reads (`schemas/context-pack.v1.json` and `v2`), the
+ * conformance vectors (`vectors/*.json`) and the claim contract and turn record examples. Every run then writes the types of those routes (`src/types/<module>.ts`) and their methods
  * (`src/api.ts`) from `spec/openapi/cell.json`. `test/generated.test.ts` fails when a generated file differs
  * from what this script writes, so regenerating is this one command. It runs on Node 22.6 or later, which
  * strips the types itself.
@@ -490,6 +490,10 @@ export function generate(document: Document): Map<string, string> {
 }
 
 function copySpec(spec: string): void {
+  for (const name of ["context-pack.v1.json", "context-pack.v2.json"]) {
+    copyFileSync(join(spec, "schemas", name), join(ROOT, "spec", name));
+    console.log(`copied schemas/${name}`);
+  }
   for (const folder of ["vectors", "examples/claim-contract", "examples/turn-record"]) {
     let entries: string[];
     try {

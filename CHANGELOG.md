@@ -92,6 +92,12 @@ built on them.
   verdict and action, `detected()` what a phrase of the negative corpus must never trigger, and `score()`
   the text anchor. It passes the claim-parser, claim-detect and claim-anchor vectors and finds nothing in
   the negative corpus of the three example contracts.
+- `ContextResponse.budget` (`BudgetBlock`, with `BudgetPack`, `BudgetUse` and `BudgetCut`): with
+  `include: ["budget"]`, what the pack costs per section, what this agent already spent in the conversation
+  and the case, and the units the measurement says it leaves unused. Shown, never enforced.
+- `niadra.api.overview()`: the coordination overview in counts (`GET /v1/coordination/overview`).
+- `pnpm sync-spec --spec` also copies the Context Pack schemas (`spec/context-pack.v1.json` and `v2`), and
+  `test/spec.test.ts` holds `ContextResponse` and every include block to the v2 schema.
 
 ## [0.6.1] - Unreleased
 

@@ -14,7 +14,7 @@ import type { RequestOptions } from "./context.js";
 import { uuidv7 } from "./ids.js";
 import { segment } from "./routes.js";
 import type { RouteCall } from "./routes.js";
-import type { CheckBatchRequest, CheckBatchResponse, CheckRequest, CheckResult, ClaimRelease, ClaimRequest, ContactKeys, CoordinationReportPage, DeclareRequest, DeclareResult, Effect, EffectReserve, EffectSettle, Handoff, HandoffCreate, HandoffOutcome, OwnershipClaim, ShadowRequest, ShadowRun, SuppressionPage, SuppressionSalt } from "./types/coordination.js";
+import type { CheckBatchRequest, CheckBatchResponse, CheckRequest, CheckResult, ClaimRelease, ClaimRequest, ContactKeys, CoordinationOverview, CoordinationReportPage, DeclareRequest, DeclareResult, Effect, EffectReserve, EffectSettle, Handoff, HandoffCreate, HandoffOutcome, OwnershipClaim, ShadowRequest, ShadowRun, SuppressionPage, SuppressionSalt } from "./types/coordination.js";
 import type { AttributionReport, BiUpload, BiUploadRequest, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, CounterfactualRunPage, ExperimentReport, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
 import type { AgentState, AgentStateMetaPage, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
 import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnIndexPage, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
@@ -443,6 +443,14 @@ export class Api {
   /** `POST /v1/coordination/effects/{effect_id}/settle`. */
   settleEffect(effectId: string, body: EffectSettle, params: { idempotency_key?: string } = {}, options: RequestOptions = {}): Promise<Effect> {
     return this.call({ method: "POST", path: `/v1/coordination/effects/${segment(effectId)}/settle`, body, idempotencyKey: params.idempotency_key ?? uuidv7() }, options);
+  }
+
+  /**
+   * `GET /v1/coordination/overview`. Ownership that holds now, effects, conflicts, budgets and contacts of
+   * the last `days`, in counts.
+   */
+  overview(params: { days?: number } = {}, options: RequestOptions = {}): Promise<CoordinationOverview> {
+    return this.call({ method: "GET", path: "/v1/coordination/overview", query: { days: params.days ?? 7 } }, options);
   }
 
   /** `GET /v1/coordination/reports`. */

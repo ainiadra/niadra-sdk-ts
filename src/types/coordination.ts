@@ -225,6 +225,36 @@ export interface CommitmentWithdrawn {
   subject?: Handle | null;
 }
 
+/** What coordination settled between parties in the window. */
+export interface ConflictCounts {
+  /** Commitments another of the subject's held first. */
+  commitments_superseded: number;
+  /** Handoffs whose outcome did not come back in time. */
+  handoffs_expired: number;
+  /** Subjects and objects two holders claimed at the same time: the more restrictive held. */
+  ownership_overlaps: number;
+  /** Contact tokens declared used more than once. */
+  tokens_reused: number;
+}
+
+export interface ContactBudgetUse {
+  /** Of them, the ones with no contact left in the window. */
+  at_limit: number;
+  limit: number;
+  per_hours: number;
+  purpose: string;
+  spent: number;
+  /** Subjects with a contact still in the budget's window. */
+  subjects: number;
+}
+
+export interface ContactCount {
+  contacts: number;
+  direction: "inbound" | "outbound";
+  purpose: string;
+  state: "reserved" | "made" | "expired";
+}
+
 /** An Ed25519 public key as a JWK (RFC 8037). A `retiring` key still verifies and signs nothing new. */
 export interface ContactKey {
   crv?: "Ed25519";
@@ -260,6 +290,41 @@ export interface ContactMade {
   kind: "contact.made";
   object?: ObjectRef | null;
   subject?: Handle | null;
+}
+
+export interface EffectCount {
+  effects: number;
+  kind: string;
+  state: "reserved" | "done" | "failed" | "unknown_outcome";
+}
+
+export interface OwnershipCount {
+  /** Claims that hold now. */
+  claims: number;
+  holder_kind: "agent" | "human" | "queue" | "system";
+  /** Distinct holders among them. */
+  holders: number;
+  kind: "owner" | "case" | "task_lock";
+  level: string;
+  via: "declaration" | "mapping" | "worker";
+}
+
+/**
+ * What coordination holds now and decided in the window, in counts: no subject, handle or message is in
+ * it.
+ */
+export interface CoordinationOverview {
+  /**
+   * Effects whose outcome nobody knows, at any age: never sent again by themselves, they wait for a system
+   * event or a person.
+   */
+  awaiting_decision: number;
+  budgets?: ContactBudgetUse[];
+  conflicts: ConflictCounts;
+  contacts?: ContactCount[];
+  effects?: EffectCount[];
+  ownership?: OwnershipCount[];
+  since: string;
 }
 
 /**

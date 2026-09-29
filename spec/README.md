@@ -13,7 +13,11 @@ pnpm sync-spec --server ../niadra-back --spec ../niadra-spec
 (JSON Schema 2020-12), and `examples/context-pack-v1-turn-as-data.json` its example of the answer
 to a turn, with the turn's slots, as data. `test/spec.test.ts` keeps the SDK's `ContextPack`,
 `PackSection`, `PackStamp`, `PackSlot` and `PackGuard` types equal to the schema, field by field, and
-reads the example. When the specification changes, copy the files again and run the tests.
+reads the example. `--spec` refreshes both schema copies.
+
+`context-pack.v2.json` is the version that adds the blocks a read asks for by `include` (constraints,
+state, coordination and budget); `test/spec.test.ts` keeps `ContextResponse` and each block's type equal to
+its fields.
 
 ## The routes of turn records, typed state, signals and coordination
 
