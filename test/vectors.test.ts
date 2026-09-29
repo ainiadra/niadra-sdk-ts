@@ -2,10 +2,9 @@
 //
 // `pnpm sync-spec --spec` copies them into spec/vectors (and the claim contract examples, with their
 // negative corpus, into spec/examples/claim-contract). `EXPECTED` lists every file the SDK runs, with the
-// fields its spec gives a case, and its runner. Nothing here passes without running:
-// - a file not published yet is skipped, titled "pending vectors";
-// - a file nothing expects, a case field its spec does not define and a malformed envelope fail.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+// fields its spec gives a case, and its runner. Nothing here passes without running: a missing file, a file
+// nothing expects, a case field its spec does not define and a malformed envelope fail.
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   NiadraContactTokenError,
@@ -542,7 +541,6 @@ async function typeDeriveCase(c: Case): Promise<void> {
   expect(await derive(c.catalog as Catalog, options)).toEqual(expected);
 }
 
-const published = (name: string): boolean => existsSync(new URL(`${name}.json`, VECTORS));
 const load = (name: string): VectorFile => JSON.parse(readFileSync(new URL(`${name}.json`, VECTORS), "utf8")) as VectorFile;
 
 it("runs every published vector file", () => {
@@ -551,10 +549,6 @@ it("runs every published vector file", () => {
 });
 
 for (const [name, expected] of Object.entries(EXPECTED)) {
-  if (!published(name)) {
-    it.skip(`pending vectors: ${name}.json is not published in niadra-spec yet`, () => undefined);
-    continue;
-  }
   describe(name, () => {
     const data = load(name);
 
@@ -580,11 +574,6 @@ for (const [name, expected] of Object.entries(EXPECTED)) {
 }
 
 for (const sector of NEGATIVE_CORPUS) {
-  const path = new URL(`examples/claim-contract/${sector}.json`, SPEC);
-  if (!existsSync(path)) {
-    it.skip(`pending vectors: examples/claim-contract/${sector}.json is not published yet`, () => undefined);
-    continue;
-  }
   // A phrase triggers when a category finds a claim in it, in any of the contract's languages and for any
   // of its agents (the claim contract spec, section 10.2).
   it(`no phrase of the ${sector} negative corpus triggers its contract`, () => {

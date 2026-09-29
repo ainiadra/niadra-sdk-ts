@@ -4,14 +4,14 @@ import type { QueueOptions } from "./options.js";
 import type { BatchItem, BatchResponse, HeartbeatItem } from "./types/events.js";
 
 /** Called once per item with `null` when the server accepted it, or the reason it did not. */
-export type Settle = (error: NiadraError | null) => void;
+type Settle = (error: NiadraError | null) => void;
 
 interface Pending {
   item: BatchItem;
   settle?: Settle | undefined;
 }
 
-export interface DrainReport {
+interface DrainReport {
   sent: number;
   failed: number;
   errors: NiadraError[];
@@ -194,7 +194,7 @@ export function isTurn(item: BatchItem): boolean {
 }
 
 /** In Node, a pending flush timer must not keep an otherwise finished process alive. */
-function unref(timer: unknown): void {
+export function unref(timer: unknown): void {
   if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
     (timer as { unref(): void }).unref();
   }

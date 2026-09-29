@@ -37,7 +37,7 @@ import type { ConstraintsBlock } from "../types/signals.js";
 import { BlobError, materialized } from "./playback.js";
 import { strictRead } from "./runner.js";
 
-export const MAX_K = 100;
+const MAX_K = 100;
 const MAX_CASES = 5000;
 const PINS = ["prompts", "corpus_digest", "model", "assembler", "tool_schemas"];
 

@@ -35,8 +35,8 @@ export type Flag =
 export type ContentMode = "stored" | "pointer" | "hash_only";
 
 /** The size the queue counts for a frame besides its blobs, and for each of its calls. */
-export const FRAME_BYTES = 512;
-export const CALL_BYTES = 256;
+const FRAME_BYTES = 512;
+const CALL_BYTES = 256;
 
 /** A value of the record, copied at the moment: its JSON text until the queue drops it, then its digest. */
 export interface Blob {

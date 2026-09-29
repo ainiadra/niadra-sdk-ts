@@ -60,7 +60,7 @@ export interface Read {
 }
 
 /** A tool as every framework needs it: the name, the text for the model, the JSON Schema and the call. */
-export interface ToolSpec {
+interface ToolSpec {
   name: string;
   description: string;
   /** JSON Schema of the arguments. None of them names the customer. */
@@ -94,7 +94,7 @@ export function resolveSession<S extends Session>(source: SessionResolver<S>): S
   }
 }
 
-export function isConversation(session: Session): session is Conversation {
+function isConversation(session: Session): session is Conversation {
   return "customer" in session && typeof session.customer === "function";
 }
 
@@ -278,7 +278,7 @@ function withoutWrite(option: AgentMemoryParams & { write?: boolean }): AgentMem
 }
 
 /** The bound kit as specs. The customer stays inside `bound`; no parameter names them. */
-export function toolSpecs(bound: BoundTools): ToolSpec[] {
+function toolSpecs(bound: BoundTools): ToolSpec[] {
   return bound.definitions.map(({ function: definition }) => ({
     name: definition.name,
     description: definition.description,

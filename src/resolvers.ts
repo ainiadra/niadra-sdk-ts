@@ -158,7 +158,7 @@ export function fromResolver(ref: StateRef, field: string, value: unknown, resol
 }
 
 /** Equal values, numbers by their decimal value (511.06 and "511.06" are the same). */
-export function same(a: unknown, b: unknown): boolean {
+function same(a: unknown, b: unknown): boolean {
   if (typeof a === "boolean" || typeof b === "boolean") return a === b;
   const numeric = (v: unknown): string | null => (typeof v === "number" ? String(v) : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v.trim()) ? v.trim() : null);
   const x = numeric(a);

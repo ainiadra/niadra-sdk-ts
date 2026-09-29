@@ -19,8 +19,8 @@ import { sha256Hex } from "../sha256.js";
 import type { ClaimRecord } from "../types/turns.js";
 import { words } from "./text.js";
 
-export const INTERNAL_CATEGORY = "internal_text";
-export const INTERNAL_VERDICT = "internal_text_found";
+const INTERNAL_CATEGORY = "internal_text";
+const INTERNAL_VERDICT = "internal_text_found";
 
 const encoder = new TextEncoder();
 const hash = (folded: readonly string[]): string => sha256Hex(encoder.encode(folded.join(" ")));

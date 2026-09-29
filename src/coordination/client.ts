@@ -55,7 +55,7 @@ export interface CheckOptions {
 }
 
 /** The decision when Niadra did not answer in time, by the purpose's direction. Nothing reserved, no token. */
-export function fallback(request: CheckRequest, suppressed: boolean, failOpen?: boolean): CheckResult {
+function fallback(request: CheckRequest, suppressed: boolean, failOpen?: boolean): CheckResult {
   let decision: CheckResult["decision"];
   let reason: string;
   if (request.direction === "inbound") [decision, reason] = ["allow", "unchecked"];

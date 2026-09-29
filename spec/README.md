@@ -20,7 +20,7 @@ reads the example. When the specification changes, copy the files again and run 
 `openapi/cell.json` is the part of the server's OpenAPI document with these routes and every schema they
 reach. The script generates the types (`src/types/turns.ts`, `state.ts`, `signals.ts`, `coordination.ts`)
 and the route methods (`src/api.ts`) from it, and `test/generated.test.ts` fails when a generated file
-differs from what the script writes. A route the server has not built yet answers 501.
+differs from what the script writes.
 
 `examples/turn-record/` holds the Turn Record spec's examples; the tests read each as a `TurnRecord`.
 
@@ -28,6 +28,5 @@ differs from what the script writes. A route the server has not built yet answer
 
 `vectors/<name>.<version>.json` are the conformance vectors of the specifications, which the server and
 both SDKs run alike, and `examples/claim-contract/` the claim contract examples with their negative
-corpus. `test/vectors.test.ts` lists every file the SDK runs. A file not published yet is skipped as
-pending vectors; a published one the SDK cannot run yet is an expected failure; an unexpected file or an
+corpus. `test/vectors.test.ts` lists every file the SDK runs. A missing file, an unexpected file or an
 unknown case field fails.

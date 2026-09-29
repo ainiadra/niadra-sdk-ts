@@ -4,7 +4,7 @@
  * did not produce, is `not_checked`, which never fails.
  */
 
-export type Outcome = "pass" | "fail" | "not_checked";
+type Outcome = "pass" | "fail" | "not_checked";
 type Judged = [Outcome, string | null];
 type Args = Record<string, unknown>;
 type Json = Record<string, unknown>;

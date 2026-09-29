@@ -5,7 +5,7 @@ import type { ContextResponse } from "./types/context.js";
 const MAX_EPOCHS = 4096;
 
 /** How usable a cached pack is at the moment of a lookup. */
-export type Freshness = "fresh" | "stale" | "expired";
+type Freshness = "fresh" | "stale" | "expired";
 
 interface Entry {
   response: ContextResponse;
@@ -17,7 +17,7 @@ interface Entry {
   pending: string[];
 }
 
-export interface Lookup {
+interface Lookup {
   response: ContextResponse;
   freshness: Freshness;
 }

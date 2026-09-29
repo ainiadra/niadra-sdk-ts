@@ -21,7 +21,7 @@ import type { Io } from "./index.js";
 
 type Json = Record<string, unknown>;
 
-export const DSN_VARIABLE = "NIADRA_DERIVE_DSN";
+const DSN_VARIABLE = "NIADRA_DERIVE_DSN";
 
 export async function typesDerive(argv: readonly string[], io: Io): Promise<number> {
   const { values } = parseArgs({

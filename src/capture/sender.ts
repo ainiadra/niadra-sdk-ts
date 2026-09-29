@@ -14,8 +14,10 @@
  * - Any other error: the batch is counted and dropped.
  */
 
-import { NiadraAPIError, NiadraConnectionError, NiadraTimeoutError, toNiadraError } from "../errors.js";
+import { NiadraAPIError, toNiadraError } from "../errors.js";
 import type { Logger } from "../logger.js";
+import { unref } from "../queue.js";
+import { isTransient } from "../transport.js";
 import type { TurnsResponse } from "../types/turns.js";
 import type { TurnFrame } from "./frame.js";
 import type { TurnQueue } from "./queue.js";
@@ -27,7 +29,6 @@ export const MAX_TURNS = 50;
 const COMPRESSED_ROOM = 4 * 1024 * 1024 - 64 * 1024;
 const DECODED_ROOM = 16 * 1024 * 1024 - 256 * 1024;
 const MAX_PAUSE_MS = 60_000;
-const RETRYABLE = new Set([408, 421, 429, 500, 502, 503, 504]);
 
 /** A request body: its bytes, and whether they are gzip. */
 export interface Body {
@@ -74,7 +75,7 @@ async function compressed(frames: TurnFrame[], records: TurnRecordJson[]): Promi
 }
 
 /** Requests of up to 50 records within the size limits, in queue order. */
-export async function batches(frames: TurnFrame[], records: TurnRecordJson[]): Promise<Batch[]> {
+async function batches(frames: TurnFrame[], records: TurnRecordJson[]): Promise<Batch[]> {
   const out: Batch[] = [];
   let group: [TurnFrame, TurnRecordJson][] = [];
   let groupBytes = 0;
@@ -97,10 +98,6 @@ export async function batches(frames: TurnFrame[], records: TurnRecordJson[]): P
   return out;
 }
 
-function retryable(error: unknown): boolean {
-  if (error instanceof NiadraTimeoutError || error instanceof NiadraConnectionError) return true;
-  return error instanceof NiadraAPIError && RETRYABLE.has(error.status);
-}
 
 export class TurnSender {
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -210,7 +207,7 @@ export class TurnSender {
       this.recorder.notRecorded(batch.frames.length, true);
       return true;
     }
-    if (retryable(error)) {
+    if (isTransient(error)) {
       this.queue.requeue(batch.frames);
       this.pause = Math.min(MAX_PAUSE_MS, Math.max(this.intervalMs, this.pause * 2));
       this.resumeAt = this.now() + this.pause;
@@ -255,8 +252,3 @@ export class TurnSender {
 }
 
 /** In Node, a pending send timer must not keep an otherwise finished process alive. */
-function unref(timer: unknown): void {
-  if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
-    (timer as { unref(): void }).unref();
-  }
-}
