@@ -98,6 +98,11 @@ built on them.
 - `niadra.api.overview()`: the coordination overview in counts (`GET /v1/coordination/overview`).
 - `pnpm sync-spec --spec` also copies the Context Pack schemas (`spec/context-pack.v1.json` and `v2`), and
   `test/spec.test.ts` holds `ContextResponse` and every include block to the v2 schema.
+- The tool bindings the space declares come in the SDK profile (`SdkProfile.tool_bindings`, typed
+  `ToolBinding`), for this source's tools. A tool without a binding in code measures the constraints block
+  and runs its counterfactual through the binding served for its name, and `binding` in code still wins.
+  Left unset, `maskOutput` follows the served binding's `capabilities.mask_output`. `api.constraints()` with
+  `tool` answers the block rendered for that tool, as advice.
 
 ### Fixed
 

@@ -2,7 +2,7 @@
  * The SDK profile in the client's warm cache: `GET /v1/sdk/profile`.
  *
  * The profile says which agent features the space turned on, and carries what the SDK checks locally: the
- * claim contract and the summarized type registry. It is read on first need and again once `valid_for_s` has
+ * claim contract, the summarized type registry and the bindings of this source's tools. It is read on first need and again once `valid_for_s` has
  * passed.
  *
  * - A server that answers 404 has no profile for this key (an older cell, or a space with every feature off):
@@ -12,6 +12,7 @@
  */
 
 import { NiadraAPIError } from "./errors.js";
+import type { RawBinding } from "./constraints/binding.js";
 import type { ContentMode } from "./capture/frame.js";
 import type { ClaimContractSummary, SdkProfile } from "./types/state.js";
 
@@ -86,6 +87,14 @@ export class ProfileCache {
   fieldAccess(): Record<string, Record<string, string>> | null {
     if (this.profile === null) return null;
     return Object.fromEntries((this.profile.types ?? []).map((t) => [String(t.type), { ...((t.field_access ?? {}) as Record<string, string>) }]));
+  }
+
+  /**
+   * The binding the space serves this source for `tool`; `null` when it binds no such tool or no profile was
+   * ever read. The last profile read keeps applying.
+   */
+  toolBinding(tool: string): RawBinding | null {
+    return this.profile?.tool_bindings?.find((b) => b.tool === tool) ?? null;
   }
 
   /** Each field's attribute family (`item_variant.size_label` to `size`), from the type registry. */

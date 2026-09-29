@@ -7,6 +7,7 @@
  * agent's code runs the same), and its record is not kept.
  */
 
+import type { RawBinding } from "../constraints/binding.js";
 import type { Logger } from "../logger.js";
 import type { ClaimRecord, TurnPins } from "../types/turns.js";
 import type { ContentMode, FrameOptions, Submit, TurnKind } from "./frame.js";
@@ -62,6 +63,8 @@ export class TurnRecorder implements Submit {
   families: () => Readonly<Record<string, string>> = () => ({});
   /** The fields each type hides from this key, for a tool's masked output (the SDK profile). */
   fieldAccess: () => Readonly<Record<string, Readonly<Record<string, string>>>> | null = () => null;
+  /** The binding the space serves for a tool, by its name (the SDK profile). */
+  bindings: (tool: string) => RawBinding | null = () => null;
   /** The features the space turned on, when the client knows them (the SDK profile). */
   features: () => ReadonlySet<string> | null = () => null;
   accepted = 0;

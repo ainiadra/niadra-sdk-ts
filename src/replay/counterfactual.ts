@@ -216,7 +216,7 @@ export class Counterfactual {
 
   private async served(tool: string): Promise<RawBinding | null> {
     const profile = await this.niadra.profile();
-    return ((profile?.tool_bindings ?? []) as unknown as RawBinding[]).find((b) => b.tool === tool) ?? null;
+    return profile?.tool_bindings?.find((b) => b.tool === tool) ?? null;
   }
 
   private async families(): Promise<Record<string, string>> {
