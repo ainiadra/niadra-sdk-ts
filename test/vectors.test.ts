@@ -14,6 +14,7 @@ import {
   NiadraExposureTokenError,
   canonicalDestination,
   canonicalJson,
+  claims,
   expr,
   exposureToken,
   honoredConstraints,
@@ -22,7 +23,7 @@ import {
   renderConstraints,
   suppressionKey,
 } from "../src/index.js";
-import type { ConstraintBinding, ConstraintCall, ConstraintsBlock } from "../src/index.js";
+import type { ClaimCategory, ConstraintBinding, ConstraintCall, ConstraintsBlock } from "../src/index.js";
 
 const SPEC = new URL("../spec/", import.meta.url);
 const VECTORS = new URL("vectors/", SPEC);
@@ -290,6 +291,123 @@ async function constraintRenderCase(c: Case): Promise<void> {
   expect(got.injected.filter((id) => inferred.includes(id)), "an inferred attribute is never injected, whatever the mode").toEqual([]);
 }
 
+/** Code points, as the claim contract counts offsets. */
+const between = (text: string, start: number, end: number): string => Array.from(text).slice(start, end).join("");
+
+interface VectorValue {
+  class: claims.MentionClass;
+  value: claims.Value;
+  role?: string;
+  fresh?: boolean;
+  object_type?: string;
+  name?: string;
+  call_id?: string;
+  ref?: string;
+  declared_gaps?: string[];
+}
+
+const TURN_VALUE = new Set(["class", "value", "role", "fresh", "object_type", "name", "call_id", "ref", "declared_gaps"]);
+
+function turnValue(item: VectorValue): claims.TurnValue {
+  only(item, TURN_VALUE, "turn value");
+  return {
+    cls: item.class,
+    value: item.value,
+    role: item.role ?? null,
+    fresh: item.fresh ?? true,
+    objectType: item.object_type ?? null,
+    name: item.name ?? null,
+    callId: item.call_id ?? null,
+    ref: item.ref ?? null,
+    declaredGaps: item.declared_gaps ?? [],
+  };
+}
+
+interface ClaimContract {
+  languages: claims.Language[];
+  categories: ClaimCategory[];
+  negative_corpus: { version: string; phrases: string[] };
+}
+
+const contract = (path: string): ClaimContract => JSON.parse(readFileSync(new URL(path, SPEC), "utf8")) as ClaimContract;
+
+async function parserCase(c: Case): Promise<void> {
+  const { text, lang, roles: terms, evidence } = c as Case & {
+    text: string;
+    lang: claims.Language;
+    roles?: Record<string, string[]>;
+    evidence?: VectorValue[];
+  };
+  const found = claims.mentions(text, lang);
+  const roles = new Map<claims.Mention, claims.Role>();
+  if (terms) {
+    for (const cls of new Set(found.filter((m) => m.cls !== "label").map((m) => m.cls))) {
+      const same = found.filter((m) => m.cls === cls);
+      claims.rolesOf(text, same, terms).forEach((role, i) => roles.set(same[i]!, role));
+    }
+  }
+  const values = (evidence ?? []).map(turnValue);
+  const got = found.map((m) => {
+    const item: Record<string, unknown> = { span: [m.start, m.end], text: between(text, m.start, m.end), class: m.cls };
+    if (m.cls !== "label") {
+      Object.assign(item, { value: m.value(), written: m.written });
+      if (terms) Object.assign(item, { role: roles.get(m)!.name, role_status: roles.get(m)!.status });
+      if (evidence) item.nature = claims.natureOf(text, m, roles.get(m) ?? { name: null, status: "none" }, values);
+    }
+    return item;
+  });
+  expect(got).toEqual(c.expect?.mentions);
+}
+
+interface VectorTurn {
+  values?: VectorValue[];
+  tools?: string[];
+  documents?: Record<string, string>;
+  anchors?: { span: [number, number]; quote: string; document: string }[];
+  sections?: Record<string, [number, number][]>;
+}
+
+async function detectCase(c: Case): Promise<void> {
+  const example = contract(c.contract as string);
+  const out = c.output as { text: string; lang: claims.Language; context: string; immutable: boolean; agent?: string };
+  const turn = c.turn as VectorTurn;
+  only(out, new Set(["text", "lang", "context", "immutable", "agent"]), "output");
+  only(turn, new Set(["values", "tools", "documents", "anchors", "sections"]), "turn");
+  const values = (turn.values ?? []).map(turnValue);
+  const anchors = (turn.anchors ?? []).map((a): claims.Anchor => {
+    only(a, new Set(["span", "quote", "document"]), "anchor");
+    return { start: a.span[0], end: a.span[1], quote: a.quote, document: a.document };
+  });
+  const output: claims.Output = { text: out.text, lang: out.lang, context: out.context, immutable: out.immutable, agent: out.agent ?? null };
+  const found = claims.check(example.categories, output, {
+    values,
+    tools: turn.tools ?? [],
+    documents: turn.documents ?? {},
+    anchors,
+    sections: turn.sections ?? {},
+  });
+  const got = found.map((f) => {
+    const item: Record<string, unknown> = { category: f.category, span: [f.start, f.end], text: between(out.text, f.start, f.end) };
+    if (f.cls !== null) Object.assign(item, { class: f.cls, nature: f.nature, role: f.role, value: f.value });
+    Object.assign(item, { verdict: f.verdict, action: f.action });
+    if (f.evidence !== null) {
+      item.evidence = "quote" in f.evidence ? { anchor: anchors.indexOf(f.evidence) } : { value: values.indexOf(f.evidence) };
+    }
+    return item;
+  });
+  expect(got).toEqual(c.expect?.findings);
+}
+
+async function anchorCase(c: Case): Promise<void> {
+  const { quote, document } = c as Case & { quote: string; document: string };
+  const expected = c.expect as { normalized_quote_length: number; distance: number; holds: boolean };
+  const normalized = claims.normalize(quote);
+  expect(normalized.length).toBe(expected.normalized_quote_length);
+  const got = claims.score(quote, document);
+  if (normalized) expect(got).toBe(1 - expected.distance / normalized.length);
+  expect(got >= 0.9).toBe(expected.holds);
+}
+
 const EXPECTED: Record<string, Expected> = {
   "turn-record-digest.v0": {
     caseFields: ["id", "note", "value", "expect"],
@@ -301,9 +419,21 @@ const EXPECTED: Record<string, Expected> = {
     expectFields: ["value"],
     run: exprCase,
   },
-  "claim-parser.v0": pending("id lang text roles evidence expect", "mentions", "the claim contract's number and role parser"),
-  "claim-detect.v0": pending("id contract output turn expect", "findings", "the claim contract's detection"),
-  "claim-anchor.v0": pending("id quote document expect", "normalized_quote_length distance holds", "the claim contract's text anchor"),
+  "claim-parser.v0": {
+    caseFields: ["id", "lang", "text", "roles", "evidence", "expect"],
+    expectFields: ["mentions"],
+    run: parserCase,
+  },
+  "claim-detect.v0": {
+    caseFields: ["id", "contract", "output", "turn", "expect"],
+    expectFields: ["findings"],
+    run: detectCase,
+  },
+  "claim-anchor.v0": {
+    caseFields: ["id", "quote", "document", "expect"],
+    expectFields: ["normalized_quote_length", "distance", "holds"],
+    run: anchorCase,
+  },
   "constraint-render.v0": {
     caseFields: ["id", "block", "binding", "families", "call", "mode", "results", "expect"],
     expectFields: ["applies", "args", "suggested", "injected", "hard_sent", "residual", "post_filter", "conflicts", "honored"],
@@ -377,9 +507,26 @@ for (const sector of NEGATIVE_CORPUS) {
     it.skip(`pending vectors: examples/claim-contract/${sector}.json is not published yet`, () => undefined);
     continue;
   }
-  it.fails(`pending implementation: the claim contract's detection, on the ${sector} negative corpus`, () => {
-    const example = JSON.parse(readFileSync(path, "utf8")) as { negative_corpus: { phrases: string[] } };
+  // A phrase triggers when a category finds a claim in it, in any of the contract's languages and for any
+  // of its agents (the claim contract spec, section 10.2).
+  it(`no phrase of the ${sector} negative corpus triggers its contract`, () => {
+    const example = contract(`examples/claim-contract/${sector}.json`);
     expect(example.negative_corpus.phrases.length).toBeGreaterThan(0);
-    throw new Error("not implemented: the claim contract's detection");
+    const agents = [null, ...new Set(example.categories.flatMap((c) => c.agents ?? []))];
+    const triggered = example.negative_corpus.phrases.flatMap((text) =>
+      example.languages.flatMap((lang) =>
+        agents.flatMap((agent) => {
+          const categories = claims.detected(example.categories, { text, lang, context: "chat", immutable: false, agent });
+          return categories.length > 0 ? [{ text, lang, agent, categories }] : [];
+        }),
+      ),
+    );
+    expect(triggered).toEqual([]);
   });
 }
+
+it("the negative corpus check would catch a phrase that triggers", () => {
+  const retail = contract("examples/claim-contract/retail.json");
+  const output: claims.Output = { text: "Infelizmente está esgotado.", lang: "pt", context: "chat", immutable: false };
+  expect(claims.detected(retail.categories, output)).toEqual(["availability_denial"]);
+});

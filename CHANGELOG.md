@@ -34,6 +34,12 @@ built on them.
 - `renderConstraints()` and `honoredConstraints()`: the constraints block rendered for one tool call
   through the tool's binding, in advisory or apply mode, and the count of what the call's results
   honored.
+- `claims`: the claim contract's reference checker, pure and without a model. `mentions()` reads the
+  numbers of an output in Portuguese, English or Spanish (class, normalized value, span in code points),
+  `rolesOf()` their roles, `check()` the claims each category of a contract detects with their nature,
+  verdict and action, `detected()` what a phrase of the negative corpus must never trigger, and `score()`
+  the text anchor. It passes the claim-parser, claim-detect and claim-anchor vectors and finds nothing in
+  the negative corpus of the three example contracts.
 
 ## [0.6.1] - Unreleased
 
