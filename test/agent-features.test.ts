@@ -69,7 +69,9 @@ describe("the warm cache", () => {
     await answer(niadra, "c-1", "Sai por R$ 199,90.");
     await niadra.flush();
     const [record] = [...cell.turns.values()];
-    expect(record?.reads).toContainEqual({ surface: "constraints", version: "cv_0123456789abcdef" });
+    const read = (record?.reads as Record<string, unknown>[]).find((r) => r.surface === "constraints");
+    expect(read?.version).toBe("cv_0123456789abcdef");
+    expect(record?.blobs[read?.blob as string]?.content.version).toBe("cv_0123456789abcdef"); // the block it served
     cell.features.delete("signals");
     const context = await niadra.context({ subject: marina, conversation_id: "c-2", include: ["constraints"] });
     expect(context.text).not.toBe("");

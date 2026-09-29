@@ -32,6 +32,18 @@ export class NiadraConnectionError extends NiadraError {
   override readonly name = "NiadraConnectionError";
 }
 
+/**
+ * A replayed agent called a framework tool the replay cannot answer: it would run live. Wrap the tool with
+ * `tool()`, or pass the tools through the adapter's `recordTools()`.
+ */
+export class NiadraReplayRefusedError extends NiadraError {
+  override readonly name = "NiadraReplayRefusedError";
+
+  constructor(readonly tool: string) {
+    super(`the tool ${tool} would run live in a replay: wrap it with tool(), or pass it through recordTools()`);
+  }
+}
+
 /** The request was cancelled through the caller's `AbortSignal`. */
 export class NiadraAbortError extends NiadraError {
   override readonly name = "NiadraAbortError";

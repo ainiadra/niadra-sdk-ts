@@ -38,7 +38,10 @@ export class Playback {
   /** Effect keys the agent declared done, and how many times. */
   readonly done = new Map<string, number>();
   handoff = false;
-  /** The working state the replayed agent wrote, by scope and agent: it stays here. */
+  /**
+   * The working state in this execution, by scope and agent: what the recorded turn read first, then what the
+   * replayed agent wrote. It stays here.
+   */
   readonly states = new Map<string, { body: Record<string, unknown>; version: number }>();
 
   constructor(
@@ -139,10 +142,18 @@ export async function playback(
     const found = await value(pack.blob);
     if (typeof found === "object" && found !== null) context = found as ContextResponse;
   }
-  return new Playback(calls, mode, context);
+  const played = new Playback(calls, mode, context);
+  for (const read of (record.reads ?? []) as Record<string, unknown>[]) {
+    if (read.surface !== "agent_state" || typeof read.blob !== "string") continue;
+    const held = (await value(read.blob)) as { scope?: { kind?: unknown; id?: unknown }; agent?: unknown; version?: unknown; body?: unknown } | undefined;
+    if (typeof held !== "object") continue;
+    const id = JSON.stringify([String(held.scope?.kind), String(held.scope?.id), String(held.agent)]);
+    if (!played.states.has(id)) played.states.set(id, { body: { ...((held.body ?? {}) as Record<string, unknown>) }, version: Number(held.version ?? 0) });
+  }
+  return played;
 }
 
-async function materialized(blob: Record<string, unknown>, read: ((pointer: string) => Promise<string>) | null): Promise<unknown> {
+export async function materialized(blob: Record<string, unknown>, read: ((pointer: string) => Promise<string>) | null): Promise<unknown> {
   let found: unknown;
   if ("content" in blob) found = blob.content;
   else if (typeof blob.pointer === "string") {

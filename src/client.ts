@@ -248,6 +248,8 @@ export class Niadra {
     this.turns.features = () => this.profileCache.features;
     this.turns.recordingMode = () => this.profileCache.recordingMode();
     this.turns.requiredPins = () => this.profileCache.requiredPins();
+    this.turns.families = () => this.profileCache.families();
+    this.turns.fieldAccess = () => this.profileCache.fieldAccess();
     this.turns.claims = (frame) => {
       const contract = this.profileCache.contract();
       return contract === null ? [] : checkTurn(frame, contract, this.internalText);
@@ -455,8 +457,9 @@ export class Niadra {
     return recordTool(name, fn, options);
   }
 
+  /** `Niadra.tool`, with this client's SDK profile as the fields a masked output hides (`maskOutput: true`). */
   tool<A extends unknown[], R>(name: string, fn: (...args: A) => R, options: RecordedToolOptions<A, R> = {}): (...args: A) => R {
-    return recordTool(name, fn, options);
+    return recordTool(name, fn, { access: () => this.profileCache.fieldAccess(), ...options });
   }
 
   /**

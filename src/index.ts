@@ -44,7 +44,8 @@ export type { CheckOptions, Claimed, EffectState } from "./coordination/client.j
 export { Resolvers } from "./resolvers.js";
 export { ResolverWorker } from "./resolver-worker.js";
 export { Replayer, pinDifferences } from "./replay/runner.js";
-export { overlapAtK } from "./replay/counterfactual.js";
+export { Counterfactual, overlapAtK } from "./replay/counterfactual.js";
+export type { CounterfactualOptions, CounterfactualRun, CounterfactualRunOptions, Element as CounterfactualElement } from "./replay/counterfactual.js";
 export type { ReplayAgent, ReplayInput, ReplayRun, RunOptions as ReplayOptions } from "./replay/runner.js";
 export { BlobError } from "./replay/playback.js";
 export type { Mode as ReplayMode } from "./replay/playback.js";
@@ -86,6 +87,7 @@ export { VERSION } from "./version.js";
 export {
   NiadraAPIError,
   NiadraAbortError,
+  NiadraReplayRefusedError,
   NiadraAuthenticationError,
   NiadraConfigError,
   NiadraConnectionError,

@@ -5,22 +5,28 @@
  *     niadra replay --agent ./agent.js:buildAgent --build ./agent.js:BUILD --scenario sc_1 --runs 5
  *     niadra types derive --dsn postgresql://reader@replica/erp --table public.orders --out order.json
  *     niadra contract test --contract claim-contract.json --examples tests/claims/examples.json
+ *     niadra counterfactual --tools ./tools.js:TOOLS --tool search_products --element hard --scenario sc_1
  *
  * The commands that talk to Niadra read the key from `NIADRA_API_KEY` (and `NIADRA_BASE_URL`, when set).
  * `module:export` names an export of a module, a path relative to the working directory or a package: for
  * `--resolvers`, a `Resolvers` or a function that registers the resolvers on the one it gets; for `--agent`, a
- * function that makes a fresh agent; for `--build`, the build's pins.
+ * function that makes a fresh agent; for `--build`, the build's pins; for `--tools`, the company's functions by
+ * tool name, and for `--bindings`, their bindings by tool name.
  *
  * `niadra replay` exits with 0 when the verdict is `pass` or `flaky`, 1 for `regression`, and 2 for
  * `pin_mismatch` or `infrastructure_error`. `niadra types derive --check` and `niadra contract test` exit with
- * 0 when everything holds, 1 when it does not, and 2 when they could not run. The Python SDK's `niadra`
- * command takes the same arguments.
+ * 0 when everything holds, 1 when it does not, and 2 when they could not run. `niadra counterfactual` prints the
+ * report Niadra answered and exits with 0, or 2 when it could not run. The Python SDK's `niadra` command takes
+ * the same arguments.
  */
 
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { Niadra } from "../client.js";
+import type { RawBinding } from "../constraints/binding.js";
+import { Counterfactual } from "../replay/counterfactual.js";
+import type { Element } from "../replay/counterfactual.js";
 import { ResolverWorker } from "../resolver-worker.js";
 import { Resolvers } from "../resolvers.js";
 import { Replayer } from "../replay/runner.js";
@@ -38,7 +44,7 @@ export interface Io {
 }
 
 const EXIT: Record<string, number> = { pass: 0, flaky: 0, regression: 1 };
-const USAGE = "usage: niadra <resolver-worker|replay|types derive|contract test> [options]";
+const USAGE = "usage: niadra <resolver-worker|replay|counterfactual|types derive|contract test> [options]";
 
 /** Runs one command and resolves with its exit code. */
 export async function main(argv: readonly string[], io: Io = processIo()): Promise<number> {
@@ -49,6 +55,8 @@ export async function main(argv: readonly string[], io: Io = processIo()): Promi
         return await worker(rest, io);
       case "replay":
         return await replay(rest, io);
+      case "counterfactual":
+        return await counterfactual(rest, io);
       case "types":
         if (rest[0] === "derive") return await typesDerive(rest.slice(1), io);
         break;
@@ -136,6 +144,37 @@ async function replay(argv: readonly string[], io: Io): Promise<number> {
   });
   io.out(JSON.stringify({ run_id: run.runId, verdict: run.verdict, scenarios: run.scenarios }, null, 2));
   return EXIT[run.verdict ?? ""] ?? 2;
+}
+
+async function counterfactual(argv: readonly string[], io: Io): Promise<number> {
+  const { values } = parseArgs({
+    args: [...argv],
+    options: {
+      tools: { type: "string" },
+      tool: { type: "string" },
+      element: { type: "string" },
+      turn: { type: "string", multiple: true, default: [] },
+      scenario: { type: "string", multiple: true, default: [] },
+      bindings: { type: "string" },
+      safe: { type: "string", multiple: true, default: [] },
+      k: { type: "string", default: "10" },
+      label: { type: "string" },
+    },
+  });
+  if (values.tools === undefined || values.tool === undefined || values.element === undefined) throw new Error("--tools, --tool and --element are needed");
+  if (!["constraints", "hard", "size", "exclude"].includes(values.element)) throw new Error(`--element ${values.element}: constraints, hard, size or exclude`);
+  if (values.turn.length === 0 && values.scenario.length === 0) throw new Error("--turn or --scenario is needed");
+  const tools = (await load(values.tools)) as Record<string, (args: unknown) => unknown>;
+  const bindings = values.bindings === undefined ? undefined : ((await load(values.bindings)) as Record<string, RawBinding>);
+  const run = await new Counterfactual(io.client(), tools, { ...(bindings ? { bindings } : {}), safe: values.safe }).run(values.turn, {
+    tool: values.tool,
+    element: values.element as Element,
+    scenarioIds: values.scenario,
+    k: Number(values.k),
+    ...(values.label !== undefined ? { label: values.label } : {}),
+  });
+  io.out(JSON.stringify({ ...run.report, untouched: run.untouched, unread: run.unread }, null, 2));
+  return 0;
 }
 
 /** The export a `module:export` names. */

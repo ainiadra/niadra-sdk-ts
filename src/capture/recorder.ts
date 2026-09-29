@@ -58,6 +58,10 @@ export class TurnRecorder implements Submit {
   recordingMode: () => ContentMode | null = () => null;
   /** The pins a turn needs to be replayable, when the client knows them (the SDK profile). */
   requiredPins: () => readonly string[] = () => [];
+  /** Each field's attribute family, for the tools' bindings (the SDK profile). */
+  families: () => Readonly<Record<string, string>> = () => ({});
+  /** The fields each type hides from this key, for a tool's masked output (the SDK profile). */
+  fieldAccess: () => Readonly<Record<string, Readonly<Record<string, string>>>> | null = () => null;
   /** The features the space turned on, when the client knows them (the SDK profile). */
   features: () => ReadonlySet<string> | null = () => null;
   accepted = 0;

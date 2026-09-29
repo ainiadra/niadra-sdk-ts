@@ -11,6 +11,8 @@
  *   call with its tokens, each tool call with Mastra's call id and its result. A request inside a
  *   turn in progress (`conversation.turn()` around `agent.generate`) records into it. A function
  *   wrapped with `tool()` inside a tool takes over its call, which is how a replay answers it.
+ * - In a replay the processor wraps every tool of each step with `tool()` (`processInputStep`), so a
+ *   call answers from the record and never runs live, unless the tool is marked safe to run again.
  *
  * The session comes from the request context (`requestContext.set("niadra", convo)`), or is fixed
  * when the processor is built for one conversation.
@@ -30,6 +32,7 @@
 
 import type {
   Processor,
+  ProcessInputStepArgs,
   ProcessLLMRequestArgs,
   ProcessLLMRequestResult,
   ProcessLLMResponseArgs,
@@ -37,7 +40,9 @@ import type {
   ProcessOutputStepArgs,
   ProcessToolResultArgs,
 } from "@mastra/core/processors";
+import { tool as recorded, recordedTool } from "../capture/tool.js";
 import { uuidv7 } from "../ids.js";
+import { replaying } from "../replay/playback.js";
 import { createTool } from "@mastra/core/tools";
 import type { ModelUsage } from "../types/events.js";
 import { injectPrompt, recordNewest } from "./prompt.js";
@@ -80,7 +85,7 @@ interface State {
 
 /** A Mastra processor that is both an input processor (the request) and an output processor (the result). */
 export type NiadraProcessor = Processor<"niadra"> &
-  Required<Pick<Processor<"niadra">, "processLLMRequest" | "processOutputResult" | "processLLMResponse" | "processOutputStep" | "processToolResult">>;
+  Required<Pick<Processor<"niadra">, "processLLMRequest" | "processOutputResult" | "processLLMResponse" | "processOutputStep" | "processToolResult" | "processInputStep">>;
 
 /** One processor serves both lists: put the same instance in `inputProcessors` and `outputProcessors`. */
 export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraProcessor {
@@ -150,6 +155,11 @@ export function niadraProcessor(options: NiadraProcessorOptions = {}): NiadraPro
       const reported = mastraUsage(usage, state.model);
       const out = isRecord(usage) ? (count(usage.outputTokens) ?? (isRecord(usage.outputTokens) ? count(usage.outputTokens.total) : null)) : null;
       hooks.model(state.bridge.session, name, reported ? { in: reported.prompt_tokens, out, cached: reported.cached_tokens ?? 0 } : {}, key);
+    },
+
+    processInputStep({ tools }: ProcessInputStepArgs) {
+      if (replaying() === null || tools === undefined) return undefined;
+      return { tools: replayed(tools) };
     },
 
     processOutputStep({ messageList, toolCalls, requestContext, state: kept }: ProcessOutputStepArgs) {
@@ -238,6 +248,24 @@ export function mastraUsage(usage: unknown, model: { provider?: string; modelId?
   }
   if (prompt === null) return null;
   return { provider, model: name, prompt_tokens: Math.max(prompt, cached + written), cached_tokens: cached, cache_write_tokens: written };
+}
+
+/** The step's tools with each `execute` wrapped with `tool()`: in a replay, a call answers from the record. */
+function replayed(tools: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, spec] of Object.entries(tools)) {
+    const execute = isRecord(spec) ? spec.execute : undefined;
+    if (typeof execute !== "function" || recordedTool(execute)) {
+      out[name] = spec;
+      continue;
+    }
+    const wrapped = recorded<[unknown, unknown?], unknown>(name, execute as (input: unknown, context?: unknown) => unknown, {
+      args: (input) => input,
+      callId: (_input: unknown, context?: unknown) => (isRecord(context) && typeof context.toolCallId === "string" ? context.toolCallId : null),
+    });
+    out[name] = Object.assign(Object.create(Object.getPrototypeOf(spec) as object) as object, spec, { execute: wrapped });
+  }
+  return out;
 }
 
 function isContext(value: unknown): value is RequestContextLike {

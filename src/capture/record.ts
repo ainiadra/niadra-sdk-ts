@@ -26,6 +26,7 @@ const MAX_READS = 20;
 const MAX_CLAIMS = 500;
 const MAX_EVENT_KEYS = 50;
 const MAX_DECISIONS = 50;
+const MAX_INTERACTIONS = 200;
 const BLOB_FIELDS = ["args", "result_model", "result_ui"];
 
 /** Writes a value to the company's storage and returns the pointer to it (`s3://bucket/key`). */
@@ -120,6 +121,7 @@ export async function buildRecord(
     reads: frame.reads.slice(0, MAX_READS),
     calls,
     claims: (found ?? []).slice(0, MAX_CLAIMS),
+    interactions: frame.interactions.slice(0, MAX_INTERACTIONS),
     coordination: frame.coordination.slice(0, MAX_DECISIONS),
     effects: [...frame.effects].slice(0, MAX_DECISIONS).map(([key, state]) => ({ key, state })),
     output,

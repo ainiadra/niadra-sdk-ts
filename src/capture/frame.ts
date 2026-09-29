@@ -14,6 +14,7 @@
  * progress, so a call made inside a tool names it as `parent_call_id`.
  */
 
+import type { ConstraintsBlock } from "../types/signals.js";
 import { uuidv7 } from "../ids.js";
 import type { Playback, Played } from "../replay/playback.js";
 import type { ClaimRecord, TurnPins } from "../types/turns.js";
@@ -80,6 +81,10 @@ export interface Observation {
 /** Takes a closed turn; what `TurnRecorder` does. */
 export interface Submit {
   submit(frame: TurnFrame): void;
+  /** Each field's attribute family, for the tools' bindings (the SDK profile). */
+  families?: () => Readonly<Record<string, string>>;
+  /** The fields each type hides from this key, for a tool's masked output (the SDK profile). */
+  fieldAccess?: () => Readonly<Record<string, Readonly<Record<string, string>>>> | null;
 }
 
 const turns = (): ReturnType<typeof store<TurnFrame>> => store<TurnFrame>("niadra_turn");
@@ -116,6 +121,8 @@ export class CallCapture {
   readonly callId: string;
   /** In a replay: how the call answers (`replay/playback.ts`). */
   played: Played | null = null;
+  /** What the call's result honored of the constraints block, when the tool has a binding. */
+  measure: ((result: unknown) => Record<string, unknown> | null) | null = null;
   private readonly started = performance.now();
   private finished = false;
 
@@ -140,6 +147,13 @@ export class CallCapture {
   ): void {
     if (this.finished) return;
     const extra: Record<string, unknown> = { result_model: this.frame.blob(value) };
+    if (this.measure !== null) {
+      try {
+        extra.applied = this.measure(value);
+      } catch {
+        this.frame.incomplete();
+      }
+    }
     if (options.ui !== undefined) extra.result_ui = this.frame.blob(options.ui);
     if (options.observations?.length) extra.observations = options.observations.map((o) => ({ ...o }));
     if (options.costUnits) extra.cost_units = { ...options.costUnits };
@@ -204,6 +218,8 @@ export class TurnFrame {
   readonly reads: Record<string, unknown>[] = [];
   readonly said: Said[] = [];
   readonly claims: ClaimRecord[] = [];
+  /** What the person was shown or did in the turn, as the interaction spec writes it. */
+  readonly interactions: Record<string, unknown>[] = [];
   readonly coordination: { decision_id: string; decision: string }[] = [];
   readonly effects = new Map<string, string>();
   readonly eventKeys: string[] = [];
@@ -214,7 +230,12 @@ export class TurnFrame {
   handoffId: string | null = null;
   /** The content mode this turn must leave in, when the server refused the recorder's. */
   mode: ContentMode | null = null;
-  /** Set in a replay: recorded answers for the tools, and where what the turn says goes. */
+  /** The constraints block the turn read last: what its tools' calls are measured against. */
+  constraints: ConstraintsBlock | null = null;
+  /**
+   * Set in a replay: recorded answers for the tools, and where what the turn says goes. A sub-turn of a
+   * replayed turn (a framework's run inside it) is replayed with it, and never sent.
+   */
   playback: Playback | null = null;
   closed = false;
   private readonly guardedTexts = new Set<string>();
@@ -236,6 +257,7 @@ export class TurnFrame {
     this.taskId = options.taskId ?? (parent && !options.conversationId ? parent.taskId : null);
     this.pins = { ...(options.pins ?? {}) };
     this.adapter = options.adapter ?? null;
+    this.playback = parent?.playback ?? null;
   }
 
   /** Whether the frame keeps what the turn says for the claim check on the sender. */
@@ -313,19 +335,41 @@ export class TurnFrame {
     this.add(entry);
   }
 
+  /** The SDK profile of the client that opened this turn, as far as the tools need it. */
+  get profile(): Pick<Submit, "families" | "fieldAccess"> {
+    return this.recorder ?? {};
+  }
+
   /** The model the turn called, as its `model` pin, unless the build named one. */
   pinModel(model: string): void {
     this.pins.model ??= model;
   }
 
-  /** A read the turn made from Niadra, by its version: the pack by ETag, a block by its version. */
-  read(surface: string, options: { etag?: string | null; version?: string | null; receiptId?: string | null } = {}): void {
+  /**
+   * A read the turn made from Niadra, by its version: the pack by ETag, a block by its version. `value` is what
+   * the read served, kept as a blob of the record so a replay and the tool counterfactual have it.
+   */
+  read(surface: string, options: { etag?: string | null; version?: string | null; receiptId?: string | null; value?: unknown } = {}): void {
     if (this.closed) return;
     const entry: Record<string, unknown> = { surface };
     if (options.etag) entry.etag = options.etag;
     if (options.version) entry.version = options.version;
     if (options.receiptId) entry.receipt_id = options.receiptId;
+    if (options.value !== undefined && options.value !== null) {
+      const key = this.blob(options.value);
+      if (key !== undefined) entry.blob = key;
+    }
     this.reads.push(entry);
+  }
+
+  /**
+   * What the person was shown or did in the turn, as the interaction spec writes it: a `presented` list (with its
+   * `exposure_id` and positions), a `seen`, an `engaged` item of it, a preference. A replay and the tool
+   * counterfactual read where the person engaged from here.
+   */
+  interact(item: Record<string, unknown>): void {
+    if (this.closed) return;
+    this.interactions.push(JSON.parse(JSON.stringify(item)) as Record<string, unknown>);
   }
 
   /** The pack this turn read: its compiler's version and hash become the turn's `niadra` pins. */
@@ -405,7 +449,7 @@ export class TurnFrame {
     this.latencyMs = Math.round(performance.now() - this.started);
     if (error !== undefined && error !== null) this.flags.add("error");
     for (const entry of this.calls) entry.status ??= "cancelled"; // a call the turn left open never returned in it
-    if (this.recorder !== null) this.recorder.submit(this);
+    if (this.recorder !== null && this.playback === null) this.recorder.submit(this);
   }
 
   // For the queue and the sender

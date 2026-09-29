@@ -128,10 +128,13 @@ export class AgentSession {
     const response = result.response;
     if (frame === undefined || response === null) return;
     if (response.etag) {
-      frame.read("pack", { etag: response.etag });
+      frame.read("pack", { etag: response.etag, value: response });
       frame.pack(response.version || null, response.manifest_hash ?? response.etag);
     }
-    if (result.constraints) frame.read("constraints", { version: result.constraints.version });
+    if (result.constraints) {
+      frame.read("constraints", { version: result.constraints.version, value: result.constraints });
+      frame.constraints = result.constraints;
+    }
     if (result.state) {
       frame.read("state");
       frame.observeState(stateValues(result.state.objects ?? []));

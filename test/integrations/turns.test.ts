@@ -13,7 +13,7 @@ import { MockLanguageModelV4, convertArrayToReadableStream } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { Niadra, Replayer, silentLogger, tool } from "../../src/index.js";
 import { recordTools, niadraMiddleware, niadraTurn } from "../../src/integrations/ai-sdk.js";
-import { NiadraCallbackHandler } from "../../src/integrations/langchain.js";
+import { NiadraCallbackHandler, recordTools as recordLangChainTools } from "../../src/integrations/langchain.js";
 import { niadraProcessor } from "../../src/integrations/mastra.js";
 import { KEY, marina } from "../helpers.js";
 import { Cell } from "../support/cell.js";
@@ -299,5 +299,88 @@ describe("Mastra turn records", () => {
     ]);
     expect(args(record!, (record!.calls as Json[])[1]!)).toEqual({ sku: "PX" });
     expect((record?.output as Json).event_keys).toHaveLength(1);
+  });
+});
+
+describe("framework tools in a replay", () => {
+  const build = Niadra.build({ prompts: { core: "v1" }, model: "gpt-4.1" });
+
+  it("answer LangChain tools passed through recordTools from the record, and refuse any other", async () => {
+    const cell = new Cell();
+    const niadra = client(cell);
+    const ran: string[] = [];
+    const make = (name: string): DynamicStructuredTool =>
+      new DynamicStructuredTool({
+        name,
+        description: "Units in stock",
+        schema: { type: "object" as const, properties: { sku: { type: "string" as const } }, required: ["sku"] },
+        func: async (input: Json) => {
+          ran.push(String(input.sku));
+          return JSON.stringify({ sku: input.sku, qty: 3 });
+        },
+      });
+    const [stock] = recordLangChainTools([make("stock")]);
+    const script = () => new ScriptedChatModel([new AIMessage({ content: "", tool_calls: [{ id: "call_1", name: "stock", args: { sku: "PX" } }] }), lcAnswer("Three units.")]);
+    const convo = niadra.conversation({ subject: marina, channel: "web_chat", conversation_id: "lg-r", agent_id: "store" });
+    const handler = new NiadraCallbackHandler(convo, { turns: true });
+    const agent = (tools: DynamicStructuredTool[]) => async (): Promise<string> => {
+      const out = await graphWith(script(), tools).invoke({ messages: [new HumanMessage("PX?")] }, { callbacks: [handler] });
+      return JSON.stringify(out.messages.at(-1)?.content);
+    };
+    const turnId = await convo.turn({ build }, async (frame) => {
+      convo.agent(await agent([stock!])());
+      return frame.turnId;
+    });
+    await niadra.flush();
+    expect(ran).toEqual(["PX"]);
+    const scenario = cell.createScenario([turnId]);
+    const run = await new Replayer(niadra, () => agent([stock!]), { build }).run([scenario.scenario_id], { runs: 2 });
+    expect([run.verdict, run.scenarios[0]?.completed]).toEqual(["pass", 2]);
+    // A tool not passed through recordTools is refused before it runs: the graph's tool node gets the error.
+    const refused = await new Replayer(niadra, () => agent([make("stock")]), { build }).run([scenario.scenario_id], { runs: 1 });
+    expect(refused.verdict).not.toBe("pass");
+    expect(ran).toEqual(["PX"]); // no replayed call ran live
+  });
+
+  it("answer every Mastra tool from the record, never live", async () => {
+    const cell = new Cell();
+    const niadra = client(cell);
+    const ran: string[] = [];
+    const stock = () =>
+      createTool({
+        id: "stock",
+        description: "Units in stock",
+        inputSchema: jsonSchema({ type: "object", properties: { sku: { type: "string" } } }) as never,
+        execute: async (input: unknown) => {
+          ran.push(String((input as Json).sku));
+          return { ...(input as Json), qty: 3 };
+        },
+      });
+    const agent = (tools: Record<string, unknown>) => async (): Promise<string> => {
+      const model = new MockLanguageModelV4({
+        provider: "openai.responses",
+        modelId: "gpt-4.1",
+        doGenerate: [
+          { content: [{ type: "tool-call", toolCallId: "c1", toolName: "stock", input: JSON.stringify({ sku: "PX" }) }], finishReason: { unified: "tool-calls", raw: "tool_calls" }, usage: mastraUsage, warnings: [] },
+          { ...aiAnswer("Three units."), usage: mastraUsage },
+        ],
+      });
+      const processor = niadraProcessor({ turns: true });
+      const mastra = new Agent({ id: "store", name: "Store", model, instructions: "You are Acme's store agent.", tools: tools as never, inputProcessors: [processor], outputProcessors: [processor] });
+      const result = await mastra.generate("PX?", { requestContext: new RequestContext([["niadra", convo]]), maxSteps: 3 });
+      if (result.tripwire) throw new Error(result.tripwire.reason);
+      return result.text;
+    };
+    const convo = niadra.conversation({ subject: marina, channel: "web_chat", conversation_id: "m-r" });
+    const turnId = await convo.turn({ build }, async (frame) => {
+      convo.agent(await agent({ stock: stock() })());
+      return frame.turnId;
+    });
+    await niadra.flush();
+    expect(ran).toEqual(["PX"]);
+    const scenario = cell.createScenario([turnId]);
+    const run = await new Replayer(niadra, () => agent({ stock: stock() }), { build }).run([scenario.scenario_id], { runs: 2 });
+    expect([run.verdict, run.scenarios[0]?.completed]).toEqual(["pass", 2]);
+    expect(ran).toEqual(["PX"]); // no replayed call ran live
   });
 });

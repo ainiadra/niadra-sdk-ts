@@ -52,6 +52,7 @@ export class Cell {
   types: Json[] = [];
   readonly driftIssues = new Map<string, Json>();
   readonly fingerprints: Json[] = [];
+  readonly counterfactuals: Json[] = [];
   requiredPins = ["model"];
   private failures: { prefix: string; status: number; times: number }[] = [];
 
@@ -176,6 +177,11 @@ export class Cell {
     if (path.startsWith("/v1/coordination/")) return this.coordination(method, path, body);
     if (path.startsWith("/v1/agent-state")) return this.agentState(path, body);
     if (key === "POST /v1/state/verify" || key === "GET /v1/state/refresh-requests" || key === "POST /v1/objects/push") return this.state(key, body);
+    if (key === "POST /v1/measure/counterfactual-runs") {
+      this.need("measurement");
+      this.counterfactuals.push(body);
+      return json(201, { run_id: `cf_${this.counterfactuals.length}`, tool: body.tool, element: body.element, label: body.label ?? null, ...summarize(body.cases as Json[], body.element as string) });
+    }
     if (path.startsWith("/v1/scenarios") || path.startsWith("/v1/replay/") || path.startsWith("/v1/scenario-runs")) return this.replay(method, path, query, body);
     return problem(404, "not_found");
   }
@@ -314,9 +320,10 @@ export class Cell {
       return json(200, { items: ids.length ? ids.map((id) => this.scenarios.get(id)).filter(Boolean) : [...this.scenarios.values()] });
     }
     if (method === "POST" && path === "/v1/replay/cases") {
-      const scenario = this.scenarios.get(body.scenario_id);
+      // The scenario is optional: without one the case is the turn alone.
+      const scenario = body.scenario_id ? this.scenarios.get(body.scenario_id) : undefined;
       const record = this.turns.get(body.turn_id);
-      if (!scenario || !record) return problem(404, "not_found");
+      if (!record || (body.scenario_id && (!scenario?.turn_ids.includes(body.turn_id)))) return problem(404, "not_found");
       const pins = this.pinDifferences(record.build?.pins ?? {}, body.build?.pins ?? {}, body.vary ?? []);
       if (pins.length) return problem(422, "pin_mismatch", { pins });
       const customer = this.events.filter((e) => e.conversation_id === record.conversation_id && e.speaker?.role === "customer").at(-1);
@@ -329,7 +336,7 @@ export class Cell {
         required_pins: this.requiredPins,
         input: { kind: record.kind ?? "message", ...(customer ? { text: customer.content?.text } : {}) },
         history: [],
-        assertions: (scenario.assertions as Json[]).filter((a) => a.turn_id === undefined || a.turn_id === body.turn_id),
+        assertions: ((scenario?.assertions ?? []) as Json[]).filter((a) => a.turn_id === undefined || a.turn_id === body.turn_id),
         expires_at: new Date(Date.now() + 86_400_000).toISOString(),
       });
     }
@@ -392,8 +399,38 @@ async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-const SUMMARY = ["type", "version", "ownership", "nature", "key", "inputs", "fields", "values", "sources", "union", "states", "purposes", "readings", "agent_state"];
+const SUMMARY = ["type", "version", "ownership", "nature", "key", "inputs", "fields", "values", "sources", "union", "states", "purposes", "readings", "agent_state", "mirror_of", "field_access"];
 
 function summary(declared: Json): Json {
   return Object.fromEntries(SUMMARY.filter((k) => k in declared).map((k) => [k, declared[k]]));
+}
+
+/** The report of a counterfactual run, as the tool counterfactual spec's section 7 computes it. */
+function summarize(cases: Json[], element: string): Json {
+  const done = cases.filter((c) => c.status === "completed");
+  const skipped: Record<string, number> = {};
+  for (const c of cases) if (c.status !== "completed") skipped[c.status] = (skipped[c.status] ?? 0) + 1;
+  const mean = (v: number[]): number | null => (v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 1e6) / 1e6 : null);
+  const overlap = mean(done.map((c) => c.overlap as number));
+  const noise = mean(done.map((c) => c.noise as number));
+  const below = done.filter((c) => c.overlap < c.noise).length;
+  const above = done.filter((c) => c.overlap > c.noise).length;
+  const limits = ["not_quality", "model_reaction_not_measured"];
+  if (element === "constraints" || element === "hard") limits.push("trivial_for_hard");
+  if (done.length < 30) limits.push("few_cases");
+  if (noise !== null && noise < 0.9) limits.push("noisy_tool");
+  if (Object.keys(skipped).length) limits.push("cases_skipped");
+  if (done.some((c) => c.dry_run)) limits.push("dry_run");
+  return {
+    cases: cases.length,
+    completed: done.length,
+    skipped,
+    overlap,
+    noise_floor: noise,
+    effect: overlap !== null && noise !== null ? Math.round((noise - overlap) * 1e6) / 1e6 : null,
+    below_noise: below,
+    above_noise: above,
+    ties: done.length - below - above,
+    limits,
+  };
 }

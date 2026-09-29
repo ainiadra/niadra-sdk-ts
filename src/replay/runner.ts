@@ -256,7 +256,7 @@ function refused(scenarioIds: readonly string[], results: readonly Json[]): Repl
   return { runId: "", status: "refused", verdict: "pin_mismatch", scenarios };
 }
 
-function strictRead(niadra: Niadra): (pointer: string) => Promise<string> {
+export function strictRead(niadra: Niadra): (pointer: string) => Promise<string> {
   return async (pointer) => {
     const found = await niadra.content.read(pointer);
     if (found === null) throw new BlobError("the content resolver could not read a value");

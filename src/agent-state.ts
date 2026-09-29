@@ -126,7 +126,8 @@ export class AgentStates {
       const held = this.held.get(key(scope, agent));
       served = held ? { body: copy(held.body), version: held.version, updatedAt: held.updatedAt, degraded: true } : { body: {}, version: 0, updatedAt: null, degraded: true };
     }
-    currentTurn()?.read("agent_state", { version: String(served.version) });
+    // The state it served goes with the read, so a replay starts from it.
+    currentTurn()?.read("agent_state", { version: String(served.version), value: { scope, agent, version: served.version, body: served.body } });
     return served;
   }
 
