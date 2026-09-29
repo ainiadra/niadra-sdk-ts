@@ -196,7 +196,11 @@ export class Api {
     return this.call({ method: "POST", path: `/v1/legal-holds/${segment(holdId)}/release`, body }, options);
   }
 
-  /** `GET /v1/measure/attribution`. */
+  /**
+   * `GET /v1/measure/attribution`. Outcomes and value by day, agent, method and band, without a person:
+   * deterministic and probable
+   * apart.
+   */
   attribution(params: { since: string; until: string }, options: RequestOptions = {}): Promise<AttributionReport> {
     return this.call({ method: "GET", path: "/v1/measure/attribution", query: { since: params.since, until: params.until } }, options);
   }
@@ -211,7 +215,10 @@ export class Api {
     return this.call({ method: "GET", path: "/v1/measure/interleaving" }, options);
   }
 
-  /** `GET /v1/measure/outcomes`. */
+  /**
+   * `GET /v1/measure/outcomes`. Outcomes attributed to what agents did, newest first: each link with its
+   * method, band and finality.
+   */
   outcomes(params: { cursor?: string | null; limit?: number } = {}, options: RequestOptions = {}): Promise<OutcomePage> {
     return this.call({ method: "GET", path: "/v1/measure/outcomes", query: { cursor: params.cursor, limit: params.limit ?? 50 } }, options);
   }
@@ -221,7 +228,10 @@ export class Api {
     return this.call({ method: "POST", path: "/v1/measure/power", body }, options);
   }
 
-  /** `POST /v1/measure/reconcile`. */
+  /**
+   * `POST /v1/measure/reconcile`. The period's attributed lines against the company's BI file, line by line,
+   * with the deviation kept.
+   */
   reconcile(body: ReconcileRequest, options: RequestOptions = {}): Promise<ReconcileResult> {
     return this.call({ method: "POST", path: "/v1/measure/reconcile", body }, options);
   }
@@ -262,7 +272,7 @@ export class Api {
   }
 
   /** `GET /.well-known/niadra-contact-keys.json`. */
-  contactKeys(params: { space?: string | null } = {}, options: RequestOptions = {}): Promise<ContactKeys> {
+  contactKeys(params: { space: string }, options: RequestOptions = {}): Promise<ContactKeys> {
     return this.call({ method: "GET", path: "/.well-known/niadra-contact-keys.json", query: { space: params.space } }, options);
   }
 

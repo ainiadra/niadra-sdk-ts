@@ -1,4 +1,14 @@
 import type { Niadra, WriteResult } from "./client.js";
+import { AgentSession } from "./agent-session.js";
+import type { ClaimParams, TurnParams } from "./agent-session.js";
+import type { AgentStateHandle } from "./agent-state.js";
+import type { ClaimCheck } from "./capture/check.js";
+import type { TurnFrame } from "./capture/frame.js";
+import type { CheckOptions, Claimed, Declarations } from "./coordination/client.js";
+import { toObjectRef } from "./handles.js";
+import type { ClaimVerdict } from "./resolvers.js";
+import type { CheckResult } from "./types/coordination.js";
+import type { StateRef } from "./types/state.js";
 import type { AgentMemoryParams, AgentMemoryResult } from "./agent-memory.js";
 import type { ContextOptions, ContextParams, ContextResult, RequestOptions } from "./context.js";
 import type { BackingReport, UnbackedValue } from "./backing.js";
@@ -31,6 +41,8 @@ export interface TaskParams {
   view?: View;
   verification?: Verification;
   target?: TargetModel;
+  /** Your agent's id within the source: its turns, working state and coordination are its own. */
+  agent_id?: string;
 }
 
 export type TaskEvent = Omit<TrackEvent, "channel" | "task_id"> & { channel?: string };
@@ -55,6 +67,7 @@ export class Task {
   private level: Verification | undefined;
   private readonly state = new SessionState();
   private ending: Promise<WriteResult> | null = null;
+  private readonly features: AgentSession;
 
   constructor(
     private readonly client: Niadra,
@@ -65,6 +78,56 @@ export class Task {
     // Kept raw so a malformed shorthand fails open in context() and track() instead of throwing here.
     this.object = params.object ?? null;
     this.level = params.verification;
+    let object: ObjectRef | null;
+    try {
+      object = this.object !== null ? toObjectRef(this.object) : null;
+    } catch {
+      object = null;
+    }
+    const scope = { kind: "task" as const, id: this.id };
+    this.features = new AgentSession(client.agentHost, scope, params.agent_id ?? "agent", params.subject ?? null, object, params.channel);
+  }
+
+  /** The claim contract: `check()` classifies and counts, `guard()` and `guardText()` act as its actions say. */
+  get claims(): ClaimCheck {
+    return this.features.claims;
+  }
+
+  /** What the agent declares after it acts, sent in the background. See `Conversation.declare`. */
+  get declare(): Declarations {
+    return this.features.declare;
+  }
+
+  /** This task's working state for its agent. See `Conversation.agentState`. */
+  get agentState(): AgentStateHandle {
+    return this.features.agentState;
+  }
+
+  /** Runs `fn` as a turn of this task. See `Conversation.turn()`. */
+  turn<T>(fn: (frame: TurnFrame) => T | Promise<T>): Promise<T>;
+  turn<T>(params: TurnParams, fn: (frame: TurnFrame) => T | Promise<T>): Promise<T>;
+  turn<T>(first: TurnParams | ((frame: TurnFrame) => T | Promise<T>), second?: (frame: TurnFrame) => T | Promise<T>): Promise<T> {
+    return typeof first === "function" ? this.features.turn({}, first) : this.features.turn(first, second as (frame: TurnFrame) => T | Promise<T>);
+  }
+
+  /** A turn opened and closed by hand, for adapters. */
+  openTurn(params: TurnParams = {}): TurnFrame {
+    return this.features.openTurn(params);
+  }
+
+  /** Asks before acting. See `Conversation.check()`. */
+  check(intent: string, options: CheckOptions): Promise<CheckResult> {
+    return this.features.check(intent, options);
+  }
+
+  /** Claims the subject, or a task lock on a business object. See `Conversation.claim()`. */
+  claim(params: ClaimParams = {}): Promise<Claimed> {
+    return this.features.claim(params);
+  }
+
+  /** Whether `value` may be claimed for `field` of `ref` now. See `niadra.verifyClaim`. */
+  verifyClaim(ref: StateRef | string, field: string, value: unknown, options: { budgetMs?: number } = {}): Promise<ClaimVerdict> {
+    return this.features.verifyClaim(ref, field, value, options);
   }
 
   /** When context first went into the prompt, and when the agent first acted. */
@@ -92,7 +155,7 @@ export class Task {
    * Resolves with an empty result, never rejects, unless the client is strict.
    */
   async context(options: ContextOptions & { query?: string } = {}): Promise<ContextResult> {
-    const { query, format, explain, ...requestOptions } = options;
+    const { query, format, explain, include, ...requestOptions } = options;
     const target = this.object ? { object: this.object } : this.params.subject ? { subject: this.params.subject } : {};
     const params: ContextParams = {
       ...target,
@@ -103,10 +166,17 @@ export class Task {
       ...(this.params.target ? { target: this.params.target } : {}),
       ...(format === "json" ? { format } : {}),
       ...(explain ? { explain } : {}),
+      ...(include?.length ? { include } : {}),
     };
-    if (query) return this.state.observe(await this.client.context({ ...params, query }, requestOptions));
+    if (query) {
+      const answered = await this.client.context({ ...params, query }, requestOptions);
+      this.features.observe(answered);
+      return this.state.observe(answered);
+    }
     if (this.state.wantsDelta) params.delta = true;
-    return this.state.observe(this.state.absorb(await this.client.context(params, requestOptions)));
+    const result = await this.client.context(params, requestOptions);
+    this.features.observe(result);
+    return this.state.observe(this.state.absorb(result));
   }
 
   /**
@@ -134,6 +204,7 @@ export class Task {
     const checked = this.state.checkAnswer(text);
     if (strict && checked?.problems.length) return checked.problems;
     const key = this.agentTurn(text, options, checked?.backing);
+    this.features.said(text, key);
     return strict ? [] : key;
   }
 

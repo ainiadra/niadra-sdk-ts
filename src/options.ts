@@ -1,3 +1,4 @@
+import type { TurnRecordingOptions } from "./capture/recorder.js";
 import type { Logger } from "./logger.js";
 
 /**
@@ -176,4 +177,6 @@ export interface ClientOptions {
   logger?: Logger;
   /** Extra headers sent with every request. */
   defaultHeaders?: Record<string, string>;
+  /** Turn recording (`niadra.turns`): the content mode and the bounds of the turn queue. */
+  turns?: Partial<TurnRecordingOptions>;
 }

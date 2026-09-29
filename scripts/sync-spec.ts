@@ -63,11 +63,6 @@ const EXISTING: Record<string, string> = {
 const INTERNAL =
   /\bfronts? A\d\b|\(A\d\)|\b(?:core|the) wave\b|\bphase \d\b|\bintegrator\b|\bstudy \d+\b|\bestudo\b/i;
 const SUCCESS = ["200", "201", "202", "204", "207"];
-/**
- * Schemas the server's OpenAPI document publishes under a framework's default name, and the name the
- * server's code gives them: a body declared as an annotated union is published as `Body`.
- */
-const RENAMES: Record<string, string> = { Body: "DeclareRequest" };
 
 export interface Schema {
   $ref?: string;
@@ -194,30 +189,14 @@ export function cut(document: Document): Document {
   }
   const schemas = { ...document.components.schemas };
   for (const methods of Object.values(paths)) for (const op of Object.values(methods)) hoistBody(op, schemas);
-  let renamed: unknown = { paths, schemas };
-  for (const [old, name] of Object.entries(RENAMES)) {
-    if (old in schemas) renamed = renamedRefs(renamed, old, name);
-  }
-  const named = renamed as { paths: Document["paths"]; schemas: Record<string, Schema> };
-  Object.assign(paths, named.paths);
-  const fromNames = Object.fromEntries(Object.entries(named.schemas).map(([key, value]) => [RENAMES[key] ?? key, value]));
-  const names = [...reach(paths, fromNames)].sort();
+  const names = [...reach(paths, schemas)].sort();
   const result = {
     openapi: document.openapi,
     info: document.info,
     paths,
-    components: { schemas: Object.fromEntries(names.map((name) => [name, fromNames[name]])) },
+    components: { schemas: Object.fromEntries(names.map((name) => [name, schemas[name]])) },
   };
   return sortedKeys(published(result, "")) as Document;
-}
-
-function renamedRefs(node: unknown, old: string, name: string): unknown {
-  if (Array.isArray(node)) return node.map((value) => renamedRefs(value, old, name));
-  if (typeof node !== "object" || node === null) return node;
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(node)) out[key] = renamedRefs(value, old, name);
-  if (out.$ref === `#/components/schemas/${old}`) out.$ref = `#/components/schemas/${name}`;
-  return out;
 }
 
 /** A body the server declares inline (a route that parses its own body) as the named schema it is. */

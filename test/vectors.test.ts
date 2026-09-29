@@ -2,14 +2,13 @@
 //
 // `pnpm sync-spec --spec` copies them into spec/vectors (and the claim contract examples, with their
 // negative corpus, into spec/examples/claim-contract). `EXPECTED` lists every file the SDK runs, with the
-// fields its spec gives a case. Nothing here passes without running:
+// fields its spec gives a case, and its runner. Nothing here passes without running:
 // - a file not published yet is skipped, titled "pending vectors";
-// - a published file whose runner the SDK does not have yet is an expected failure ("pending
-//   implementation"), which turns red the day a runner makes it pass and nobody moved it;
 // - a file nothing expects, a case field its spec does not define and a malformed envelope fail.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  NiadraContactTokenError,
   NiadraDestinationError,
   NiadraExposureTokenError,
   canonicalDestination,
@@ -22,8 +21,11 @@ import {
   parseExposureToken,
   renderConstraints,
   suppressionKey,
+  verifyContactToken,
 } from "../src/index.js";
-import type { ClaimCategory, ConstraintBinding, ConstraintCall, ConstraintsBlock } from "../src/index.js";
+import type { ClaimCategory, ConstraintBinding, ConstraintCall, ConstraintsBlock, ContactKey } from "../src/index.js";
+import { scenarioVerdict } from "./support/stats.js";
+import type { Execution } from "./support/stats.js";
 
 const SPEC = new URL("../spec/", import.meta.url);
 const VECTORS = new URL("vectors/", SPEC);
@@ -40,17 +42,8 @@ interface VectorFile {
 interface Expected {
   caseFields: string[];
   expectFields: string[];
-  run: ((c: Case) => Promise<void>) | null;
-  pending?: string;
+  run: (c: Case) => Promise<void>;
 }
-
-/** A published file whose runner the SDK does not have yet. */
-const pending = (caseFields: string, expectFields: string, what: string): Expected => ({
-  caseFields: caseFields.split(" "),
-  expectFields: expectFields.split(" "),
-  run: null,
-  pending: what,
-});
 
 async function digestCase(c: Case): Promise<void> {
   const expected = c.expect as { canonical: string; sha256: string; size: number };
@@ -212,6 +205,53 @@ async function exprCase(c: Case): Promise<void> {
     result = { error: error.code };
   }
   expect(result).toStrictEqual(c.expect);
+}
+
+const b64url = (bytes: Uint8Array): string =>
+  btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+async function contactTokenCase(c: Case): Promise<void> {
+  if (c.op === "issue") {
+    // Niadra issues; the SDK only checks. The runner signs as the spec says, to prove the byte form the check
+    // reads is the one every issuer writes.
+    expect(Object.keys(c).sort()).toEqual(["claims", "description", "expect", "id", "op", "seed"]);
+    const seed = Uint8Array.from(atob((c.seed as string).replace(/-/g, "+").replace(/_/g, "/") + "="), (ch) => ch.charCodeAt(0));
+    const pkcs8 = new Uint8Array([...[0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20], ...seed]);
+    const key = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, false, ["sign"]);
+    const payload = b64url(new TextEncoder().encode(JSON.stringify(c.claims)));
+    const signature = new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, key, new TextEncoder().encode(`nct1.${payload}`)));
+    expect({ token: `nct1.${payload}.${b64url(signature)}` }).toEqual(c.expect);
+    return;
+  }
+  expect(c.op).toBe("verify");
+  const gateway = c.gateway as { gateway_id: string; space: string; key: string };
+  let got: Record<string, unknown>;
+  try {
+    const claims = await verifyContactToken(c.token as string, {
+      keys: c.keys as ContactKey[],
+      gatewayId: gateway.gateway_id,
+      space: gateway.space,
+      gatewayKey: gateway.key,
+      destination: c.destination as string,
+      channel: c.channel as string,
+      now: c.now as number,
+      seen: new Set(c.seen_jti as string[]),
+    });
+    got = { claims };
+  } catch (error) {
+    if (!(error instanceof NiadraContactTokenError)) throw error;
+    got = { error: error.code };
+  }
+  expect(got).toEqual(c.expect);
+}
+
+async function regressionStatsCase(c: Case): Promise<void> {
+  // The statistic is the recorder's; the tests' stand-in for it computes the verdict the same way.
+  for (const execution of c.executions as Record<string, unknown>[]) {
+    expect(Object.keys(execution).sort()).toEqual(["outcomes", "paraphrase", "status"]);
+  }
+  expect(scenarioVerdict(c.executions as Execution[], c.baseline as Record<string, [number, number]> | null)).toEqual(c.expect);
+  await Promise.resolve();
 }
 
 async function suppressionKeyCase(c: Case): Promise<void> {
@@ -444,11 +484,16 @@ const EXPECTED: Record<string, Expected> = {
     expectFields: ["token", "exposure_id", "position"],
     run: exposureTokenCase,
   },
-  "contact-token.v0": pending(
-    "id op description seed claims keys gateway token destination channel now seen_jti expect",
-    "token claims",
-    "the contact token's issue and offline check",
-  ),
+  "contact-token.v0": {
+    caseFields: ["id", "op", "description", "seed", "claims", "keys", "gateway", "token", "destination", "channel", "now", "seen_jti", "expect"],
+    expectFields: ["token", "claims"],
+    run: contactTokenCase,
+  },
+  "regression-stats.v0": {
+    caseFields: ["id", "description", "executions", "baseline", "expect"],
+    expectFields: ["verdict", "completed", "infrastructure_errors", "pin_mismatches", "needs_paraphrase", "assertions"],
+    run: regressionStatsCase,
+  },
   "suppression-key.v0": {
     caseFields: ["id", "description", "salt", "type", "value", "expect"],
     expectFields: ["canonical", "key"],
@@ -490,14 +535,7 @@ for (const [name, expected] of Object.entries(EXPECTED)) {
       }
     });
 
-    for (const c of data.cases) {
-      const run = async (): Promise<void> => {
-        if (!expected.run) throw new Error(`not implemented: ${expected.pending ?? name}`);
-        await expected.run(c);
-      };
-      if (expected.pending) it.fails(`pending implementation: ${expected.pending}: ${c.id}`, run);
-      else it(c.id, run);
-    }
+    for (const c of data.cases) it(c.id, () => expected.run(c));
   });
 }
 

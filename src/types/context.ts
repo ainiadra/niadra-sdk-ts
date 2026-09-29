@@ -1,7 +1,12 @@
 /** The read side: `POST /v1/context` and the history navigation calls. */
 
 import type { Handle, ObjectRef, SourceCoverage } from "./common.js";
+import type { ConstraintsBlock } from "./signals.js";
+import type { StateView } from "./state.js";
 import type { DeliveryPath, EventKind, HistoryItemKind, Verification, View } from "./vocabulary.js";
+
+/** A block `POST /v1/context` adds to the pack in the same round trip. */
+export type Include = "state" | "constraints" | "coordination" | "budget";
 
 /** The model that will read the pack, so the server can aim at its prompt-cache floor. */
 export interface TargetModel {
@@ -33,6 +38,8 @@ export interface ContextRequest {
    * without it.
    */
   explain?: boolean;
+  /** Blocks read in the same round trip: `constraints`, `state`. Each only where the space turned its feature on. */
+  include?: Include[] | null;
 }
 
 /**
@@ -227,6 +234,10 @@ export interface ContextResponse {
    * them and names a guard it went against on the turn.
    */
   guards?: PackGuard[];
+  /** With `include: ["constraints"]`: what the subject wants, refuses and is, for the tools. */
+  constraints?: ConstraintsBlock | null;
+  /** With `include: ["state"]`: the subject's objects of the declared types, as a `display` read serves them. */
+  state?: StateView | null;
   cache?: CacheDirectives | null;
   timing: Record<string, number>;
   path: DeliveryPath;

@@ -310,6 +310,11 @@ export interface TimerState {
   fired_at?: string | null;
   name: string;
   state: "armed" | "fired" | "cancelled";
+  /**
+   * The firing this one replaces: a timer that already fired fires again once the value that armed it is
+   * revised.
+   */
+  supersedes_firing_id?: string | null;
 }
 
 /** A value the company computed, kept as a versioned fact with the rule that produced it. */
@@ -336,6 +341,11 @@ export interface ValueState {
  */
 export interface ObjectRead {
   as_of?: string | null;
+  /**
+   * Each time axis of the type whose value is known: a date as `YYYY-MM-DD`, an instant in UTC. The platform
+   * keeps `known_at` (when the producer first knew of the object) and the time its content last changed.
+   */
+  axes?: Record<string, string>;
   /**
    * What the fields whose value is not known block, as the type declares it (`unobserved_blocks`): each
    * activity (`model_read`, `derive`, `claim`, or a task of the company such as `decide:close`) with the
