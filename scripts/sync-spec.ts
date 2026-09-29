@@ -49,12 +49,6 @@ const API_DOC = [
   "what fails open and what fails closed, per purpose. A route of a feature the space did not turn on answers",
   "404, as a route that does not exist.",
 ].join("\n");
-/**
- * The tags whose models the server still declares as stubs: their fields may change before the server
- * fixes them. Take a tag out of here when it does, and run this script.
- */
-const DRAFT_TAGS = new Set(["signals", "coordination"]);
-const DRAFT_NOTE = "Draft: the server has not fixed these types yet, and their fields may still change.";
 /** Schemas the SDK already mirrors by hand, and where they live. */
 const EXISTING: Record<string, string> = {
   Handle: "./common.js",
@@ -63,6 +57,7 @@ const EXISTING: Record<string, string> = {
   ItemError: "./events.js",
   HandleType: "./vocabulary.js",
   SubjectKind: "./vocabulary.js",
+  Verification: "./vocabulary.js",
 };
 const INTERNAL = /\bfront A\d\b|\bcore wave\b|\bphase \d\b|\bintegrator\b/i;
 const FRONT_REF = /\s*\(front A\d\)/g;
@@ -296,7 +291,8 @@ class TypeWriter {
     if (schema.anyOf) {
       const [inner, nullable] = unwrap(schema);
       if (nullable) return `${this.type(inner)} | null`;
-      return schema.anyOf.map((option) => this.type(option)).join(" | ");
+      // `integer` and `number` are both `number`: each constituent once.
+      return [...new Set(schema.anyOf.map((option) => this.type(option)))].join(" | ");
     }
     if (schema.const !== undefined) return JSON.stringify(schema.const);
     if (schema.enum) return schema.enum.map((value) => JSON.stringify(value)).join(" | ");
@@ -398,6 +394,9 @@ function method(route: Route, types: Map<string, Set<string>>, moduleOf: Map<str
 /** Every generated file, by its path in the repository. */
 export function generate(document: Document): Map<string, string> {
   const schemas = document.components.schemas;
+  // Two server models named alike are written with their module path; a public SDK never carries one.
+  const unnamed = Object.keys(schemas).filter((name) => name.includes("__"));
+  if (unnamed.length > 0) throw new Error(`schemas named by the server's module path: ${unnamed.join(", ")}`);
   const all = routes(document);
   const moduleOf = new Map<string, string>(Object.entries(EXISTING));
   for (const [tag, module] of Object.entries(TAGS)) {
@@ -410,8 +409,7 @@ export function generate(document: Document): Map<string, string> {
     const writer = new TypeWriter(moduleOf, here);
     const names = ordered(schemas).filter((name) => moduleOf.get(name) === here);
     const definitions = names.map((name) => writer.definition(name, schemas[name] ?? {})).join("\n");
-    const draft = Object.entries(TAGS).some(([tag, m]) => m === module && DRAFT_TAGS.has(tag));
-    const doc = (MODULE_DOCS[module] ?? "") + (draft ? `\n\n${DRAFT_NOTE}` : "");
+    const doc = MODULE_DOCS[module] ?? "";
     const imports = writer.importLines();
     files.set(`src/types/${module}.ts`, `${HEADER}${comment(doc, "")}${imports ? `\n${imports}` : ""}\n${definitions}`);
   }

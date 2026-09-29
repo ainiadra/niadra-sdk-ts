@@ -2,11 +2,20 @@
 /**
  * Subject signals, the constraints block, the reviewable profile, review requests, legal holds and
  * measurement.
- *
- * Draft: the server has not fixed these types yet, and their fields may still change.
  */
 
 import type { Handle, ObjectRef } from "./common.js";
+
+export interface AttributeEntry {
+  apply: "always" | "when_asked";
+  category?: string | null;
+  confidence: number;
+  id: string;
+  name: string;
+  source: "stated" | "correction" | "acquired" | "kept" | "returned_for_size" | "inferred";
+  system?: string | null;
+  value: boolean | number | string;
+}
 
 /** Value by method and band, deterministic and probable apart; weights are never summed as money. */
 export interface AttributionReport {
@@ -15,19 +24,100 @@ export interface AttributionReport {
   until: string;
 }
 
-/** The `constraints.v0` block. */
+export interface BlockSubject {
+  for?: string;
+}
+
+/**
+ * A rule of the company delivered in the block, with where it lives and its rank in the order the company
+ * declared: the block never ranks two origins by itself.
+ */
+export interface CompanyRule {
+  attr?: string | null;
+  id: string;
+  op?: "in" | "not_in" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "between" | null;
+  /** `code`, `db:<table>`, `prompt:<version>`, `policy:<version>`... */
+  origin: string;
+  rank: number;
+  values?: (boolean | number | string)[];
+}
+
+/**
+ * Two entries that cannot both hold, and the one that won: the current utterance over what was stated
+ * before, and a stated entry over an inferred one. Between two company rules, it is also a data issue.
+ */
+export interface Conflict {
+  by: "current_utterance" | "precedence" | "rule_rank";
+  ids: string[];
+  kept: string;
+}
+
+export interface ConstraintOrigin {
+  event_key?: string | null;
+  kind: "stated" | "tool_args" | "correction";
+  turn_id?: string | null;
+}
+
+/** Only what the person said: an inference is never hard. */
+export interface HardConstraint {
+  attr: string;
+  category?: string | null;
+  expires_at?: string | null;
+  id: string;
+  op: "in" | "not_in" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "between";
+  origin: ConstraintOrigin;
+  relax?: "never" | "ask";
+  scope: "turn" | "session" | "persistent";
+  source: "stated" | "tool_args" | "correction";
+  values: (boolean | number | string)[];
+}
+
+/** The block for one tool, through its bindings (`constraints.v0`, rendering). */
+export interface Rendered {
+  /** Argument values that carry hard constraints and attributes. */
+  args: Record<string, unknown>;
+  mode: "advisory" | "apply";
+  /** Residual ids the SDK filters from the results of an overfetch. */
+  post_filter?: string[];
+  /** Ids no argument of the tool can express. */
+  residual?: string[];
+  tool: string;
+}
+
+export interface Shown {
+  last_at?: string | null;
+  ref: string;
+  times: number;
+}
+
+export interface SoftConstraint {
+  attr: string;
+  category?: string | null;
+  confidence: number;
+  id: string;
+  polarity?: "prefer" | "avoid";
+  source: "inferred" | "stated";
+  value: boolean | number | string;
+  weight: number;
+}
+
+/** What one subject wants, refuses and is, for the tools of this turn (`constraints.v0`). */
 export interface ConstraintsBlock {
-  already_presented?: (Record<string, unknown>)[];
+  already_presented?: Shown[];
+  /** Questions the agent should ask, as `for_whom`, before assuming. */
   ask?: string[];
-  attributes?: (Record<string, unknown>)[];
+  attributes?: AttributeEntry[];
+  conflicts?: Conflict[];
   exclude?: string[];
-  hard?: (Record<string, unknown>)[];
-  precedence?: string | null;
+  hard?: HardConstraint[];
+  precedence?: ("current_utterance" | "stated_persistent" | "inferred")[];
+  /** What gives way first when a search finds nothing: `soft`, ids. */
   relaxation_order?: string[];
-  rendered?: Record<string, unknown> | null;
-  rules?: (Record<string, unknown>)[];
-  soft?: (Record<string, unknown>)[];
-  subject: Record<string, unknown>;
+  rendered?: Rendered | null;
+  rules?: CompanyRule[];
+  soft?: SoftConstraint[];
+  subject?: BlockSubject;
+  /** A digest of the block, which the turn record cites. */
   version: string;
 }
 

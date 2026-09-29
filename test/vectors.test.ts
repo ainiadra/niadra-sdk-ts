@@ -24,13 +24,19 @@ interface VectorFile {
 }
 
 interface Expected {
-  caseFields: string[] | null;
-  expectFields: string[] | null;
+  caseFields: string[];
+  expectFields: string[];
   run: ((c: Case) => Promise<void>) | null;
   pending?: string;
 }
 
-const pending = (what: string): Expected => ({ caseFields: null, expectFields: null, run: null, pending: what });
+/** A published file whose runner the SDK does not have yet. */
+const pending = (caseFields: string, expectFields: string, what: string): Expected => ({
+  caseFields: caseFields.split(" "),
+  expectFields: expectFields.split(" "),
+  run: null,
+  pending: what,
+});
 
 async function digestCase(c: Case): Promise<void> {
   const expected = c.expect as { canonical: string; sha256: string; size: number };
@@ -44,19 +50,22 @@ const EXPECTED: Record<string, Expected> = {
     expectFields: ["canonical", "sha256", "size"],
     run: digestCase,
   },
-  "niadra-expr.v0": {
-    caseFields: ["id", "expr", "input", "expect"],
-    expectFields: ["value"],
-    run: null,
-    pending: "the niadra-expr evaluator",
-  },
-  "claim-parser.v0": pending("the claim contract's number and role parser"),
-  "claim-detect.v0": pending("the claim contract's detection"),
-  "claim-anchor.v0": pending("the claim contract's text anchor"),
-  "constraint-render.v0": pending("the constraints block's rendering per tool binding"),
-  "exposure-token.v0": pending("the exposure token"),
-  "contact-token.v0": pending("the contact token's offline check"),
-  "suppression-key.v0": pending("the suppression list's per-source key"),
+  "niadra-expr.v0": pending("id expr input expect", "value", "the niadra-expr evaluator"),
+  "claim-parser.v0": pending("id lang text roles evidence expect", "mentions", "the claim contract's number and role parser"),
+  "claim-detect.v0": pending("id contract output turn expect", "findings", "the claim contract's detection"),
+  "claim-anchor.v0": pending("id quote document expect", "normalized_quote_length distance holds", "the claim contract's text anchor"),
+  "constraint-render.v0": pending(
+    "id block binding families call mode results expect",
+    "applies args suggested injected hard_sent residual post_filter conflicts honored",
+    "the constraints block's rendering per tool binding",
+  ),
+  "exposure-token.v0": pending("id op description exposure_id position token expect", "token exposure_id position", "the exposure token"),
+  "contact-token.v0": pending(
+    "id op description seed claims keys gateway token destination channel now seen_jti expect",
+    "token claims",
+    "the contact token's issue and offline check",
+  ),
+  "suppression-key.v0": pending("id description salt type value expect", "canonical key", "the suppression list's per-source key"),
 };
 const NEGATIVE_CORPUS = ["retail", "legal", "health-plan-sales"];
 
@@ -85,9 +94,8 @@ for (const [name, expected] of Object.entries(EXPECTED)) {
       expect(ids.length).toBeGreaterThan(0);
       expect(new Set(ids).size).toBe(ids.length);
       expect(ids.filter((id) => !CASE_ID.test(id))).toEqual([]);
-      expect(expected.caseFields, `${name} is published: read its spec and list the fields of its cases`).not.toBeNull();
       const caseFields = new Set(expected.caseFields);
-      const expectFields = new Set([...(expected.expectFields ?? []), "error"]);
+      const expectFields = new Set([...expected.expectFields, "error"]);
       for (const c of data.cases) {
         expect(Object.keys(c).filter((field) => !caseFields.has(field)), c.id).toEqual([]);
         expect(Object.keys(c.expect ?? {}).filter((field) => !expectFields.has(field)), c.id).toEqual([]);

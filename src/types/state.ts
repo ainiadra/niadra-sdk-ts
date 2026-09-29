@@ -6,6 +6,17 @@
 
 import type { Handle } from "./common.js";
 
+/**
+ * What happens to a claim that does not stand, by the task's context (an output kind or a document kind);
+ * `default` for any other. A context the contract lists as immutable is never rewritten.
+ */
+export interface Actions {
+  contexts?: Record<string, "block" | "warn" | "count" | "rewrite_if_unequivocal" | "discard_anchor_and_count">;
+  default: "block" | "warn" | "count" | "rewrite_if_unequivocal" | "discard_anchor_and_count";
+  /** The caveat a blocked passage gives way to, in a mutable output. */
+  replace_with?: string | null;
+}
+
 export interface AgentState {
   body?: Record<string, unknown>;
   updated_at?: string | null;
@@ -45,10 +56,97 @@ export interface AgentStateWriteResult {
   version: number;
 }
 
+export interface AnchorEvidence {
+  /** Counted apart: law and fact never add up. */
+  coverage: "fact" | "law";
+  min_match?: number;
+}
+
+/** A value in the turn record, from a tool's result or from state, that the number is checked against. */
+export interface ValueEvidence {
+  /** The value is within its type's `claim_max_age`, or the claim is `stale`. */
+  fresh_for?: "claim" | null;
+  /** The words that state each declared gap; a gap without them is stated by its name. */
+  gap_terms?: Record<string, string[]>;
+  /** The value's declared gaps must be said with it, or `gap_not_stated`. */
+  must_state_gaps?: boolean;
+  /** The value's role is the number's role. */
+  same_role?: boolean;
+  type?: string | null;
+  /** A field or a computed value of `type`. */
+  value?: string | null;
+}
+
+/** What the turn record must hold for a claim of the category to stand: exactly one kind. */
+export interface ClaimEvidence {
+  anchor?: AnchorEvidence | null;
+  /** A call of this tool in the turn. */
+  tool?: string | null;
+  tool_any?: string[];
+  value?: ValueEvidence | null;
+}
+
+/**
+ * How a category finds its claims in the text, without a model: numbers of these classes, the words
+ * around them that give their role, terms of the trade, named patterns, or sections of a document.
+ */
+export interface Detect {
+  classes?: ("money" | "percent" | "date" | "duration" | "quantity" | "count" | "dosage")[];
+  document_sections?: string[];
+  patterns?: ("article_citation" | "precedent_citation")[];
+  /** The words that give a number its role, synonyms and every language in one list. */
+  roles?: Record<string, string[]>;
+  /** With `classes`, a number counts only in a sentence that holds one of them; alone, the term is the claim. */
+  terms?: string[];
+}
+
+/**
+ * How a number is handled by where it came from: computed (a value with provenance in the turn, by rule
+ * or observed) is checked against it; quoted (inside quotation marks) is checked only for being in a source,
+ * as written, even when it is false; said by the model (no origin) takes this action, or the category's.
+ */
+export interface Natures {
+  computed?: "check" | "count";
+  model?: "block" | "warn" | "count" | null;
+  quoted?: "verbatim" | "count";
+}
+
+export interface ClaimCategory {
+  actions: Actions;
+  /** Empty: every agent. */
+  agents?: string[];
+  detect: Detect;
+  evidence: ClaimEvidence;
+  id: string;
+  natures?: Natures;
+}
+
+export interface ClaimOutputs {
+  immutable?: string[];
+  mutable?: string[];
+}
+
+/**
+ * Fingerprints of the company's own prompt: hashes of every `n` words, computed by the SDK, never the
+ * prompt itself. An output that repeats one gives way to `redact`.
+ */
+export interface InternalText {
+  n?: number;
+  redact: string;
+  /** The prompt version the hashes were computed from. */
+  shingle_hashes_ref: string;
+}
+
+/**
+ * The contract as the SDK keeps it: everything but the negative corpus's phrases, which only the CI's
+ * `niadra contract test` reads, from the company's own copy.
+ */
 export interface ClaimContractSummary {
-  categories?: (Record<string, unknown>)[];
+  categories?: ClaimCategory[];
+  internal_text?: InternalText | null;
+  languages: ("pt" | "en" | "es")[];
   negative_corpus_version?: string | null;
-  outputs?: Record<string, string[]>;
+  outputs?: ClaimOutputs;
   version: string;
 }
 

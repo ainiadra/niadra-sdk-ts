@@ -14,8 +14,7 @@ built on them.
   server names the operation. Unlike the rest of the client they never fail open; the server answers
   501 until it builds a route, and the method rejects with `NiadraNotAvailableError`.
 - The types of those routes (`TurnRecord`, `StateReadRequest`, `CheckResult` and the rest), generated
-  from the server's OpenAPI document by `scripts/sync-spec.ts`. The signals and coordination types are
-  drafts until the server fixes them.
+  from the server's OpenAPI document by `scripts/sync-spec.ts`.
 - `canonicalJson()` and `jsonDigest()`: the digest of a turn record's value, SHA-256 over its canonical
   JSON (RFC 8785), as every producer computes it.
 - The conformance vectors of the open specifications, run by `test/vectors.test.ts`, and the design of
