@@ -4,6 +4,8 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-30
+
 ### Added
 
 - `ContextResult.ageMs`: how long ago Niadra sent or confirmed the pack a read served. It is 0 for an answer
