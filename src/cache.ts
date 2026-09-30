@@ -101,6 +101,12 @@ export class ContextCache {
     return true;
   }
 
+  /** Milliseconds since the server last sent or confirmed the pack held for `key`; `null` when none is held. */
+  age(key: string): number | null {
+    const entry = this.entries.get(key);
+    return entry ? this.now() - entry.confirmedAt : null;
+  }
+
   /** The cached pack's ETag, without touching the order of eviction. */
   etag(key: string): string | null {
     return this.entries.get(key)?.response.etag ?? null;

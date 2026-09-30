@@ -135,6 +135,12 @@ export interface ContextResult {
   /** The pack as typed sections, when read with `format: "json"`; otherwise `null`. */
   pack: ContextPack | null;
   source: ContextSource;
+  /**
+   * How long ago Niadra sent or confirmed the pack served, in milliseconds: 0 for an answer just received,
+   * growing while a cached pack is served (`cache`, `stale`, or `fallback` with Niadra down), and `null` when
+   * there is no pack.
+   */
+  ageMs: number | null;
   /** The response this result was built from; `null` when `source` is `none`. */
   response: ContextResponse | null;
   /** What went wrong, when `source` is `fallback` or `none`. */
@@ -265,6 +271,7 @@ export function resultFrom(
   response: ContextResponse,
   source: ContextSource,
   error: NiadraError | null = null,
+  ageMs: number | null = 0,
 ): ContextResult {
   // A conversation in the control group gets an empty pack on purpose; it is not an error.
   const holdout = response.path === "holdout";
@@ -275,11 +282,11 @@ export function resultFrom(
     state: response.state ?? null,
     coordination: response.coordination ?? null,
   };
-  return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, response, error, ...blocks };
+  return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, ageMs, response, error, ...blocks };
 }
 
 export function emptyResult(error: NiadraError | null): ContextResult {
-  return { text: "", suffix: "", variables: {}, pack: null, source: "none", response: null, error, constraints: null, state: null, coordination: null };
+  return { text: "", suffix: "", variables: {}, pack: null, source: "none", ageMs: null, response: null, error, constraints: null, state: null, coordination: null };
 }
 
 /**

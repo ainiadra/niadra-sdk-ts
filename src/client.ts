@@ -418,18 +418,30 @@ export class Niadra {
    */
   async mayContact(handle: Handle, purpose: string, options: { channel?: string; failOpen?: boolean } = {}): Promise<boolean> {
     if (this.core && this.suppressions.due()) {
-      const read = this.suppressions.read(
-        {
-          salt: () => this.api.suppressionSalt({ timeout: this.timeouts.navigation }),
-          page: (cursor, limit) => this.api.suppressions({ cursor, limit }, { timeout: this.timeouts.navigation }),
-        },
-        this.suppressions.held ? this.timeouts.write : this.timeouts.navigation,
-      );
+      const read = this.readSuppressions(this.suppressions.held ? this.timeouts.write : this.timeouts.navigation);
       if (!this.suppressions.held) await read;
     }
     const checkOptions: { channel?: string | null; failOpen?: boolean } = { channel: options.channel ?? null };
     if (options.failOpen !== undefined) checkOptions.failOpen = options.failOpen;
     return this.suppressions.mayContact(handle, purpose, checkOptions);
+  }
+
+  private readSuppressions(budgetMs: number): Promise<void> {
+    return this.suppressions.read(
+      {
+        salt: () => this.api.suppressionSalt({ timeout: this.timeouts.navigation }),
+        page: (cursor, limit) => this.api.suppressions({ cursor, limit }, { timeout: this.timeouts.navigation }),
+      },
+      budgetMs,
+    );
+  }
+
+  /**
+   * Reads the local copy of the suppression list in the background when it is due: a check that Niadra does not
+   * answer falls back on it, so an opt-out holds through an outage.
+   */
+  private keepSuppressions(): void {
+    if (this.core && this.suppressions.due()) void this.readSuppressions(this.timeouts.write);
   }
 
   /**
@@ -511,7 +523,10 @@ export class Niadra {
       states: this.states,
       contract: () => this.currentContract(),
       internalText: this.internalText,
-      check: (request, timeoutMs) => this.api.check(request, { timeout: timeoutMs }),
+      check: (request, timeoutMs) => {
+        if (request.direction === "outbound") this.keepSuppressions();
+        return this.api.check(request, { timeout: timeoutMs });
+      },
       claim: (request, timeoutMs) => this.api.claim(request, {}, { timeout: timeoutMs }),
       verifyClaim: (ref, field, value, options) => this.verifyClaim(ref, field, value, options),
       enabled: this.enabled,
@@ -633,22 +648,22 @@ export class Niadra {
 
     const key = cacheKey(request);
     const hit = cache.lookup(key);
-    if (hit?.freshness === "fresh") return resultFrom(delivered(hit.response, cache.take(key)), "cache");
+    if (hit?.freshness === "fresh") return resultFrom(delivered(hit.response, cache.take(key)), "cache", null, cache.age(key));
     if (hit?.freshness === "stale") {
       this.revalidate(core, cache, key, scope, request, timeout, options.headers).catch((error: unknown) => {
         this.logger.debug(`background context refresh failed: ${describe(toNiadraError(error))}`);
       });
-      return resultFrom(delivered(hit.response, cache.take(key)), "stale");
+      return resultFrom(delivered(hit.response, cache.take(key)), "stale", null, cache.age(key));
     }
 
     try {
       const pending = this.revalidate(core, cache, key, scope, request, timeout, options.headers);
       const { response, source } = await abortable(pending, options.signal);
-      return resultFrom(delivered(response, cache.take(key)), source);
+      return resultFrom(delivered(response, cache.take(key)), source, null, source === "network" ? 0 : cache.age(key));
     } catch (error) {
       const failure = toNiadraError(error);
       const fallback = cache.lookup(key);
-      return this.contextFailure(failure, fallback ? delivered(fallback.response, cache.take(key)) : null);
+      return this.contextFailure(failure, fallback ? delivered(fallback.response, cache.take(key)) : null, cache.age(key));
     }
   }
 
@@ -678,12 +693,12 @@ export class Niadra {
       const failure = toNiadraError(error);
       this.observeAuth(failure, key);
       const fallback = cache && key ? cache.lookup(key) : null;
-      return this.contextFailure(failure, cache && key && fallback ? delivered(fallback.response, cache.take(key)) : null);
+      return this.contextFailure(failure, cache && key && fallback ? delivered(fallback.response, cache.take(key)) : null, key ? (cache?.age(key) ?? null) : null);
     }
     if (!cache || !key || !scope) return resultFrom(response, "network");
     if (response.degraded && !response.not_modified && cached) {
       // A degraded answer never replaces a good pack; the good one is served, with this turn's slots.
-      return resultFrom(delivered({ ...cached.response, slots: response.slots ?? null }, cache.take(key)), "fallback");
+      return resultFrom(delivered({ ...cached.response, slots: response.slots ?? null }, cache.take(key)), "fallback", null, cache.age(key));
     }
     const merged = response.not_modified && cached ? mergeNotModified(cached.response, response) : response;
     cache.store(key, scope, withoutSlots(merged), generation);
@@ -1255,11 +1270,11 @@ export class Niadra {
     });
   }
 
-  private contextFailure(error: NiadraError, fallback: ContextResponse | null): ContextResult {
+  private contextFailure(error: NiadraError, fallback: ContextResponse | null, ageMs: number | null = null): ContextResult {
     if (this.strict) throw error;
     if (fallback) {
       this.logger.warn(`context request failed, serving the last good pack: ${describe(error)}`);
-      return resultFrom(fallback, "fallback", error);
+      return resultFrom(fallback, "fallback", error, ageMs);
     }
     this.logger.warn(`context unavailable: ${describe(error)}`);
     return emptyResult(error);
@@ -1376,11 +1391,11 @@ export class Niadra {
       }
       const response = compose(delivered(hit.response, cache.take(key)), chosen);
       // A body this call waited for came over the network; otherwise it was already in memory.
-      return resultFrom(response, opening.length > 0 ? "network" : hit.freshness === "fresh" ? "cache" : "stale");
+      return resultFrom(response, opening.length > 0 ? "network" : hit.freshness === "fresh" ? "cache" : "stale", null, cache.age(key));
     } catch (error) {
       const failure = toNiadraError(error);
       const fallback = cache.lookup(key);
-      return this.contextFailure(failure, fallback ? delivered(fallback.response, cache.take(key)) : null);
+      return this.contextFailure(failure, fallback ? delivered(fallback.response, cache.take(key)) : null, cache.age(key));
     }
   }
 
@@ -1545,7 +1560,7 @@ export class Niadra {
         else resolve({ ok: false, idempotency_key: key, error });
       };
       core.queue.push(item, settle);
-      core.queue.flushInBackground();
+      core.queue.flushInBackground(true);
     });
   }
 

@@ -61,6 +61,25 @@ describe("coordination in the agent's process", () => {
     expect([result.decision, result.reasons]).toEqual(["deny", ["suppressed"]]);
   });
 
+  it("reads the suppression list to a short page, which still names the cursor to go on from", async () => {
+    const cell = new Cell();
+    cell.features.add("coordination");
+    await cell.suppress(marina, "service");
+    const reads: string[] = [];
+    const niadra = new Niadra({
+      apiKey: KEY,
+      logger: silentLogger,
+      flushOnExit: false,
+      fetch: (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (url.pathname === "/v1/suppressions") reads.push(url.searchParams.get("cursor") ?? "");
+        return cell.fetch(input, init);
+      },
+    });
+    expect(await niadra.mayContact(marina, "service")).toBe(false);
+    expect(reads).toEqual([""]);
+  });
+
   it("holds nothing back in a space that does not coordinate", async () => {
     const { cell, niadra } = setup();
     cell.features.delete("coordination");

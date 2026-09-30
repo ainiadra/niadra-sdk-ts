@@ -691,7 +691,8 @@ await convo.turn({ build: Niadra.build({ prompts: { store: "v16" }, model: "gpt-
   without `include` keeps its suffix. With Niadra down, the last good blocks serve.
 - **Coordination** decides by each purpose's direction when Niadra does not answer within 200 ms: a
   customer's message and service go, marketing, retention, collection and an effect with a key wait, and
-  the local copy of the opt-out list always holds.
+  the local copy of the opt-out list always holds. Every check about an outbound contact keeps that copy,
+  read again in the background once a minute.
 - **Tool bindings** live in the space's `tool-bindings` document and come in the SDK profile, never in code: a
   tool measures the constraints block through the one served for its name, the counterfactual runs through it,
   and its `capabilities.mask_output` decides the masking when the code leaves `maskOutput` unset.
@@ -714,9 +715,15 @@ Memory should make an agent better, never make it fail. By default:
 | 401 or 403 | Not treated as an outage: the cached packs are dropped (all of them on 401, the one requested on 403) and `context()` returns empty. Revoking a key also stops what the process had cached. |
 | 421 (the space moved to another cell) | Retried at once, up to three attempts. |
 | 429 on a batch | Retried after `Retry-After`. |
-| Batch failure | Retried with exponential backoff and jitter, three attempts. 4xx answers other than 408, 421 and 429 are never retried. A batch that still fails is dropped and logged. |
+| Batch failure | Retried with exponential backoff and jitter, three attempts. 4xx answers other than 408, 421 and 429 are never retried. A batch that still fails goes back to the front of the queue and leaves again after a pause that doubles, up to a minute, while Niadra stays down; each event keeps its idempotency key, so it is stored once. |
 | Queue full (10,000 items) | New events are dropped and logged. |
 | Server rejects one item of a batch (207) | Only that item fails; the rest are stored. |
+
+With Niadra down, a read serves the conversation's last good pack (`source: "fallback"`) with `ageMs`
+saying how old it is; the opt-out holds by the local copy of the suppression list; turn records, events
+and declarations wait in their queues and leave once Niadra answers again, each stored once.
+`test/chaos.test.ts` kills Niadra's process, silences its network, answers 503 and answers late in the
+middle of a conversation, and checks all of it.
 
 Every call you wait for has its own time budget for the whole call, retries and waits included, independent of your platform's:
 
@@ -729,7 +736,7 @@ Every call you wait for has its own time budget for the whole call, retries and 
 | `identify()`, `verify()`, `handoff()`, `feedback()` and the reservation in `uploadMedia()` | 5 s |
 | The transfer in `uploadMedia()` | 60 s |
 
-An `identify()`, `verify()` or `handoff()` that runs out of time resolves with a `NiadraTimeoutError` and stays in the queue, which keeps sending it. `track()` never waits; each attempt of a background batch has 5 s. Override them with `timeouts`, or per call with `{ timeout }`. Pass `{ signal }` to cancel a call.
+An `identify()`, `verify()` or `handoff()` that runs out of time, or that Niadra cannot take for now (a network error, a 5xx), resolves with that error and stays in the queue, which keeps sending it. `track()` never waits; each attempt of a background batch has 5 s. Override them with `timeouts`, or per call with `{ timeout }`. Pass `{ signal }` to cancel a call.
 
 ### The context cache
 
@@ -739,6 +746,8 @@ Inside a conversation or task, packs are cached in memory:
 - up to 10 minutes older: returned at once while one background request refreshes it;
 - when a request fails: the last good pack, if it is less than 30 minutes old;
 - at most 1,000 packs, the least recently used evicted first.
+
+`source` says which of these served the read, and `ageMs` how long ago Niadra sent or confirmed that pack.
 
 Refreshes send the cached ETag, so an unchanged pack costs a `not_modified` answer instead of the
 full text, and only one background refresh per pack runs at a time. A 401 or 403 is not an
