@@ -2,10 +2,17 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - 2026-09-30
 
-The first release this changelog records. The versions published before it were previews: nothing of theirs
-carries over, and none of their names, options or fallbacks is kept.
+The agent core. Every turn an agent takes is recorded in its own process; what it says is checked against
+what its tools returned; agents, people and systems coordinate before they contact a customer or act; the
+objects a company's systems push reach the agent as typed state with the freshness to say them; each agent
+keeps its working state; and a company replays turns, derives its types and measures a tool's
+counterfactual in its own CI. The framework adapters record turns. Every feature is off until the space
+turns it on, and a space that did not ask sees no change.
+
+The versions published before it were previews: nothing of theirs carries over, and none of their names,
+options or fallbacks is kept.
 
 ### Added
 
@@ -106,6 +113,34 @@ carries over, and none of their names, options or fallbacks is kept.
   verdict and action, `detected()` what a phrase of the negative corpus must never trigger, and `score()`
   the text anchor. It passes the claim-parser, claim-detect and claim-anchor vectors and finds nothing in
   the negative corpus of the three example contracts.
+- The `niadra` command for Node (`npx niadra`): `resolver-worker`, `replay`, `counterfactual`,
+  `types derive` (with `--check`) and `contract test`, with the Python command's arguments and exit codes.
+  `types derive` reads one PostgreSQL table's catalog (never a row), computes the same fingerprint as the
+  Python SDK and passes the `type-derive` vectors; `--check` sends Niadra only the fingerprint and the
+  counts.
+- The blocks a read asks for reach the model: with `include`, the state view's lines and the constraints
+  block go in `suffix` after the slots, inside one `<niadra>` section in the pack's language, byte for byte
+  what the Python SDK writes; a read without blocks keeps its suffix. The context answer also carries the
+  coordination block.
+- `niadra.internalText`: fingerprints of the company's own prompt (the same SHA-256 shingles as the Python
+  SDK); a repeated passage gives way to the claim contract's `redact` line and is recorded with
+  `internal_text_found`, never the text.
+- `tool(name, fn, { binding })` records what a call did with the constraints block, and `maskOutput: true`
+  keeps the fields the key may not read from the model (the last profile read while Niadra is down,
+  `onUnknown: "block"` to fail closed). A turn keeps the pack, the block and the working state it read, and
+  what the person was shown or engaged with (`frame.interact`).
+- The tool counterfactual: `Counterfactual` behaves as the Python runner, sending Niadra only overlaps and
+  positions.
+- A replay starts from the working state the recorded turn read, and a sub-turn of a replayed turn is
+  replayed and never sent. Mastra tools answer from the record; LangChain tools passed through
+  `recordTools()` too, and the handler refuses any other with `NiadraReplayRefusedError` before it runs.
+- Turn records from OpenAI Agents JS, Google ADK and VoltAgent with `turns: true`: each run is a turn, with
+  each tool call (the framework's own call id) and each model call. ADK tools answer from the record in a
+  replay; OpenAI Agents JS and VoltAgent cannot stop a tool from their hooks, so wrap those tools with
+  `tool()` to replay them.
+- One example per concept of the agent core (`examples/claim-guard.ts`, `coordination.ts`, `object-state.ts`,
+  `working-state.ts`, `masked-tool.ts`, `tool-counterfactual.ts`) and `examples/ci/niadra-checks.yml`, each
+  run by the tests.
 - `ContextResponse.budget` (`BudgetBlock`, with `BudgetPack`, `BudgetUse` and `BudgetCut`): with
   `include: ["budget"]`, what the pack costs per section, what this agent already spent in the conversation
   and the case, and the units the measurement says it leaves unused. Shown, never enforced.

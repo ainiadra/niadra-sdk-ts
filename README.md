@@ -642,6 +642,65 @@ const bedrock = wrapBedrock(new BedrockRuntimeClient({}), convo); // ConverseCom
 
 Each call gets the pack after your system text (Anthropic's `system`, Gemini's `config.systemInstruction`, one more Converse `system` block) and the suffix at the end of the last user message; the newest user text is recorded as the customer's turn and the answer as the agent's, with the provider's usage and prompt cache counts: Anthropic's `input_tokens`, `cache_read_input_tokens` and `cache_creation_input_tokens`, Gemini's `promptTokenCount` and `cachedContentTokenCount`, Bedrock's `inputTokens`, `cacheReadInputTokens` and `cacheWriteInputTokens`. On Anthropic, the pack's system block gets a cache breakpoint only when you already use prompt caching and one of the four is left. `.withResponse()` keeps working. For Anthropic's `messages.stream()` helper, prepare the body with `anthropicParams(convo, body)` and pass the final message to `recordAnthropic(convo, message)`. Azure OpenAI needs nothing new: `AzureOpenAI` has the OpenAI client's shape, so `wrap()` covers it. See [`examples/anthropic.ts`](examples/anthropic.ts), [`examples/google-genai.ts`](examples/google-genai.ts) and [`examples/bedrock.ts`](examples/bedrock.ts).
 
+## The agent core
+
+What an agent does in a turn, recorded and checked in its own process, with Niadra never on the agent's
+path. Every feature below is off until the space turns it on; a space that did not ask sees no change.
+
+```ts
+import { Niadra, handles } from "@niadra/sdk";
+
+const niadra = new Niadra({ apiKey: process.env.NIADRA_API_KEY });
+const checkPrice = niadra.tool("check_price", (sku: string) => catalog[sku], {
+  // the objects a result showed, for the claim contract
+  provenance: (p) => [{ ref: `product:store:${p.sku}`, fields: { price_sale: p.price_sale } }],
+});
+
+const convo = niadra.conversation({
+  subject: handles.phone("+5511912345678"),
+  channel: "whatsapp",
+  conversation_id: "thread-82",
+  agent_id: "store",
+});
+convo.customer("Quanto está o vestido PX?");
+await convo.turn({ build: Niadra.build({ prompts: { store: "v16" }, model: "gpt-4.1-mini" }) }, async () => {
+  const ctx = await convo.context({ include: ["state", "constraints"] });
+  checkPrice("PX-4471");
+  const guarded = await convo.claims.guardText(draft); // the claim contract acts before the text goes
+  convo.agent(guarded.text);
+});
+```
+
+| Concept | In the SDK | Example |
+| --- | --- | --- |
+| Turn records | `conversation.turn()`, `niadra.tool()`, the adapters' `turns: true` | `examples/claim-guard.ts` |
+| Claims | `conversation.claims.guard()`, `guardText()`, `check()`; `niadra.internalText` | `examples/claim-guard.ts` |
+| Coordination | `conversation.check()`, `declare`, `claim()`; `niadra.mayContact()`; `niadra.contactGateway()` | `examples/coordination.ts` |
+| Typed state | `context({ include: ["state", "constraints", "coordination", "budget"] })`, `niadra.verifyClaim()`, `niadra.resolvers` | `examples/object-state.ts` |
+| Working state | `conversation.agentState.get()` and `put()` | `examples/working-state.ts` |
+| Field access | `niadra.tool(name, fn, { maskOutput: true })` | `examples/masked-tool.ts` |
+| Replay | `Replayer`, `npx niadra replay` | |
+| Tool counterfactual | `Counterfactual`, `npx niadra counterfactual` | `examples/tool-counterfactual.ts` |
+| Type derivation and the claim contract in CI | `npx niadra types derive --check`, `npx niadra contract test` | `examples/ci/niadra-checks.yml` |
+
+- **Turn records** follow the async context, so parallel sub-agents keep their own turns, and leave from a
+  bounded queue in the background, in the content mode the space names. Closing a turn never waits for the
+  network.
+- **Include blocks** come in the same read as the pack. The state view's lines and the constraints go in
+  `suffix` after the slots, inside one `<niadra>` section, byte for byte what the Python SDK writes; a read
+  without `include` keeps its suffix. With Niadra down, the last good blocks serve.
+- **Coordination** decides by each purpose's direction when Niadra does not answer within 200 ms: a
+  customer's message and service go, marketing, retention, collection and an effect with a key wait, and
+  the local copy of the opt-out list always holds.
+- **Tool bindings** the space declares come in the SDK profile: a tool without `binding` in code measures the
+  constraints block through the one served for its name, and its `capabilities.mask_output` decides the
+  masking when the code leaves `maskOutput` unset.
+- **The `niadra` command** (Node) runs `replay`, `counterfactual`, `resolver-worker` (the space's refresh
+  requests, read with your resolvers inside your boundary; a watch fires only on a value the worker
+  confirmed, and a resolver returns `NOT_FOUND` when the source no longer has the object), `types derive` and
+  `contract test`, with the Python command's arguments and exit codes.
+- `niadra.api` has one typed method per route of these features; unlike the rest of the client, it rejects.
+
 ## Failure behavior
 
 Memory should make an agent better, never make it fail. By default:
