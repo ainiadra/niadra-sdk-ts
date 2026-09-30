@@ -148,7 +148,6 @@ export class Cell {
       return json(200, { accepted, duplicates, errors: [] });
     }
     if (key === "GET /v1/sdk/profile") {
-      if (this.features.size === 0) return problem(404, "not_found");
       return json(200, { features: [...this.features].sort(), claim_contract: this.claimContract, recording: this.recording, types: this.types.map(summary), tool_bindings: this.toolBindings, valid_for_s: 300 });
     }
     if (key === "POST /v1/types/fingerprint") {
@@ -202,9 +201,8 @@ export class Cell {
   private context(body: Json): Response {
     const include: string[] = body.include ?? [];
     for (const name of include) {
-      const feature = name === "constraints" ? "signals" : name === "state" ? "state" : null;
-      if (feature === null) return problem(501, "not_built");
-      if (!this.features.has(feature)) return problem(404, "not_found");
+      const feature = { constraints: "signals", state: "state", coordination: "coordination", budget: "turns" }[name];
+      if (feature === undefined || !this.features.has(feature)) return problem(404, "not_found");
     }
     const subject = body.subject ? `${body.subject.type}:${body.subject.value}` : "";
     const response: Json = {

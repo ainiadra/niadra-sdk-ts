@@ -89,16 +89,6 @@ export class NiadraRateLimitError extends NiadraAPIError {
   override readonly name = "NiadraRateLimitError";
 }
 
-/** 501: the server declares the route and has not built it yet. Nothing was done. */
-export class NiadraNotAvailableError extends NiadraAPIError {
-  override readonly name = "NiadraNotAvailableError";
-
-  constructor(status: number, problem: Problem | null, requestId: string | null, retryAfterMs: number | null = null) {
-    super(status, problem, requestId, retryAfterMs);
-    this.message = `${this.message}: not available on this server yet`;
-  }
-}
-
 /** Builds the most specific `NiadraAPIError` subclass for a status code. */
 export function apiErrorFor(
   status: number,
@@ -109,7 +99,6 @@ export function apiErrorFor(
   if (status === 401) return new NiadraAuthenticationError(status, problem, requestId, retryAfterMs);
   if (status === 403) return new NiadraPermissionError(status, problem, requestId, retryAfterMs);
   if (status === 429) return new NiadraRateLimitError(status, problem, requestId, retryAfterMs);
-  if (status === 501) return new NiadraNotAvailableError(status, problem, requestId, retryAfterMs);
   return new NiadraAPIError(status, problem, requestId, retryAfterMs);
 }
 

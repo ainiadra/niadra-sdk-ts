@@ -9,30 +9,12 @@
 const MAX_TURN = 2000;
 /** A partial transcript shorter than this says nothing the server can use yet. */
 export const MIN_PREFETCH = 8;
-/** Statuses of a server without the prefetch route. */
-export const NO_PREFETCH = new Set([404, 405, 501]);
-/** How long a server without the prefetch route is not asked again. */
-export const PREFETCH_RECHECK_AFTER_MS = 600_000;
+/** How long a block the space refused is not asked for again. */
+export const BLOCK_RECHECK_AFTER_MS = 600_000;
 
 /** The turn as `query`: trimmed, and its last `MAX_TURN` characters when longer. `null` when blank. */
 export function turnText(text: string | null | undefined): string | null {
   const trimmed = text?.trim();
   if (!trimmed) return null;
   return trimmed.length > MAX_TURN ? trimmed.slice(-MAX_TURN) : trimmed;
-}
-
-/** Whether a client's server answers prefetches: a route it lacks is not asked for a while. */
-export class PrefetchSupport {
-  private prefetchAt = 0;
-
-  constructor(private readonly now: () => number = Date.now) {}
-
-  prefetchWanted(): boolean {
-    return this.now() >= this.prefetchAt;
-  }
-
-  /** The server has no prefetch route: stop sending for `PREFETCH_RECHECK_AFTER_MS`. */
-  prefetchRefused(): void {
-    this.prefetchAt = this.now() + PREFETCH_RECHECK_AFTER_MS;
-  }
 }

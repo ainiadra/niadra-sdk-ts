@@ -369,16 +369,11 @@ function int(args: Record<string, unknown>, name: string): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
-/**
- * The filters of a call: the `filters` object of the canonical definitions, over the flat fields
- * the 0.1 definitions offered (`since`, `until`, `channels`, `categories`, `item_kinds`, `outcome`).
- */
+/** The filters of a call: the `filters` object of the canonical definitions. */
 function filtersFrom(args: Record<string, unknown>): HistoryFilters {
   const nested = args.filters;
   const source: Record<string, unknown> =
-    typeof nested === "object" && nested !== null && !Array.isArray(nested)
-      ? { ...args, ...(nested as Record<string, unknown>) }
-      : args;
+    typeof nested === "object" && nested !== null && !Array.isArray(nested) ? (nested as Record<string, unknown>) : {};
   const filters: HistoryFilters = {};
   const since = str(source, "since");
   const until = str(source, "until");
@@ -386,8 +381,7 @@ function filtersFrom(args: Record<string, unknown>): HistoryFilters {
   const channels = strings(source, "channels");
   const categories = strings(source, "categories");
   const kinds = strings(source, "item_kinds")
-    ?.map((kind) => (kind === "system_event" ? "object" : kind))
-    .filter((kind): kind is HistoryItemKind => (ITEM_KINDS as string[]).includes(kind));
+    ?.filter((kind): kind is HistoryItemKind => (ITEM_KINDS as string[]).includes(kind));
   const outcome = str(source, "outcome");
   if (since) filters.since = since;
   if (until) filters.until = until;

@@ -44,10 +44,9 @@ const API_DOC = [
   "Every route of the turn record, typed state, subject signals and coordination, one method each, named as the",
   "server names the operation, in camelCase: `niadra.api`.",
   "",
-  "Unlike the rest of the SDK, these methods never fail open: they reject with the API's error, and with",
-  "`NiadraNotAvailableError` (501) while the server has not built the route. The calls built on them decide",
-  "what fails open and what fails closed, per purpose. A route of a feature the space did not turn on answers",
-  "404, as a route that does not exist.",
+  "Unlike the rest of the SDK, these methods never fail open: they reject with the API's error. The calls built",
+  "on them decide what fails open and what fails closed, per purpose. A route of a feature the space did not",
+  "turn on answers 404, as a route that does not exist.",
 ].join("\n");
 /** Schemas the SDK already mirrors by hand, and where they live. */
 const EXISTING: Record<string, string> = {

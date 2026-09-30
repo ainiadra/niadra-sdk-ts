@@ -137,14 +137,4 @@ describe("prefetch()", () => {
       "the internet keeps dropping again at night",
     ]);
   });
-
-  it("leaves a server without the route alone, and a failure never surfaces", async () => {
-    const server = new MockServer().on("POST /v1/context/prefetch", problem(404, "not_found"));
-    const niadra = makeClient(server, { flushOnExit: false, strict: true });
-    const convo = niadra.conversation({ subject: marina, channel: "voice", conversation_id: "call-3" });
-    expect(convo.prefetch("the internet keeps dropping")).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(convo.prefetch("the internet keeps dropping at night")).toBe(false);
-    expect(server.callsTo("POST /v1/context/prefetch")).toHaveLength(1);
-  });
 });

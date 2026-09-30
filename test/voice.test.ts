@@ -163,7 +163,7 @@ describe("the voice read path", () => {
     await convo.end();
   });
 
-  it("pays the round trip on every turn without it (the path of 0.5.0)", { timeout: 30_000 }, async () => {
+  it("pays the round trip on every turn without it", { timeout: 30_000 }, async () => {
     const region = new Region();
     const niadra = client(region, { voice: false, timeouts: { contextVoice: 150 } });
     const convo = niadra.conversation({ subject: marina, channel: "voice", conversation_id: "call-0" });
@@ -177,8 +177,8 @@ describe("the voice read path", () => {
       turnTimes.push(elapsed);
       if (context.response?.slots) withSlots++;
     }
-    report("0.5.0 path, same turns (150-400 ms region)", turnTimes);
-    console.log(`0.5.0 path: ${withSlots} of ${TURNS.length} turns got their slots`);
+    report("without the voice path, same turns (150-400 ms region)", turnTimes);
+    console.log(`without the voice path: ${withSlots} of ${TURNS.length} turns got their slots`);
     expect(Math.min(...turnTimes)).toBeGreaterThan(100);
   });
 

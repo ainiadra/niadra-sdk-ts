@@ -467,8 +467,6 @@ export interface OpenedItem {
   resolution?: string | null;
   derived: HistoryItem[];
   timeline: HistoryItem[];
-  /** The server no longer sends a transcript excerpt; the field stays for code that reads it. */
-  excerpt?: string | null;
   as_of?: string | null;
   /** Earlier and current versions, oldest first, when the item has them. */
   versions?: ItemVersion[];

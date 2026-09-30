@@ -67,8 +67,8 @@ export function checkNote(note: RememberParams): void {
   checkTags(note.tags);
 }
 
-export function emptyBlock(error: NiadraError | null, enabled = true): AgentMemoryResult {
-  return { text: "", notes: [], etag: null, tokens: 0, enabled, source: "none", error };
+export function emptyBlock(error: NiadraError | null): AgentMemoryResult {
+  return { text: "", notes: [], etag: null, tokens: 0, enabled: true, source: "none", error };
 }
 
 export function blockResult(block: AgentMemoryBlock, source: AgentMemorySource, error: NiadraError | null = null): AgentMemoryResult {

@@ -67,11 +67,11 @@ describe("open()", () => {
     expect(result.data?.summary).toBe("Visit missed");
   });
 
-  it("sends the customer when given, and never a task id, which the server does not read here", async () => {
+  it("sends the customer when given", async () => {
     const server = new MockServer().on("POST /v1/history/open", {
       body: { id: "ep/1", kind: "episode", summary: "s", promises: [], derived: [], timeline: [] },
     });
-    await makeClient(server).open("ep/1", { subject: marina, task_id: "t-1" });
+    await makeClient(server).open("ep/1", { subject: marina });
     expect(server.calls[0]!.body).toEqual({ item_id: "ep/1", subject: marina });
     expect(server.calls[0]!.url.pathname).toBe("/v1/history/open");
   });

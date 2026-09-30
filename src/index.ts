@@ -93,7 +93,6 @@ export {
   NiadraConfigError,
   NiadraConnectionError,
   NiadraError,
-  NiadraNotAvailableError,
   NiadraPermissionError,
   NiadraRateLimitError,
   NiadraTimeoutError,
