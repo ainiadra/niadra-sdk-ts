@@ -39,7 +39,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "niadra": "./dist/cli.js"
+    "niadra": "dist/cli.js"
   },
   "exports": {
     ".": {
