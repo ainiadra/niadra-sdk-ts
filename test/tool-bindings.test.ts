@@ -1,6 +1,6 @@
-// The tool bindings the SDK profile serves: a tool without a binding in code measures the constraints block
-// through the one the space binds for its name, a binding in code wins, and the served capability hides a
-// denied field unless the code says otherwise.
+// The tool bindings the SDK profile serves: a tool measures the constraints block through the one the space
+// binds for its name, and nothing else, and the served capability hides a denied field unless the code says
+// otherwise.
 import { describe, expect, it } from "vitest";
 import { Niadra, silentLogger } from "../src/index.js";
 import type { ConstraintsBlock, TurnFrame } from "../src/index.js";
@@ -49,17 +49,16 @@ async function applied(cell: Cell, niadra: Niadra, search: (q: { not_color?: str
 }
 
 describe("the tool bindings the profile serves", () => {
-  it("measure a tool that has no binding in code", async () => {
+  it("measure a tool through the served binding", async () => {
     const { cell, niadra } = setup();
     const result = await applied(cell, niadra, niadra.tool("search_products", cards));
     expect(result).toMatchObject({ hard_sent: ["h1"], results_checked: 2, violations: 0 });
   });
 
-  it("give way to a binding in code", async () => {
+  it("measure nothing for a tool the space does not bind", async () => {
     const { cell, niadra } = setup();
-    const own = { ...SEARCH, args: [{ attr: "item_variant.color", param: "colour", negation: { param: "not_colour" } }] };
-    const result = await applied(cell, niadra, niadra.tool("search_products", cards, { binding: own }));
-    expect(result.hard_sent).toEqual([]);
+    cell.toolBindings = [];
+    expect(await applied(cell, niadra, niadra.tool("search_products", cards))).toEqual({});
   });
 
   it("hide a denied field by the served capability, unless the code says otherwise", async () => {

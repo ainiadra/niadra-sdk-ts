@@ -23,17 +23,22 @@ const search = (q: Query): { cards: typeof CATALOG } => {
   const refused = new Set(typeof q.not_color === "string" ? [q.not_color] : (q.not_color ?? []));
   return { cards: CATALOG.filter((c) => !refused.has(c.color) && (q.color == null || c.color === q.color)).sort((a, b) => a.price - b.price) };
 };
-const searchProducts = tool("search_products", search, { binding: SEARCH, dryRun: true });
+const searchProducts = tool("search_products", search, { dryRun: true });
 
 function setup(): { cell: Cell; niadra: Niadra } {
   const cell = new Cell();
   cell.features.add("signals");
   cell.features.add("measurement");
   cell.constraints.set(`${marina.type}:${marina.value}`, BLOCK);
+  // The space binds each tool in its configuration; the SDK profile serves the bindings.
+  cell.toolBindings = [SEARCH, { ...SEARCH, tool: "reserve" }, { ...SEARCH, tool: "hold", capabilities: {} }];
   return { cell, niadra: new Niadra({ apiKey: KEY, fetch: cell.fetch, logger: silentLogger, flushOnExit: false, turns: { intervalMs: 3_600_000 } }) };
 }
 
+/** A turn that read the block, searched with it rendered, and showed the result. The client read its SDK profile
+ * first, which serves the tool's binding the call is measured through. */
 async function recorded(niadra: Niadra, call: () => { cards: typeof CATALOG }, engaged?: string): Promise<string> {
+  await niadra.profile();
   const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: `c-${uuidv7()}`, agent_id: "stylist" });
   conversation.customer("Quero um vestido, mas não vermelho.");
   const turnId = await conversation.turn({ build: Niadra.build({ prompts: { core: "v16" }, model: "model-a" }) }, async (frame: TurnFrame) => {
@@ -72,13 +77,26 @@ describe("the tool counterfactual", () => {
     const untouched = await recorded(niadra, () => searchProducts({ color: "blue" }));
     const run = await new Counterfactual(niadra, { search_products: searchProducts }).run([touched, untouched], { tool: "search_products", element: "hard" });
     expect([run.cases.length, run.untouched]).toEqual([1, 1]);
+    await expect(new Counterfactual(niadra, { search_products: searchProducts }).run([touched], { tool: "search_products", element: "size" })).rejects.toBeInstanceOf(NiadraError);
+    const reserved = await recorded(niadra, () => tool("reserve", search)({ not_color: ["red"] }));
     ran.length = 0;
-    const dry = await new Counterfactual(niadra, { search_products: search }, { bindings: { search_products: SEARCH } }).run([touched], { tool: "search_products", element: "hard" });
+    const dry = await new Counterfactual(niadra, { reserve: search }).run([reserved], { tool: "reserve", element: "hard" });
     expect(dry.cases[0]?.dry_run).toBe(true);
     expect(ran.every((q) => q.dry_run === true)).toBe(true);
-    const never = await new Counterfactual(niadra, { search_products: search }, { bindings: { search_products: { ...SEARCH, capabilities: {} } } }).run([touched], { tool: "search_products", element: "hard" });
-    expect(never.cases).toEqual([{ turn_id: touched, call_id: "k1", status: "no_dry_run", dry_run: false }]);
-    await expect(new Counterfactual(niadra, { search_products: searchProducts }).run([touched], { tool: "search_products", element: "size" })).rejects.toBeInstanceOf(NiadraError);
+    // The space binds `hold` with no dry run.
+    const held = await recorded(niadra, () => tool("hold", search)({ not_color: ["red"] }));
+    ran.length = 0;
+    const never = await new Counterfactual(niadra, { hold: search }).run([held], { tool: "hold", element: "hard" });
+    expect(never.cases).toEqual([{ turn_id: held, call_id: "k1", status: "no_dry_run", dry_run: false }]);
+    expect(ran).toEqual([]);
+  });
+
+  it("refuses a tool the space does not bind before calling it", async () => {
+    const { niadra } = setup();
+    const turn = await recorded(niadra, () => searchProducts({ not_color: ["red"] }));
+    ran.length = 0;
+    await expect(new Counterfactual(niadra, { book_visit: search }).run([turn], { tool: "book_visit", element: "hard" })).rejects.toThrow(/binds no tool book_visit/);
+    expect(ran).toEqual([]);
   });
 });
 
@@ -125,12 +143,11 @@ describe("the counterfactual command", () => {
     const dir = mkdtempSync(join(tmpdir(), "niadra-cf-"));
     const module = join(dir, "tools.mjs");
     writeFileSync(module, `const cards = ${JSON.stringify(CATALOG)};
-export const TOOLS = { search_products: (q) => ({ cards: cards.filter((c) => !(q.not_color ?? []).includes(c.color)) }) };
-export const BINDINGS = { search_products: ${JSON.stringify(SEARCH)} };\n`);
+export const TOOLS = { search_products: (q) => ({ cards: cards.filter((c) => !(q.not_color ?? []).includes(c.color)) }) };\n`);
     const out: string[] = [];
     const err: string[] = [];
     const io = { out: (t: string) => void out.push(t), err: (t: string) => void err.push(t), client: () => niadra };
-    const argv = ["counterfactual", "--tools", `${module}:TOOLS`, "--bindings", `${module}:BINDINGS`, "--tool", "search_products", "--safe", "search_products", "--turn", turn];
+    const argv = ["counterfactual", "--tools", `${module}:TOOLS`, "--tool", "search_products", "--safe", "search_products", "--turn", turn];
     expect(await main([...argv, "--element", "hard", "--label", "abc"], io)).toBe(0);
     expect(JSON.parse(out.join("\n"))).toMatchObject({ label: "abc", completed: 1, untouched: 0 });
     expect(await main([...argv, "--element", "size"], io)).toBe(2);

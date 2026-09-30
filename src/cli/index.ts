@@ -11,7 +11,7 @@
  * `module:export` names an export of a module, a path relative to the working directory or a package: for
  * `--resolvers`, a `Resolvers` or a function that registers the resolvers on the one it gets; for `--agent`, a
  * function that makes a fresh agent; for `--build`, the build's pins; for `--tools`, the company's functions by
- * tool name, and for `--bindings`, their bindings by tool name.
+ * tool name (each tool's binding is the one the space's SDK profile serves).
  *
  * `niadra replay` exits with 0 when the verdict is `pass` or `flaky`, 1 for `regression`, and 2 for
  * `pin_mismatch` or `infrastructure_error`. `niadra types derive --check` and `niadra contract test` exit with
@@ -24,7 +24,6 @@ import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { Niadra } from "../client.js";
-import type { RawBinding } from "../constraints/binding.js";
 import { Counterfactual } from "../replay/counterfactual.js";
 import type { Element } from "../replay/counterfactual.js";
 import { ResolverWorker } from "../resolver-worker.js";
@@ -155,7 +154,6 @@ async function counterfactual(argv: readonly string[], io: Io): Promise<number> 
       element: { type: "string" },
       turn: { type: "string", multiple: true, default: [] },
       scenario: { type: "string", multiple: true, default: [] },
-      bindings: { type: "string" },
       safe: { type: "string", multiple: true, default: [] },
       k: { type: "string", default: "10" },
       label: { type: "string" },
@@ -165,8 +163,7 @@ async function counterfactual(argv: readonly string[], io: Io): Promise<number> 
   if (!["constraints", "hard", "size", "exclude"].includes(values.element)) throw new Error(`--element ${values.element}: constraints, hard, size or exclude`);
   if (values.turn.length === 0 && values.scenario.length === 0) throw new Error("--turn or --scenario is needed");
   const tools = (await load(values.tools)) as Record<string, (args: unknown) => unknown>;
-  const bindings = values.bindings === undefined ? undefined : ((await load(values.bindings)) as Record<string, RawBinding>);
-  const run = await new Counterfactual(io.client(), tools, { ...(bindings ? { bindings } : {}), safe: values.safe }).run(values.turn, {
+  const run = await new Counterfactual(io.client(), tools, { safe: values.safe }).run(values.turn, {
     tool: values.tool,
     element: values.element as Element,
     scenarioIds: values.scenario,

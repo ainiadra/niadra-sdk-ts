@@ -20,9 +20,9 @@
  * only positions and overlaps to `POST /v1/measure/counterfactual-runs`, which answers with the report.
  *
  * The records come through the replay case route, so only turns that can be replayed are read. The element is
- * `constraints` (the whole block), `hard`, `size` (its attributes) or `exclude`. The binding comes from
- * `bindings`, the tool's own `binding` or the SDK profile; a result's objects are read with the binding's
- * `results`, or else with the tool's `provenance`. It behaves as the Python SDK's `Counterfactual`.
+ * `constraints` (the whole block), `hard`, `size` (its attributes) or `exclude`. The binding is the one the space's
+ * `tool-bindings` document gives the tool for this source, from the SDK profile; a result's objects are read with
+ * the binding's `results`, or else with the tool's `provenance`. It behaves as the Python SDK's `Counterfactual`.
  */
 
 import { SDK } from "../capture/record.js";
@@ -80,8 +80,6 @@ export interface CounterfactualRun {
 export interface CounterfactualOptions {
   /** Reads values kept by pointer; by default the client's content resolver. */
   read?: (pointer: string) => Promise<string>;
-  /** A tool's binding, by tool name. */
-  bindings?: Readonly<Record<string, RawBinding>>;
   /** Tools that may run again as they are. */
   safe?: readonly string[];
 }
@@ -112,7 +110,8 @@ export class Counterfactual {
     const fn = this.tools[tool];
     if (fn === undefined) throw new NiadraError(`no function for the tool ${tool}: pass it in tools`);
     if (!Number.isInteger(k) || k < 1 || k > MAX_K) throw new RangeError(`k must be 1 to ${String(MAX_K)}`);
-    await this.niadra.profile();
+    const raw = await this.served(tool);
+    if (raw === null) throw new NiadraError(`the space binds no tool ${tool} for this key's source: see its tool-bindings`);
     const ids = [...turnIds];
     if ((options.scenarioIds ?? []).length > 0) {
       const found = await this.niadra.callRoute<{ items?: Json[] }>({ method: "GET", path: "/v1/scenarios", query: { ids: (options.scenarioIds ?? []).join(","), limit: 50 } });
@@ -130,7 +129,7 @@ export class Counterfactual {
         continue;
       }
       for (const call of calls(record, tool)) {
-        const found = await this.case(record, call, fn, element, k);
+        const found = await this.case(record, call, fn, raw, element, k);
         if (found === null) run.untouched++;
         else run.cases.push(found);
       }
@@ -141,17 +140,15 @@ export class Counterfactual {
     return run;
   }
 
-  private async case(record: Json, call: Json, fn: ToolFunction, element: Element, k: number): Promise<Json | null> {
+  private async case(record: Json, call: Json, fn: ToolFunction, raw: RawBinding, element: Element, k: number): Promise<Json | null> {
     const base = { turn_id: record.turn_id, call_id: call.call_id };
     const tool = String(call.name);
     const wrapped = recordedTool(fn);
-    const raw = this.options.bindings?.[tool] ?? wrapped?.binding ?? (await this.served(tool));
     let block: ConstraintsBlock;
     let args: Json;
     try {
       block = (await this.value(record, blockBlob(record, call))) as ConstraintsBlock;
       args = { ...((await this.value(record, call.args as string | undefined)) as Json) };
-      if (raw === null) throw new BlobError("the tool has no binding");
     } catch {
       return { ...base, status: "infrastructure_error", dry_run: false };
     }

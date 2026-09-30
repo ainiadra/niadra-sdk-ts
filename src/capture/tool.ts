@@ -16,10 +16,10 @@
  * pass through unchanged. An async generator is recorded piece by piece, and its result is the list of
  * pieces once it is consumed.
  *
- * With a binding (the tool's binding, as `constraints/binding.ts` reads it: `binding`, else the one the SDK
- * profile serves for the tool's name), a call in a turn that read the constraints block records what it did
- * with the block: the hard constraints its arguments sent, and over the
- * objects its result shows, how many were checked, broke one, or lacked the field. Nothing is changed.
+ * When the space binds the tool (its `tool-bindings` document, which the SDK profile serves this source by the
+ * tool's name), a call in a turn that read the constraints block records what it did with the block: the hard
+ * constraints its arguments sent, and over the objects its result shows, how many were checked, broke one, or
+ * lacked the field. Nothing is changed. A binding lives in the space's configuration, never in code.
  *
  * With `maskOutput: true`, the fields the key may not read never reach the model (`capture/mask.ts`); the record
  * keeps what the model saw. Left unset, the binding's `capabilities.mask_output` decides.
@@ -50,8 +50,6 @@ export interface ToolOptions<A extends unknown[], R> {
   callId?: (...args: A) => string | null | undefined;
   /** The turn to record in when the async context does not carry one (a framework that runs tools elsewhere). */
   frame?: () => TurnFrame | null | undefined;
-  /** The tool's binding, to measure the constraints block against its calls; wins over the one the profile serves. */
-  binding?: RawBinding;
   /** The bindings the SDK profile serves, by tool name; by default the client's (`niadra.tool`) or the turn's. */
   served?: (tool: string) => RawBinding | null;
   /** Keeps the fields this key may not read from the model; left unset, the binding's capability decides. */
@@ -67,7 +65,6 @@ export interface RecordedTool {
   name: string;
   dryRun: boolean;
   provenance: ((result: never) => Observation | readonly Observation[] | null | undefined) | null;
-  binding: RawBinding | null;
 }
 
 const RECORDED = Symbol.for("niadra.tool");
@@ -108,9 +105,9 @@ export function tool<A extends unknown[], R>(
 ): (...args: A) => R {
   const isAsync = isAsyncFunction(fn);
 
-  /** The tool's binding: the one the code gives, else the one the SDK profile serves for its name. */
+  /** The binding the SDK profile serves for the tool's name. */
   function bindingOf(frame: TurnFrame | undefined): RawBinding | null {
-    return options.binding ?? (options.served ?? frame?.profile.bindings)?.(name) ?? null;
+    return (options.served ?? frame?.profile.bindings)?.(name) ?? null;
   }
 
   /** Whether the output is masked: `maskOutput` when the code says it, else the binding's capability. */
@@ -237,7 +234,6 @@ export function tool<A extends unknown[], R>(
     name,
     dryRun: options.dryRun ?? false,
     provenance: (options.provenance ?? null),
-    binding: options.binding ?? null,
   };
   Object.defineProperty(wrapped, RECORDED, { value: marker });
   return wrapped;
