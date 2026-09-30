@@ -98,14 +98,14 @@ describe("the Context Pack specification", () => {
   });
 
   it("types each guard line beside the slots, named by the short id of its value", () => {
-    const answer = read("examples/context-pack-v1-turn-as-data.json") as ContextResponse;
+    const answer = read("examples/context-pack/turn-as-data.json") as ContextResponse;
     const lines = answer.pack!.slots.filter((slot) => slot.section === "guard");
     expect(lines.map((slot) => slot.id)).toEqual(answer.guards!.map((guard) => guard.id));
     expect(lines[0]!.text).toContain(answer.guards![0]!.value);
   });
 
   it("gives an example the SDK reads as a typed answer, the slots between the live turns and the delta", () => {
-    const answer = read("examples/context-pack-v1-turn-as-data.json") as ContextResponse;
+    const answer = read("examples/context-pack/turn-as-data.json") as ContextResponse;
     const pack = answer.pack!;
     expect(pack.spec).toBe("context-pack.v1");
     const names = schema.$defs.PackSection!.properties.name!.enum!;
@@ -123,8 +123,7 @@ describe("the Context Pack specification", () => {
   });
 });
 
-// Context Pack v2: the answer with the blocks a read adds by `include`.
-const v2 = read("context-pack.v2.json") as Schema;
+// The answer with the blocks a read adds by `include`.
 const responseKeys: Record<keyof ContextResponse, true> = {
   not_modified: true,
   text: true,
@@ -208,12 +207,11 @@ const blockKeys: Record<string, Record<string, true>> = {
   } satisfies Record<keyof BudgetCut, true>,
 };
 
-describe("the Context Pack v2 specification", () => {
+describe("the Context Pack answer", () => {
   it("has exactly the fields of the SDK's answer and of each block", () => {
-    expect(v2.$id).toBe("https://specs.niadra.com/schemas/context-pack.v2.json");
-    expect(Object.keys(responseKeys).sort()).toEqual(Object.keys(v2.properties).sort());
+    expect(Object.keys(responseKeys).sort()).toEqual(Object.keys(schema.properties).sort());
     for (const [name, keys] of Object.entries(blockKeys)) {
-      expect(Object.keys(keys).sort(), name).toEqual(Object.keys(v2.$defs[name]!.properties).sort());
+      expect(Object.keys(keys).sort(), name).toEqual(Object.keys(schema.$defs[name]!.properties).sort());
     }
   });
 });

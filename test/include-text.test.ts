@@ -17,7 +17,7 @@ const context = (fields: Partial<ContextResponse> = {}): ContextResponse =>
 
 describe("the blocks by include in the turn block", () => {
   it("leaves a read without blocks byte for byte as it was", () => {
-    const example = JSON.parse(readFileSync(new URL("../spec/examples/context-pack-v1-turn-as-data.json", import.meta.url), "utf8")) as ContextResponse;
+    const example = JSON.parse(readFileSync(new URL("../spec/examples/context-pack/turn-as-data.json", import.meta.url), "utf8")) as ContextResponse;
     const before = [renderLive(example), example.slots ?? "", example.delta ?? ""].filter(Boolean).join("\n\n");
     expect(renderSuffix(example)).toBe(before);
     expect(renderSuffix(context())).toBe("<turno>\n[Guarda] x\n</turno>");
