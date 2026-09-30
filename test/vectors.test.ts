@@ -23,7 +23,17 @@ import {
   suppressionKey,
   verifyContactToken,
 } from "../src/index.js";
-import type { ClaimCategory, ConstraintBinding, ConstraintCall, ConstraintsBlock, ContactKey } from "../src/index.js";
+import type {
+  ClaimCategory,
+  ClaimContractSummary,
+  ConstraintBinding,
+  ConstraintCall,
+  ConstraintsBlock,
+  ContactKey,
+  StateView,
+} from "../src/index.js";
+import { blockValues, evidence } from "../src/capture/claims.js";
+import { TurnFrame } from "../src/capture/frame.js";
 import { DeriveError, changes, derive } from "../src/introspect/derive.js";
 import type { Catalog } from "../src/introspect/derive.js";
 import { scenarioVerdict } from "./support/stats.js";
@@ -445,6 +455,33 @@ async function detectCase(c: Case): Promise<void> {
   expect(got).toEqual(c.expect?.findings);
 }
 
+async function evidenceCase(c: Case): Promise<void> {
+  const example = contract(c.contract as string);
+  const out = c.output as { text: string; lang: claims.Language; context: string; immutable: boolean; agent?: string };
+  const blocks = c.blocks as { state?: StateView; constraints?: ConstraintsBlock };
+  only(out, new Set(["text", "lang", "context", "immutable", "agent"]), "output");
+  only(blocks, new Set(["state", "constraints"]), "blocks");
+  const frame = new TurnFrame(null, { agent: out.agent ?? "agent" });
+  frame.observeState(blockValues(blocks.state, blocks.constraints));
+  const spoken = claims.mentions(out.text, out.lang).filter((m) => m.cls !== "label");
+  const output: claims.Output = { text: out.text, lang: out.lang, context: out.context, immutable: out.immutable, agent: out.agent ?? null };
+  const summary = { ...example, version: "vectors" } as unknown as ClaimContractSummary;
+  const found = claims.check(example.categories, output, evidence(frame, summary, spoken, out.lang));
+  const got = found.map((f) => {
+    const item: Record<string, unknown> = { category: f.category, span: [f.start, f.end], text: between(out.text, f.start, f.end) };
+    if (f.cls !== null) Object.assign(item, { class: f.cls, nature: f.nature, role: f.role, value: f.value });
+    Object.assign(item, { verdict: f.verdict, action: f.action });
+    if (f.evidence !== null && "cls" in f.evidence) {
+      const cited: Record<string, string> = {};
+      if (f.evidence.ref) cited.ref = f.evidence.ref;
+      if (f.evidence.name) cited.field = f.evidence.name;
+      item.evidence = cited;
+    }
+    return item;
+  });
+  expect(got).toEqual(c.expect?.findings);
+}
+
 async function anchorCase(c: Case): Promise<void> {
   const { quote, document } = c as Case & { quote: string; document: string };
   const expected = c.expect as { normalized_quote_length: number; distance: number; holds: boolean };
@@ -475,6 +512,11 @@ const EXPECTED: Record<string, Expected> = {
     caseFields: ["id", "contract", "output", "turn", "expect"],
     expectFields: ["findings"],
     run: detectCase,
+  },
+  "claim-evidence.v0": {
+    caseFields: ["id", "contract", "output", "blocks", "expect"],
+    expectFields: ["findings"],
+    run: evidenceCase,
   },
   "claim-anchor.v0": {
     caseFields: ["id", "quote", "document", "expect"],

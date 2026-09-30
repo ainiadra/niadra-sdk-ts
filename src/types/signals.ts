@@ -192,10 +192,28 @@ export interface Rendered {
   tool: string;
 }
 
+/** A number an object showed the subject, as they were shown it. */
+export interface ShownValue {
+  /**
+   * Whether it may be claimed now: its type allows claims of the field, and no more than the field's age for
+   * claims has passed since it was shown.
+   */
+  claim_safe: boolean;
+  /** The field's role, for claims. */
+  role?: string | null;
+  v: number;
+}
+
 export interface Shown {
   last_at?: string | null;
   ref: string;
   times: number;
+  /**
+   * The numbers the object was last shown with (a price, a total, a discount, an installment), by field: each
+   * field its type declares as `money`, `percent` or `number`. A claim check takes them as evidence for the
+   * offer an agent quotes back.
+   */
+  values?: Record<string, ShownValue>;
 }
 
 export interface SoftConstraint {
