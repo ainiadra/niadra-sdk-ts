@@ -33,6 +33,7 @@ export class Cell {
   recording: Json | null = null;
   readonly turns = new Map<string, Json>();
   readonly events: Json[] = [];
+  private readonly eventKeys = new Set<string>();
   readonly declarations: Json[] = [];
   readonly effects = new Map<string, Json>();
   readonly claims: Json[] = [];
@@ -173,8 +174,19 @@ export class Cell {
       return json(200, { items: this.suppressions, salt_id: "salt-1", next_cursor: null });
     }
     if (key === "POST /v1/batch") {
-      for (const item of body.items as Json[]) this.events.push(item);
-      return json(200, { accepted: (body.items as Json[]).length, duplicates: 0, errors: [] });
+      // An item whose key was seen before is a duplicate, as the server counts it; a heartbeat has no key.
+      let accepted = 0;
+      let duplicates = 0;
+      for (const item of body.items as Json[]) {
+        const itemKey = item.idempotency_key as string | undefined;
+        if (itemKey !== undefined && this.eventKeys.has(itemKey)) duplicates++;
+        else {
+          if (itemKey !== undefined) this.eventKeys.add(itemKey);
+          this.events.push(item);
+          accepted++;
+        }
+      }
+      return json(200, { accepted, duplicates, errors: [] });
     }
     if (key === "POST /v1/context") return this.context(body);
     if (path.startsWith("/v1/coordination/")) return this.coordination(method, path, body);

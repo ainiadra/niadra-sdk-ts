@@ -268,16 +268,34 @@ describe("retries", () => {
     expect(new Set(server.calls.map((c) => c.body.items[0].idempotency_key)).size).toBe(1);
   });
 
-  it("gives up after maxAttempts and drops the batch with a log line", async () => {
+  it("keeps a batch that still fails after maxAttempts and sends it again, with the same key", async () => {
     const logger = spyLogger();
-    const server = new MockServer().on("POST /v1/batch", problem(500, "internal"));
+    const server = new MockServer().on("POST /v1/batch", problem(500, "internal"), problem(500, "internal"), problem(500, "internal"), batchOk());
     const niadra = makeClient(server, { logger, queue: { ...fast, maxAttempts: 3 } });
     niadra.track(message("a"));
     await niadra.flush();
     expect(server.calls).toHaveLength(3);
-    expect(logger.warn.mock.calls.some(([m]) => m.includes("dropped 1 events"))).toBe(true);
+    expect(logger.warn.mock.calls.some(([m]) => m.includes("could not deliver 1 events, will retry"))).toBe(true);
     await niadra.flush();
+    expect(server.calls).toHaveLength(4);
+    expect(new Set(server.calls.map((c) => c.body.items[0].idempotency_key)).size).toBe(1);
+    await niadra.flush();
+    expect(server.calls).toHaveLength(4);
+  });
+
+  it("pauses the background sends after a failed batch, then sends it once Niadra is back", async () => {
+    const server = new MockServer().on("POST /v1/batch", new TypeError("fetch failed"), new TypeError("fetch failed"), batchOk());
+    const niadra = makeClient(server, { queue: { ...fast, maxAttempts: 2, flushAt: 1, flushIntervalMs: 20 } });
+    niadra.track(message("a"));
+    for (let i = 0; i < 50 && server.calls.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    niadra.track(message("b"));
+    expect(server.calls).toHaveLength(2);
+    for (let i = 0; i < 100 && server.calls.length < 3; i++) await new Promise((resolve) => setTimeout(resolve, 5));
     expect(server.calls).toHaveLength(3);
+    expect(server.calls[2]!.body.items.map((item: { idempotency_key: string }) => item.idempotency_key)).toEqual([
+      server.calls[0]!.body.items[0].idempotency_key,
+      expect.any(String),
+    ]);
   });
 
   it("never retries a 4xx other than 408, 421 and 429", async () => {

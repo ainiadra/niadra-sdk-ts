@@ -129,7 +129,11 @@ export interface QueueOptions {
   maxBatchSize: number;
   /** Items held in memory before new ones are dropped. Keeps a long outage from exhausting memory. */
   maxQueueSize: number;
-  /** Attempts per batch, including the first. 4xx answers other than 408, 421 and 429 are never retried. */
+  /**
+   * Attempts per send of a batch, including the first. 4xx answers other than 408, 421 and 429 are never
+   * retried. A batch still failing after them waits at the front of the queue and goes again after a pause
+   * that doubles, up to a minute, while Niadra stays down.
+   */
   maxAttempts: number;
   /** First backoff delay; each retry doubles it, with full jitter, up to `maxRetryDelayMs`. */
   retryDelayMs: number;

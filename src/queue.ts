@@ -1,9 +1,13 @@
 import { NiadraError, NiadraValidationError, toNiadraError } from "./errors.js";
 import type { Logger } from "./logger.js";
 import type { QueueOptions } from "./options.js";
+import { isTransient } from "./transport.js";
 import type { BatchItem, BatchResponse, HeartbeatItem } from "./types/events.js";
 
-/** Called once per item with `null` when the server accepted it, or the reason it did not. */
+/**
+ * Called with `null` when the server accepted the item, or the reason it did not. An item that goes back to
+ * the queue after an error that may pass hears that error first, and its answer later; a caller keeps the first.
+ */
 type Settle = (error: NiadraError | null) => void;
 
 interface Pending {
@@ -18,6 +22,7 @@ interface DrainReport {
 }
 
 const HEARTBEAT_WINDOW_MS = 60_000;
+const MAX_PAUSE_MS = 60_000;
 
 /**
  * A bounded in-memory queue in front of `POST /v1/batch`.
@@ -25,8 +30,11 @@ const HEARTBEAT_WINDOW_MS = 60_000;
  * Items leave in batches when `flushAt` of them are waiting, `flushIntervalMs` after the first
  * one was queued, or `turnFlushIntervalMs` after the first conversation turn was queued,
  * whichever comes first. Only one batch is in flight at a time, so items reach the server in
- * the order they were queued. A batch that still fails after its retries is dropped and logged:
- * holding it would let one bad outage grow the queue without bound.
+ * the order they were queued. A batch that still fails after its retries with an error that may
+ * pass (a connection, a timeout, a 408, 421, 429 or 5xx) goes back to the front of the queue, and
+ * the queue pauses, doubling the pause up to a minute while Niadra stays down: what an agent
+ * said during an outage arrives once Niadra is back, each item under its own idempotency key.
+ * `maxQueueSize` bounds what an outage can hold. A batch refused for any other reason is dropped.
  */
 export class EventQueue {
   private items: Pending[] = [];
@@ -37,6 +45,8 @@ export class EventQueue {
   private droppedSinceWarning = 0;
   private windowStart: number;
   private sentInWindow = 0;
+  private pauseMs = 0;
+  private resumeAt = 0;
 
   constructor(
     private readonly send: (items: BatchItem[]) => Promise<BatchResponse>,
@@ -85,10 +95,16 @@ export class EventQueue {
   }
 
   /**
-   * Starts a flush without waiting for it. Item failures are logged and settled inside the
-   * drain, so only an unexpected error reaches this catch.
+   * Starts a flush without waiting for it: once the pause after a failed batch ends, or at once with
+   * `now` (a caller waits for an item). Item failures are logged and settled inside the drain, so only
+   * an unexpected error reaches this catch.
    */
-  flushInBackground(): void {
+  flushInBackground(now = false): void {
+    const paused = this.resumeAt - this.now();
+    if (!now && paused > 0) {
+      this.schedule(paused);
+      return;
+    }
     this.flush().catch((error: unknown) => {
       this.logger.error(`event flush failed: ${toNiadraError(error).message}`);
     });
@@ -107,25 +123,38 @@ export class EventQueue {
     while (this.items.length > 0) {
       const batch = this.items.splice(0, this.options.maxBatchSize);
       const heartbeat = this.heartbeat();
-      const wire = batch.map((pending) => pending.item);
-      if (heartbeat) wire.push(heartbeat);
-      await this.sendBatch(batch, wire, report);
+      if (heartbeat) batch.push({ item: heartbeat });
+      if (!(await this.sendBatch(batch, report))) break;
     }
     return report;
   }
 
-  private async sendBatch(batch: Pending[], wire: BatchItem[], report: DrainReport): Promise<void> {
+  /** Sends one batch; `false` when it went back to the queue and the queue pauses. */
+  private async sendBatch(batch: Pending[], report: DrainReport): Promise<boolean> {
+    const wire = batch.map((pending) => pending.item);
     let response: BatchResponse;
     try {
       response = await this.send(wire);
     } catch (error) {
       const failure = toNiadraError(error);
-      report.failed += batch.length;
       report.errors.push(failure);
-      this.logger.warn(`dropped ${batch.length} events after retries: ${failure.message}`);
+      if (isTransient(failure)) {
+        // A caller waiting on an item hears the failure now; the item stays and leaves again later.
+        for (const pending of batch) pending.settle?.(failure);
+        this.requeue(batch);
+        this.pauseMs = Math.min(MAX_PAUSE_MS, Math.max(this.options.flushIntervalMs, this.pauseMs * 2));
+        this.resumeAt = this.now() + this.pauseMs;
+        this.logger.warn(`could not deliver ${batch.length} events, will retry: ${failure.message}`);
+        this.schedule(this.pauseMs);
+        return false;
+      }
+      report.failed += batch.length;
+      this.logger.warn(`dropped ${batch.length} events refused by the API: ${failure.message}`);
       for (const pending of batch) pending.settle?.(failure);
-      return;
+      return true;
     }
+    this.pauseMs = 0;
+    this.resumeAt = 0;
 
     const rejected = new Map<number, NiadraError>();
     for (const itemError of response.errors) {
@@ -137,6 +166,7 @@ export class EventQueue {
       this.logger.warn(`server rejected ${rejected.size} of ${wire.length} items (${codes})`);
     }
     batch.forEach((pending, index) => {
+      if (pending.item.type === "heartbeat") return;
       const error = rejected.get(index) ?? null;
       if (error) {
         report.failed++;
@@ -147,6 +177,18 @@ export class EventQueue {
       }
       pending.settle?.(error);
     });
+    return true;
+  }
+
+  /** Puts a batch back at the front, keeping only what still fits; what does not is dropped. */
+  private requeue(batch: Pending[]): void {
+    const room = Math.max(0, this.options.maxQueueSize - this.items.length);
+    const lost = batch.slice(room);
+    this.items.unshift(...batch.slice(0, room));
+    if (lost.length > 0) {
+      this.logger.warn(`event queue is full; dropped ${lost.length} events`);
+      for (const pending of lost) pending.settle?.(new NiadraError("event queue is full"));
+    }
   }
 
   /**

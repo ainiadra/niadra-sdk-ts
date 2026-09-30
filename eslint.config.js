@@ -42,8 +42,8 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    // Plain JavaScript that runs the build on Deno, Bun, workerd and the Edge Runtime.
-    files: ["test/runtimes/**/*.mjs"],
+    // Plain JavaScript that runs the build on Deno, Bun, workerd and the Edge Runtime, and the chaos test's proxy.
+    files: ["test/runtimes/**/*.mjs", "test/support/**/*.mjs"],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       parserOptions: { project: null },

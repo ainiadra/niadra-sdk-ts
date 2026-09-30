@@ -4,6 +4,23 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- `ContextResult.ageMs`: how long ago Niadra sent or confirmed the pack a read served. It is 0 for an answer
+  just received and grows while the cache serves the pack (`cache`, `stale`, or `fallback` with Niadra down).
+- The chaos test (`test/chaos.test.ts`): Niadra's process killed, its network gone silent, answering 503 and
+  answering past the deadline, in the middle of a conversation.
+
+### Fixed
+
+- A batch of events that still fails after its attempts with an error that may pass goes back to the front of
+  the queue and leaves again after a pause, doubling up to a minute, instead of being dropped: what an agent
+  said during an outage longer than a few seconds reached Niadra only in part.
+- A check about an outbound contact keeps the local copy of the suppression list, read in the background once
+  a minute. Before, only `mayContact()` read it, so an agent that only called `check()` had no copy when Niadra
+  went down, and a purpose that fails open (`service`, `transactional`) went out to a customer who had opted
+  out of it.
+
 ## [0.8.0] - 2026-09-30
 
 ### Added
