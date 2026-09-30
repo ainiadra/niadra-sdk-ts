@@ -4,6 +4,12 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- A route or field the API deprecates answers with the `Deprecation`, `Sunset` and `Link` headers; the
+  client logs one warning per deprecated route per process through its `logger`, with the two dates and the
+  migration note, never the path.
+
 ## [0.9.0] - 2026-09-30
 
 ### Added

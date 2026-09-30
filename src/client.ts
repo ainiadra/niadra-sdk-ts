@@ -313,6 +313,7 @@ export class Niadra {
       apiKey,
       fetch: fetchImpl,
       defaultHeaders: options.defaultHeaders ?? {},
+      logger: this.logger,
     });
     const queueOptions = { ...DEFAULT_QUEUE, ...options.queue };
     // One slot of the server's 500-item limit stays free for the heartbeat.
