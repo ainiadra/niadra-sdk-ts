@@ -10,6 +10,10 @@ All notable changes to this package are documented here. The format follows [Kee
   just received and grows while the cache serves the pack (`cache`, `stale`, or `fallback` with Niadra down).
 - The chaos test (`test/chaos.test.ts`): Niadra's process killed, its network gone silent, answering 503 and
   answering past the deadline, in the middle of a conversation.
+- A state read's objects carry `derived`: the type's derived fields over its related objects (a look's
+  `all_pieces_available`), computed at the read, each with `v`, `logic`, `over` and `unknown`
+  (`DerivedState`). A shared object of a derived type carries `derived_status`, and its push's `inputs` name
+  shared objects.
 
 ### Fixed
 
