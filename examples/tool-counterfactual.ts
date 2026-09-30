@@ -6,16 +6,15 @@
 //   npx niadra counterfactual --tools ./examples/tool-counterfactual.js:TOOLS --tool search_products \
 //     --element hard --turn <turn id> --label "$GIT_SHA"
 //   NIADRA_API_KEY=...   (the `turns`, `signals` and `measurement` features, a key with the `replay` scope)
+// The space binds the tool in its `tool-bindings` document, which the SDK profile serves: how its arguments
+// carry a constraint and how its result shows the items, for example
+//   { "tool": "search_products",
+//     "args": [{ "attr": "item_variant.color", "param": "color", "negation": { "param": "not_color" } }],
+//     "results": [{ "path": "cards[*]", "type": "item_variant", "namespace": "store", "id": "variant_id",
+//                   "fields": { "color": "color" } }] }
 import { Counterfactual, tool } from "@niadra/sdk";
 import type { Niadra } from "@niadra/sdk";
 
-/** How the tool's arguments carry a constraint and how its result shows the items (`tool-bindings`). */
-export const SEARCH = {
-  tool: "search_products",
-  args: [{ attr: "item_variant.color", param: "color", negation: { param: "not_color" } }],
-  results: [{ path: "cards[*]", type: "item_variant", namespace: "store", id: "variant_id", fields: { color: "color" } }],
-  capabilities: { overfetch: false },
-};
 const CATALOG = (
   [
     ["red", 120],
@@ -33,7 +32,7 @@ export const searchProducts = tool(
     const refused = new Set(q.not_color ?? []);
     return { cards: CATALOG.filter((c) => !refused.has(c.color) && (q.color == null || c.color === q.color)).sort((a, b) => a.price - b.price) };
   },
-  { binding: SEARCH, dryRun: true },
+  { dryRun: true },
 );
 
 export const TOOLS = { search_products: searchProducts };

@@ -692,9 +692,9 @@ await convo.turn({ build: Niadra.build({ prompts: { store: "v16" }, model: "gpt-
 - **Coordination** decides by each purpose's direction when Niadra does not answer within 200 ms: a
   customer's message and service go, marketing, retention, collection and an effect with a key wait, and
   the local copy of the opt-out list always holds.
-- **Tool bindings** the space declares come in the SDK profile: a tool without `binding` in code measures the
-  constraints block through the one served for its name, and its `capabilities.mask_output` decides the
-  masking when the code leaves `maskOutput` unset.
+- **Tool bindings** live in the space's `tool-bindings` document and come in the SDK profile, never in code: a
+  tool measures the constraints block through the one served for its name, the counterfactual runs through it,
+  and its `capabilities.mask_output` decides the masking when the code leaves `maskOutput` unset.
 - **The `niadra` command** (Node) runs `replay`, `counterfactual`, `resolver-worker` (the space's refresh
   requests, read with your resolvers inside your boundary; a watch fires only on a value the worker
   confirmed, and a resolver returns `NOT_FOUND` when the source no longer has the object), `types derive` and

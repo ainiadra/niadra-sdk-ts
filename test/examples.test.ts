@@ -96,6 +96,15 @@ describe("the concept examples", () => {
       version: "cv_0123456789abcdef",
       hard: [{ id: "h1", attr: "item_variant.color", op: "not_in", values: ["red"], source: "stated", scope: "session", origin: { kind: "stated" } }],
     } as unknown as ConstraintsBlock);
+    // The binding the example's comment shows, declared by the space and served in the SDK profile.
+    cell.toolBindings = [
+      {
+        tool: "search_products",
+        args: [{ attr: "item_variant.color", param: "color", negation: { param: "not_color" } }],
+        results: [{ path: "cards[*]", type: "item_variant", namespace: "store", id: "variant_id", fields: { color: "color" } }],
+      },
+    ];
+    await niadra.profile();
     const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-5", agent_id: "stylist" });
     conversation.customer("Um vestido, mas não vermelho.");
     const turnId = await conversation.turn({ build: Niadra.build({ prompts: { stylist: "v1" }, model: "model-a" }) }, async (frame) => {
