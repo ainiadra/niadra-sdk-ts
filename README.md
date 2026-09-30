@@ -798,7 +798,7 @@ Include `requestId` when you contact support.
 
 ```sh
 pnpm install
-pnpm check     # typecheck, lint, tests (the integrations with their frameworks' real types)
+pnpm check     # typecheck, lint, tests (the integrations with their frameworks' real types), audit of the runtime dependencies
 pnpm build     # ESM and CommonJS into dist/, one entry per integration
 pnpm runtimes  # the build on Deno, Bun, workerd and the Edge Runtime
 pnpm --filter "./packages/*" check   # the n8n and Flowise nodes

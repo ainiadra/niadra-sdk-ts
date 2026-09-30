@@ -8,8 +8,8 @@ import {
   NiadraTimeoutError,
   VERSION,
 } from "../src/index.js";
-import { parseRetryAfter } from "../src/transport.js";
-import { KEY, MockServer, contextBody, makeClient, marina, problem } from "./helpers.js";
+import { READ_POLICY, Transport, parseRetryAfter } from "../src/transport.js";
+import { KEY, MockServer, contextBody, makeClient, marina, problem, spyLogger } from "./helpers.js";
 import pkg from "../package.json" with { type: "json" };
 
 describe("requests", () => {
@@ -183,5 +183,61 @@ describe("parseRetryAfter", () => {
     expect(parseRetryAfter("soon")).toBeNull();
     const date = new Date(Date.now() + 5000).toUTCString();
     expect(parseRetryAfter(date)).toBeGreaterThan(3000);
+  });
+});
+
+describe("deprecation", () => {
+  const since = "@1790812800";
+  const sunset = "Sat, 02 Oct 2027 00:00:00 GMT";
+  const note = (anchor: string): string => `<https://docs.niadra.com/en/changelog#${anchor}>; rel="deprecation"`;
+
+  function transport(server: MockServer): { transport: Transport; logger: ReturnType<typeof spyLogger> } {
+    const logger = spyLogger();
+    const config = { baseURL: "https://api.test", apiKey: KEY, fetch: server.fetch, defaultHeaders: {}, logger };
+    return { transport: new Transport(config), logger };
+  }
+
+  it("warns once per deprecated route per process, with the dates and the link, never the path", async () => {
+    const headers = { deprecation: since, sunset, link: note("ts-old") };
+    const server = new MockServer()
+      .on("GET /v1/old/a-customer-id", { body: {}, headers })
+      .on("GET /v1/old/another-id", { body: {}, headers })
+      .on("GET /v1/new", { body: {} });
+    const { transport: t, logger } = transport(server);
+    for (const path of ["/v1/old/a-customer-id", "/v1/old/another-id", "/v1/new"]) {
+      await t.request({ method: "GET", path, timeoutMs: 1000, retry: READ_POLICY });
+    }
+    expect(logger.warn.mock.calls).toEqual([
+      [
+        "the API deprecated a GET route this client calls, since 2026-10-01; it stops answering on 2027-10-02. " +
+          "See https://docs.niadra.com/en/changelog#ts-old",
+      ],
+    ]);
+  });
+
+  it("warns for each deprecated route on its own, on an error answer too", async () => {
+    const server = new MockServer()
+      .on("GET /v1/one", { body: {}, headers: { deprecation: since, sunset, link: note("ts-one") } })
+      .on("POST /v1/two", problem(422, "invalid_input", { deprecation: since, link: note("ts-two") }));
+    const { transport: t, logger } = transport(server);
+    await t.request({ method: "GET", path: "/v1/one", timeoutMs: 1000, retry: READ_POLICY });
+    await expect(
+      t.request({ method: "POST", path: "/v1/two", body: {}, timeoutMs: 1000, retry: READ_POLICY }),
+    ).rejects.toBeInstanceOf(NiadraAPIError);
+    expect(logger.warn.mock.calls.map(([message]) => message.split(" ").at(-1))).toEqual([
+      "https://docs.niadra.com/en/changelog#ts-one",
+      "https://docs.niadra.com/en/changelog#ts-two",
+    ]);
+    expect(logger.warn.mock.calls[1]?.[0]).toContain("stops answering on a date not announced yet");
+  });
+
+  it("points at the versioning policy when the answer links no note", async () => {
+    const server = new MockServer().on("GET /v1/unlinked", { body: {}, headers: { deprecation: since } });
+    const { transport: t, logger } = transport(server);
+    await t.request({ method: "GET", path: "/v1/unlinked", timeoutMs: 1000, retry: READ_POLICY });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "the API deprecated a GET route this client calls, since 2026-10-01; it stops answering on a date not " +
+        "announced yet. See https://docs.niadra.com/en/security/api-versioning",
+    );
   });
 });

@@ -6,6 +6,7 @@ import {
   NiadraTimeoutError,
   apiErrorFor,
 } from "./errors.js";
+import type { Logger } from "./logger.js";
 import type { Problem } from "./types/common.js";
 import { VERSION } from "./version.js";
 
@@ -60,6 +61,7 @@ interface TransportConfig {
   apiKey: string;
   fetch: typeof fetch;
   defaultHeaders: Record<string, string>;
+  logger: Logger;
 }
 
 const RETRYABLE_WRITE_STATUS = new Set([408, 421, 429, 500, 502, 503, 504]);
@@ -165,6 +167,7 @@ export class Transport {
       throw deadline.explain(error);
     }
 
+    warnIfDeprecated(this.config.logger, init.method ?? "GET", url, response.headers);
     const requestId = response.headers.get("x-request-id");
     let payload: unknown;
     try {
@@ -243,6 +246,41 @@ class Deadline {
     const message = error instanceof Error ? error.message : String(error);
     return new NiadraConnectionError(`connection failed: ${message}`, { cause: error });
   }
+}
+
+export const VERSIONING_DOCS = "https://docs.niadra.com/en/security/api-versioning";
+const DEPRECATION_LINK = /<([^>]*)>[^,]*;\s*rel="?deprecation"?/gi;
+const deprecationsSeen = new Set<string>();
+
+/**
+ * A route or field the API deprecates answers with `Deprecation` (RFC 9745), `Sunset` (RFC 8594)
+ * and a `Link` to its migration note. One warning per deprecated route per process: the API links
+ * each deprecated route to its own note, so the note (the path, when the answer links none) tells
+ * the routes apart. The warning never carries the path, which can hold an id.
+ */
+export function warnIfDeprecated(logger: Logger, method: string, url: string, headers: Headers): void {
+  const since = headers.get("deprecation");
+  if (since === null) return;
+  const links = [...(headers.get("link") ?? "").matchAll(DEPRECATION_LINK)].map((match) => match[1] ?? "");
+  const key = `${method} ${links.join(" ") || (url.split("?")[0] ?? url)}`;
+  if (deprecationsSeen.has(key)) return;
+  deprecationsSeen.add(key);
+  const sunset = headers.get("sunset");
+  logger.warn(
+    `the API deprecated a ${method} route this client calls, since ${deprecatedSince(since)}; ` +
+      `it stops answering on ${sunset === null ? "a date not announced yet" : sunsetDay(sunset)}. ` +
+      `See ${links.join(", ") || VERSIONING_DOCS}`,
+  );
+}
+
+function deprecatedSince(value: string): string {
+  const seconds = Number(value.trim().replace(/^@/, ""));
+  return Number.isInteger(seconds) ? new Date(seconds * 1000).toISOString().slice(0, 10) : value;
+}
+
+function sunsetDay(value: string): string {
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? value : new Date(time).toISOString().slice(0, 10);
 }
 
 async function readBody(response: Response): Promise<unknown> {
