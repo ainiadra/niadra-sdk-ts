@@ -213,25 +213,62 @@ async function standIn(): Promise<Side> {
   };
 }
 
+/** `call` again while the cell answers 429 or 503, after its `Retry-After`, for up to a minute. */
+async function retried(call: () => Promise<Response>): Promise<Response> {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const response = await call();
+    if (![429, 503].includes(response.status) || Date.now() > deadline) {
+      if (!response.ok) throw new Error(`the cell answered ${response.status}`);
+      return response;
+    }
+    await sleep(Number(response.headers.get("retry-after") ?? "1") * 1000);
+  }
+}
+
+interface Listed {
+  id: string;
+  key: string;
+  purpose: string;
+  removed?: boolean;
+}
+
+/** The suppression list as it stands: pages until a short one (which still names the cursor to go on from). */
+async function listed(api: string, headers: Record<string, string>): Promise<Listed[]> {
+  const items = new Map<string, Listed>();
+  let cursor: string | null = null;
+  for (;;) {
+    const query: string = cursor ? `limit=200&cursor=${encodeURIComponent(cursor)}` : "limit=200";
+    const page = (await (await retried(() => fetch(`${api}/v1/suppressions?${query}`, { headers }))).json()) as { items: Listed[]; next_cursor?: string | null };
+    for (const item of page.items) items.set(item.id, item);
+    cursor = page.next_cursor ?? null;
+    if (!cursor || page.items.length < 200) return [...items.values()].filter((e) => e.removed !== true);
+  }
+}
+
 /** A running cell: the opt-outs are declared by the same source before the conversation, and read back. */
 async function cell(api: string, key: string, value: string): Promise<Side> {
   const subject: Handle = { type: "phone_e164", value };
   const headers = { authorization: `Bearer ${key}`, "content-type": "application/json" };
-  for (const purpose of OPTED_OUT) {
-    const body = { kind: "suppression.added", agent: "chaos-setup", subject, detail: { purpose, reason: "opt_out" } };
-    const declared = await fetch(`${api}/v1/coordination/declare`, {
-      method: "POST",
-      headers: { ...headers, "idempotency-key": `chaos-${crypto.randomUUID()}` },
-      body: JSON.stringify(body),
-    });
-    expect(declared.ok).toBe(true);
-  }
-  const { salt } = (await (await fetch(`${api}/v1/suppressions/salt`, { headers })).json()) as { salt: string };
+  const { salt } = (await (await retried(() => fetch(`${api}/v1/suppressions/salt`, { headers }))).json()) as { salt: string };
   const mine = await suppressionKey(salt, canonicalDestination(subject.type, subject.value));
+  const held = (entries: Listed[], purpose: string) => entries.some((e) => e.key === mine && e.purpose === purpose);
+  const before = await listed(api, headers);
+  for (const purpose of OPTED_OUT) {
+    if (held(before, purpose)) continue; // an earlier run's opt-out holds
+    const body = { kind: "suppression.added", agent: "chaos-setup", subject, detail: { purpose, reason: "opt_out" } };
+    await retried(() =>
+      fetch(`${api}/v1/coordination/declare`, {
+        method: "POST",
+        headers: { ...headers, "idempotency-key": `chaos-${crypto.randomUUID()}` },
+        body: JSON.stringify(body),
+      }),
+    );
+  }
   const deadline = Date.now() + 60_000;
   for (;;) {
-    const page = (await (await fetch(`${api}/v1/suppressions?limit=200`, { headers })).json()) as { items: { key: string; purpose: string; removed?: boolean }[] };
-    if (OPTED_OUT.every((p) => page.items.some((e) => e.key === mine && e.purpose === p && e.removed !== true))) break;
+    const entries = await listed(api, headers);
+    if (OPTED_OUT.every((p) => held(entries, p))) break;
     if (Date.now() > deadline) throw new Error("the opt-out did not reach the suppression list");
     await sleep(500);
   }

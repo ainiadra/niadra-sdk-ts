@@ -1,7 +1,8 @@
 /**
  * The local copy of the suppression list (`spec/suppression-list.md`): the opt-out holds with Niadra down.
  *
- * The copy is read by cursor from `GET /v1/suppressions`, with this reader's salt from
+ * The copy is read by cursor from `GET /v1/suppressions` (a page shorter than the limit is the end of the
+ * changes for now, and its cursor is where the next read starts), with this reader's salt from
  * `GET /v1/suppressions/salt`, and read again once it is a minute old. Before an outbound contact the SDK
  * computes the destination's key and looks it up here, in memory:
  *
@@ -83,7 +84,10 @@ export class SuppressionCopy {
     this.saltValue = salt;
   }
 
-  /** Applies one page, in order. `true` when more pages follow. */
+  /**
+   * Applies one page, in order. `true` when more pages follow: a full page. Every page carries the cursor to
+   * read from next, the last one too, which the next read starts from.
+   */
   apply(page: SuppressionPage): boolean {
     if (page.salt_id !== this.saltValue?.salt_id) {
       // The salt changed: the keys held name no one now. Take the new salt, then read it all.
@@ -99,8 +103,9 @@ export class SuppressionCopy {
     }
     this.cursor = page.next_cursor ?? this.cursor;
     this.absent = false;
-    if (!page.next_cursor) this.readAt = this.now();
-    return Boolean(page.next_cursor);
+    const more = Boolean(page.next_cursor) && page.items.length >= PAGE;
+    if (!more) this.readAt = this.now();
+    return more;
   }
 
   /** A 404: the space keeps no list. Anything else: the copy stays as it is. */

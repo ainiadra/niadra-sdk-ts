@@ -13,6 +13,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Fixed
 
+- The local copy of the suppression list is read to its end against the server: a page shorter than the limit
+  ends a read, and its cursor is where the next read starts. The server names the cursor on the last page
+  too, so the copy read 50 pages of nothing and was never held: `mayContact()` and a check that Niadra did not
+  answer fell back on the purpose's direction. The stand-in cell answers as the server does.
 - A batch of events that still fails after its attempts with an error that may pass goes back to the front of
   the queue and leaves again after a pause, doubling up to a minute, instead of being dropped: what an agent
   said during an outage longer than a few seconds reached Niadra only in part.

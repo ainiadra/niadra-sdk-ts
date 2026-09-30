@@ -171,7 +171,8 @@ export class Cell {
     }
     if (key === "GET /v1/suppressions") {
       this.need("coordination");
-      return json(200, { items: this.suppressions, salt_id: "salt-1", next_cursor: null });
+      // As the server does: every page carries the cursor to read from next, the last page too.
+      return json(200, { items: this.suppressions, salt_id: "salt-1", next_cursor: `c_salt-1_${this.suppressions.length}` });
     }
     if (key === "POST /v1/batch") {
       // An item whose key was seen before is a duplicate, as the server counts it; a heartbeat has no key.
