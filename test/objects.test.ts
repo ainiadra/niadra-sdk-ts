@@ -4,10 +4,11 @@ import { KEY, MockServer, makeClient, problem } from "./helpers.js";
 
 const state = {
   ref: { type: "invoice", namespace: "erp", id: "0823" },
-  state: { status: "credited", amount: "40.00" },
   as_of: "2026-09-22T17:06:00Z",
-  source_id: "erp",
-  open_items: [],
+  fields: {
+    status: { v: "credited", logic: "yes", status: "fresh", claim_safe: false, src: "erp" },
+    amount: { v: "40.00", logic: "yes", status: "fresh", claim_safe: false, src: "erp" },
+  },
 };
 
 describe("object reads", () => {
@@ -15,7 +16,7 @@ describe("object reads", () => {
     const server = new MockServer().on("GET /v1/objects/invoice/erp/0823", { body: state });
     const { data, error } = await makeClient(server).objectState("invoice:erp:0823");
     expect(error).toBeNull();
-    expect(data?.state).toEqual({ status: "credited", amount: "40.00" });
+    expect(data?.fields?.status?.v).toBe("credited");
     expect(server.calls[0]!.headers.authorization).toBe(`Bearer ${KEY}`);
   });
 

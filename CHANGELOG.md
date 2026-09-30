@@ -18,7 +18,8 @@ carries over, and none of their names, options or fallbacks is kept.
   function-calling tools bound to one customer, with `subjectToken()` for MCP.
 - Writes through a bounded queue with one batch in flight (`track()`, `action()`, `identify()`, `verify()`,
   `handoff()`), `conversation()` and `task()`, `feedback()`, `feedbackBatch()`, `uploadMedia()`,
-  `ingestStatus()`, `whoami()`, `objectState()` and `objectTimeline()`.
+  `ingestStatus()`, `whoami()`, `objectState()` (the object as a state read serves it, `ObjectRead`) and
+  `objectTimeline()`.
 - Agent memory (`agentMemory()`, `searchAgentMemory()`, `remember()`), backed answers and the guard lines a
   read carries; `niadra.admin` for a key with the `admin` scope.
 - `wrap()` for OpenAI-compatible clients and the adapters under `@niadra/sdk/<integration>`; the n8n and
@@ -109,8 +110,8 @@ carries over, and none of their names, options or fallbacks is kept.
   `include: ["budget"]`, what the pack costs per section, what this agent already spent in the conversation
   and the case, and the units the measurement says it leaves unused. Shown, never enforced.
 - `niadra.api.overview()`: the coordination overview in counts (`GET /v1/coordination/overview`).
-- `pnpm sync-spec --spec` also copies the Context Pack schemas (`spec/context-pack.v1.json` and `v2`), and
-  `test/spec.test.ts` holds `ContextResponse` and every include block to the v2 schema.
+- `pnpm sync-spec --spec` also copies the Context Pack schema (`spec/context-pack.v1.json`), and
+  `test/spec.test.ts` holds `ContextResponse` and every include block to it.
 - The tool bindings the space declares come in the SDK profile (`SdkProfile.tool_bindings`, typed
   `ToolBinding`), for this source's tools. A tool without a binding in code measures the constraints block
   and runs its counterfactual through the binding served for its name, and `binding` in code wins.

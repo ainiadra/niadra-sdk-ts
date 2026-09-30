@@ -255,7 +255,7 @@ The handle, the search and the conversation id go in request bodies, never in a 
 ### Business objects
 
 ```ts
-const { data: invoice } = await niadra.objectState("invoice:erp:0823");        // state, as_of, open items
+const { data: invoice } = await niadra.objectState("invoice:erp:0823");        // each field with its logical value and freshness
 const { data: page } = await niadra.objectTimeline("invoice:erp:0823", { limit: 20 });
 ```
 

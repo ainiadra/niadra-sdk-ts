@@ -88,7 +88,6 @@ import type { Handle, ObjectRef } from "./types/common.js";
 import type {
   ContextRequest,
   ContextResponse,
-  ObjectState,
   ObjectTimeline,
   OpenedItem,
   OpenItemRequest,
@@ -110,7 +109,7 @@ import type {
 } from "./types/agent-memory.js";
 import type { SubjectToken, SubjectTokenRequest } from "./types/tokens.js";
 import type { DeclareRequest } from "./types/coordination.js";
-import type { ClaimContractSummary, SdkProfile, StateRef, StateVerifyResponse } from "./types/state.js";
+import type { ClaimContractSummary, ObjectRead, SdkProfile, StateRef, StateVerifyResponse } from "./types/state.js";
 import type { TurnPins, TurnsResponse } from "./types/turns.js";
 import type { Verification } from "./types/vocabulary.js";
 
@@ -728,13 +727,14 @@ export class Niadra {
   }
 
   /**
-   * The derived state of a business object: what its systems of record reported last, `as_of`
-   * when, and its open items, under this source's purpose.
+   * A business object as a `display` state read serves it: each field its systems of record reported, with
+   * its logical value, stamps and freshness, under this source's purpose (the object state spec). A type the
+   * space does not declare reads as one with no rules.
    *
    * @example
    * const { data: invoice } = await niadra.objectState("invoice:erp:0823");
    */
-  async objectState(object: ObjectRef | string, options: RequestOptions = {}): Promise<Result<ObjectState>> {
+  async objectState(object: ObjectRef | string, options: RequestOptions = {}): Promise<Result<ObjectRead>> {
     return this.navigate(() => this.readSpec("GET", objectPath(object), undefined, this.timeouts.navigation, options));
   }
 
