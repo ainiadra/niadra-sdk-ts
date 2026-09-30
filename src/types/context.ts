@@ -472,16 +472,6 @@ export interface OpenedItem {
   versions?: ItemVersion[];
 }
 
-/** The derived state of a business object, from `GET /v1/objects/{type}/{namespace}/{id}`. */
-export interface ObjectState {
-  ref: ObjectRef;
-  state: Record<string, unknown>;
-  as_of: string;
-  source_id: string;
-  record_ref?: string | null;
-  open_items: HistoryItem[];
-}
-
 /** System events and agent actions about one object, newest first; never conversation content. */
 export interface ObjectTimeline {
   ref: ObjectRef;

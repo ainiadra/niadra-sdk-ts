@@ -227,9 +227,9 @@ export interface ConstraintsBlock {
   subject?: BlockSubject;
   /**
    * The block as lines for a model, in the space's language, each field by its label and each operator in
-   * words; the SDK places it beside the state view's text. Not part of `version`.
+   * words; an empty string when the block has nothing to say. Not part of `version`.
    */
-  text?: string | null;
+  text: string;
   /** A digest of the block, which the turn record cites. */
   version: string;
 }

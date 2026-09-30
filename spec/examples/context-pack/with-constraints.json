@@ -273,6 +273,7 @@
       "soft",
       "z1"
     ],
-    "version": "cv_2339e7c9bd0e0ec9"
+    "version": "cv_2339e7c9bd0e0ec9",
+    "text": "<restrições>\n- exigido: color diferente de preto\n- prefere: color bege\n- size label: 38\n</restrições>"
   }
 }

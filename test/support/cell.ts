@@ -220,7 +220,7 @@ export class Cell {
       path: "t0",
       degraded: false,
     };
-    if (include.includes("constraints")) response.constraints = this.constraints.get(subject) ?? { version: `cv_${"0".repeat(16)}` };
+    if (include.includes("constraints")) response.constraints = this.constraints.get(subject) ?? { version: `cv_${"0".repeat(16)}`, text: "" };
     if (include.includes("state")) response.state = this.views.get(subject) ?? {};
     return json(200, response);
   }

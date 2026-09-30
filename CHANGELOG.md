@@ -18,7 +18,8 @@ carries over, and none of their names, options or fallbacks is kept.
   function-calling tools bound to one customer, with `subjectToken()` for MCP.
 - Writes through a bounded queue with one batch in flight (`track()`, `action()`, `identify()`, `verify()`,
   `handoff()`), `conversation()` and `task()`, `feedback()`, `feedbackBatch()`, `uploadMedia()`,
-  `ingestStatus()`, `whoami()`, `objectState()` and `objectTimeline()`.
+  `ingestStatus()`, `whoami()`, `objectState()` (the object as a state read serves it, `ObjectRead`) and
+  `objectTimeline()`.
 - Agent memory (`agentMemory()`, `searchAgentMemory()`, `remember()`), backed answers and the guard lines a
   read carries; `niadra.admin` for a key with the `admin` scope.
 - `wrap()` for OpenAI-compatible clients and the adapters under `@niadra/sdk/<integration>`; the n8n and
