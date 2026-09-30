@@ -80,7 +80,7 @@ import { bindTools } from "./tools.js";
 import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./tools.js";
 import type { Route } from "./routes.js";
 import { READ_POLICY, Transport } from "./transport.js";
-import { MIN_PREFETCH, NO_PREFETCH, PREFETCH_RECHECK_AFTER_MS, PrefetchSupport, turnText } from "./turns.js";
+import { BLOCK_RECHECK_AFTER_MS, MIN_PREFETCH, turnText } from "./turns.js";
 import { VoiceLines, compose, rttWarnings, wordsOf } from "./voice.js";
 import type { TurnRead, VoiceLine } from "./voice.js";
 import type { RequestSpec, RetryPolicy } from "./transport.js";
@@ -123,8 +123,6 @@ export type WriteResult =
 export interface OpenParams {
   verification?: Verification;
   conversation_id?: string;
-  /** Kept for callers of 0.1.0; the server never read it on this route, so it is not sent. */
-  task_id?: string;
   /**
    * The customer the item must belong to: the server opens it only when it is theirs, and answers
    * 404 otherwise. `tools()` passes the bound customer.
@@ -203,7 +201,6 @@ export class Niadra {
    */
   readonly api: Api;
   /** Whether this client's server answers prefetches. */
-  private readonly prefetchSupport: PrefetchSupport = new PrefetchSupport();
   /** Per conversation or task, the prefetch in flight and the newest text waiting behind it. */
   private readonly prefetching = new Map<string, PrefetchRequest | null>();
   /** The voice read path's lines, by conversation or task (`voice.ts`). */
@@ -578,12 +575,12 @@ export class Niadra {
    * budget. It runs in the background: it returns at once, never rejects and never holds a turn.
    * `true` when it was sent or queued: while one runs for the same conversation, the newest text
    * waits and goes when it ends, and older waiting texts are dropped. `false` when there was
-   * nothing worth sending (blank or very short text) or the server has no prefetch route.
+   * nothing worth sending (blank or very short text).
    */
   prefetch(params: PrefetchParams, options: RequestOptions = {}): boolean {
     const core = this.core;
     const text = turnText(params.text);
-    if (!core || !text || text.length < MIN_PREFETCH || !this.prefetchSupport.prefetchWanted()) return false;
+    if (!core || !text || text.length < MIN_PREFETCH) return false;
     let body: PrefetchRequest;
     try {
       body = buildPrefetchRequest({ ...params, text });
@@ -608,11 +605,10 @@ export class Niadra {
       try {
         await core.transport.request<unknown>(this.readSpec("POST", "/v1/context/prefetch", body, this.timeouts.prefetch, options));
       } catch (error) {
-        if (error instanceof NiadraAPIError && NO_PREFETCH.has(error.status)) this.prefetchSupport.prefetchRefused();
         this.logger.debug(`prefetch skipped: ${describe(toNiadraError(error))}`);
       }
       body = this.prefetching.get(scope) ?? null;
-      if (body && this.prefetchSupport.prefetchWanted()) this.prefetching.set(scope, null);
+      if (body) this.prefetching.set(scope, null);
       else {
         body = null;
         this.prefetching.delete(scope);
@@ -832,10 +828,6 @@ export class Niadra {
       if (failure instanceof NiadraAPIError && failure.status === 304) {
         const current = cache?.touch(key);
         if (current) return blockResult(current, "network");
-      }
-      if (failure instanceof NiadraAPIError && failure.status === 501) {
-        this.logger.debug("agent memory is not served by this cell yet");
-        return emptyBlock(failure, false);
       }
       if (failure instanceof NiadraAuthenticationError || failure instanceof NiadraPermissionError) cache?.clear();
       if (this.strict) throw failure;
@@ -1218,11 +1210,11 @@ export class Niadra {
       const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", request, timeout, { signal, headers }));
       return normalizeContext(response.data);
     } catch (error) {
-      // A space that serves none of the blocks answers 404 (or 501): the read goes on without them.
-      const refused = error instanceof NiadraAPIError && (error.status === 404 || error.status === 501);
+      // A space that serves none of the blocks answers 404: the read goes on without them.
+      const refused = error instanceof NiadraAPIError && error.status === 404;
       const left = timeout - (Date.now() - started);
       if (!request.include?.length || !refused || left <= 0) throw error;
-      for (const name of request.include) this.refusedBlocks.set(name, Date.now() + PREFETCH_RECHECK_AFTER_MS);
+      for (const name of request.include) this.refusedBlocks.set(name, Date.now() + BLOCK_RECHECK_AFTER_MS);
       const { include: _dropped, ...plain } = request;
       const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", plain, left, { signal, headers }));
       return normalizeContext(response.data);

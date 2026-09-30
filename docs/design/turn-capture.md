@@ -95,9 +95,8 @@ The client keeps:
 
 How it stays current:
 
-- **The profile** is read once and revalidated by ETag when `valid_for_s` runs out. An older server
-  answers it with 404; the new features then stay off for 10 minutes, as `PrefetchSupport` does for the
-  prefetch route.
+- **The profile** is read once and revalidated by ETag when `valid_for_s` runs out; a failure keeps the
+  last profile.
 - **The suppression list** is pulled by cursor (`GET /v1/suppressions?cursor=`) and kept with its cursor.
 - **Memory** is bounded per kind, least recently used first.
 

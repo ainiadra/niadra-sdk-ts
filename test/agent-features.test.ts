@@ -53,13 +53,11 @@ describe("the warm cache", () => {
     expect(await niadra.profile()).toBe(profile);
   });
 
-  it("does not ask a space without a profile again for a while", async () => {
+  it("records no turn for a space with every feature off", async () => {
     const cell = new Cell();
     cell.features.clear();
     const niadra = client(cell);
-    expect(await niadra.profile()).toBeNull();
-    cell.features.add("turns");
-    expect(await niadra.profile()).toBeNull();
+    expect((await niadra.profile())?.features).toEqual([]);
     expect(niadra.turns.recording).toBe(false);
   });
 

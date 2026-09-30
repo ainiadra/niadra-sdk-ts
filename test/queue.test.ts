@@ -138,8 +138,8 @@ describe("batching", () => {
 });
 
 describe("one batch in flight per client", () => {
-  // The QA run on the Python SDK 0.5.0: a flush while the background sender had the turns in
-  // flight sent `conversation.ended` beside them, it landed first and the session reopened.
+  // A flush that sends while the background sender has the turns in flight puts
+  // `conversation.ended` beside them; it can land first, and the session reopens.
   function slowServer(firstDelayMs: number) {
     const state = { inFlight: 0, maxInFlight: 0, answered: [] as string[][] };
     const server = new MockServer().on("POST /v1/batch", (request) => {

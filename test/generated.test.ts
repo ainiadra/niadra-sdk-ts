@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CUT, ROOT, cut, generate, publicText, splitNames } from "../scripts/sync-spec.js";
 import type { Document } from "../scripts/sync-spec.js";
-import { Api, Niadra, NiadraAPIError, NiadraConfigError, NiadraNotAvailableError, silentLogger } from "../src/index.js";
+import { Api, Niadra, NiadraAPIError, NiadraConfigError, silentLogger } from "../src/index.js";
 import type { TurnCall, TurnRecord, TurnsRequest } from "../src/index.js";
 import { MockServer, batchOk, makeClient, problem } from "./helpers.js";
 
@@ -75,13 +75,12 @@ describe("the generated routes", () => {
 });
 
 describe("a route of niadra.api", () => {
-  it("rejects with NiadraNotAvailableError while the server has not built it, even fail-open", async () => {
-    const server = new MockServer().on("POST /v1/turns", problem(501, "not_implemented"));
+  it("rejects with the API's error, even fail-open, and never retries it", async () => {
+    const server = new MockServer().on("POST /v1/turns", problem(404, "not_found"));
     const turns: TurnsRequest = { turns: [record()] };
     const failure: unknown = await makeClient(server).api.recordTurns(turns).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(NiadraNotAvailableError);
     expect(failure).toBeInstanceOf(NiadraAPIError);
-    expect((failure as Error).message).toContain("not available on this server yet");
+    expect((failure as NiadraAPIError).status).toBe(404);
     expect(server.calls).toHaveLength(1);
   });
 

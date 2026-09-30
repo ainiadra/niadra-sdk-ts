@@ -37,13 +37,13 @@ describe("tool definitions", () => {
   });
 });
 
-describe("the kit reads the canonical filters and the 0.1 flat ones", () => {
+describe("the kit reads the canonical filters", () => {
   it("sends `when` and the nested filters, and max_tokens within bounds", async () => {
     const server = new MockServer().on("POST /v1/history/search", { body: { items: [], withheld: 0, tokens_used: 1, window: { since: "2026-09-14T00:00:00Z", until: "2026-09-21T00:00:00Z" }, ignored: [] } });
     const kit = makeClient(server).tools(marina, { conversation_id: "wa-1" });
     const output = await kit.call(
       TOOL_NAMES.search,
-      JSON.stringify({ query: "refund", max_tokens: 9000, filters: { when: "semana passada", item_kinds: ["system_event", "episode"], channels: ["voice"] } }),
+      JSON.stringify({ query: "refund", max_tokens: 9000, filters: { when: "semana passada", item_kinds: ["object", "episode"], channels: ["voice"] } }),
     );
     expect(server.calls[0]!.body).toEqual({
       subject: marina,
@@ -53,12 +53,6 @@ describe("the kit reads the canonical filters and the 0.1 flat ones", () => {
       conversation_id: "wa-1",
     });
     expect(JSON.parse(output).window).toEqual({ since: "2026-09-14T00:00:00Z", until: "2026-09-21T00:00:00Z" });
-  });
-
-  it("still takes the flat fields a 0.1 definition made the model send", async () => {
-    const server = new MockServer().on("POST /v1/history/timeline", { body: { items: [], withheld: 0 } });
-    await makeClient(server).tools(marina).call(TOOL_NAMES.timeline, { since: "2026-09-01T00:00:00Z", filters: { when: "ontem" } });
-    expect(server.calls[0]!.body.filters).toEqual({ since: "2026-09-01T00:00:00Z", when: "ontem" });
   });
 });
 
@@ -97,7 +91,7 @@ describe("the agent's memory tools", () => {
   });
 
   it("describe an outage as agent memory being unavailable", async () => {
-    const server = new MockServer().on("POST /v1/agent-memory/search", problem(501, "not_implemented"));
+    const server = new MockServer().on("POST /v1/agent-memory/search", problem(503, "unavailable"));
     const output = await makeClient(server).tools(marina, {}, { agentMemory: true }).call("search_agent_memory", { query: "x" });
     expect(JSON.parse(output)).toEqual({ error: "unavailable", detail: "agent memory is unavailable right now" });
   });
@@ -123,9 +117,7 @@ describe("agentMemory()", () => {
     expect(server.calls).toHaveLength(1);
   });
 
-  it("is empty and disabled while the cell does not serve it, and falls back to the last block on an outage", async () => {
-    const off = await makeClient(new MockServer().on("GET /v1/agent-memory/block", problem(501, "not_implemented"))).agentMemory();
-    expect(off).toMatchObject({ text: "", enabled: false, source: "none" });
+  it("falls back to the last block on an outage", async () => {
     const server = new MockServer().on("GET /v1/agent-memory/block", { body: block }, problem(503, "unavailable"));
     const niadra = makeClient(server, { cache: { ttlMs: 0 } });
     await niadra.agentMemory();

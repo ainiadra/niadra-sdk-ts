@@ -31,7 +31,7 @@ describe("tools()", () => {
     const kit = makeClient(server).tools(marina, { conversation_id: "wa-1", verification: "V1" });
     const output = await kit.call(
       TOOL_NAMES.search,
-      JSON.stringify({ query: "visit", channels: ["voice"], item_kinds: ["episode", "bogus"], subject: { type: "email", value: "x@evil.test" } }),
+      JSON.stringify({ query: "visit", filters: { channels: ["voice"], item_kinds: ["episode", "bogus"] }, subject: { type: "email", value: "x@evil.test" } }),
     );
     expect(server.calls[0]!.body).toEqual({
       subject: marina,
@@ -48,7 +48,7 @@ describe("tools()", () => {
       .on("POST /v1/history/timeline", { body: { items: [], withheld: 0 } })
       .on("POST /v1/history/open", { body: { id: "ep-1", kind: "episode", summary: "s", promises: [], derived: [], timeline: [] } });
     const kit = makeClient(server).tools(marina, { task_id: "t-1" });
-    await kit.call(TOOL_NAMES.timeline, { limit: 500, since: "2026-09-01T00:00:00Z" });
+    await kit.call(TOOL_NAMES.timeline, { limit: 500, filters: { since: "2026-09-01T00:00:00Z" } });
     await kit.call(TOOL_NAMES.open, '{"id":"ep-1"}');
     expect(server.calls[0]!.body).toEqual({ subject: marina, limit: 100, filters: { since: "2026-09-01T00:00:00Z" } });
     // The bound customer goes in the body, so the server opens only an item of theirs.
