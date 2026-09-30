@@ -229,6 +229,23 @@ export interface ContentReleaseResult {
 }
 
 /**
+ * A field the type derives from the related objects of one relation (a look's pieces), computed at this
+ * read and never stored. A related object whose data is not known leaves it `unobserved`, unless the answer
+ * is already decided.
+ */
+export interface DerivedState {
+  logic: "yes" | "no" | "unobserved";
+  /** The related objects it was computed over. */
+  over: number;
+  /**
+   * How many of them were not known: out of the working set, not an exact match (`status_field`), or with the
+   * data the condition reads not observed.
+   */
+  unknown: number;
+  v?: unknown;
+}
+
+/**
  * What changed between the declaration and the type the schema proposes now, as counts: never a new name,
  * a value or a definition (object-type spec, 8.8.2).
  */
@@ -374,6 +391,8 @@ export interface ObjectRead {
    */
   blocked?: Record<string, string[]>;
   declared_gaps?: string[];
+  /** The type's derived fields, from the related objects. */
+  derived?: Record<string, DerivedState>;
   derived_status?: "current" | "expired_by_input" | null;
   /** The inputs whose change expired it. */
   expired_by?: string[];
@@ -431,9 +450,10 @@ export interface Provenance {
 export interface ObjectPush {
   fields: Record<string, unknown>;
   /**
-   * For a customer's derived object (a quote): the objects its inputs are fields of, by the name its type
-   * gives them, as `type:namespace:id` (`{"lead": "lead:crm:L-9"}`). When a field of one of them changes, the
-   * object expires, naming the input.
+   * For a derived object (a customer's quote, a shared best offer): the objects its inputs are fields of, by
+   * the name its type gives them, as `type:namespace:id` (`{"lead": "lead:crm:L-9"}`). When a field of one of
+   * them changes, the object expires, naming the input. A shared object's inputs are shared objects: a
+   * customer's object is never one.
    */
   inputs?: Record<string, string> | null;
   provenance: Provenance;
