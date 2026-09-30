@@ -9,7 +9,7 @@
  * guard (`conversation.claims.guard()`, `capture/guard.ts`) acts, and records the act it took.
  *
  * The evidence is what the turn's tools returned, in their results and in the objects they showed, and what
- * the include blocks of its reads placed in the turn block (`blockValues`), each fresh for a claim or not:
+ * the include blocks of its reads served (`blockValues`), each fresh for a claim or not, never the pack's text:
  *
  * - a field named like a role of a category is a value of that role and of that category's classes, so a
  *   number said with the role and a different value is a `mismatch`, and one with the same value `matched`;
@@ -83,13 +83,14 @@ export function recordOf(finding: Finding, act: ClaimRecord["action"]): ClaimRec
 }
 
 /**
- * Every value a read's include blocks placed in the turn block, as the claim check's evidence: the fields and
- * computed values of the state view's objects and of the shared objects the subject showed interest in, the
- * new value of each field that changed since they saw it, and the values of the constraints block's lines
- * (what the subject requires, prefers and is).
+ * Every value a read's include blocks served, as the claim check's evidence (the claim contract spec, 4.3): the
+ * fields and computed values of the state view's objects and of the shared objects the subject showed interest
+ * in, the new value of each field that changed since they saw it, the values of the constraints block's lines
+ * (what the subject requires, prefers and is), and the numbers each object shown was last shown with (an
+ * offer's price, total, discount or installment).
  *
- * A value backs a claim only while it is claim-safe. A field that is not stays as a copy too old to back one,
- * so a claim that repeats it is `stale`; a computed value that is not backs nothing. A changed field's new
+ * A value backs a claim only while it is claim-safe. A field or an offer's number that is not stays as a copy
+ * too old to back one, so a claim that repeats it is `stale`; a computed value that is not backs nothing. A changed field's new
  * value is as claim-safe as the object's field, and not at all without the object; the value it was seen at
  * is not evidence. The subject's own constraints always back a claim, except one that lost a conflict and was
  * left out of the block. A masked or unknown value backs nothing.
@@ -124,12 +125,17 @@ export function blockValues(state: StateView | null | undefined, constraints: Co
     for (const a of constraints.attributes ?? []) said.push([a.name, a.value]);
     // A constraint names a field of a type (`health_plan.monthly_price`), and backs a claim by the field.
     for (const [attr, value] of said) out.push({ ref: null, field: attr.split(".").pop() ?? attr, value, claimSafe: true });
+    for (const shown of constraints.already_presented ?? []) {
+      for (const [field, n] of Object.entries(shown.values ?? {})) {
+        out.push({ ref: shown.ref, field, value: n.v, claimSafe: n.claim_safe, role: n.role ?? null });
+      }
+    }
   }
   return out;
 }
 
 /** What the turn holds that a claim can stand on: the values its tools returned and its reads served. */
-function evidence(frame: TurnFrame, contract: ClaimContractSummary, spoken: readonly Mention[], lang: Language): Turn {
+export function evidence(frame: TurnFrame, contract: ClaimContractSummary, spoken: readonly Mention[], lang: Language): Turn {
   const roles = new Map<string, Set<string>>();
   for (const category of contract.categories ?? []) {
     for (const role of Object.keys(category.detect.roles ?? {})) {

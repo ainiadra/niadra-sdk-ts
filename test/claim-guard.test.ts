@@ -212,3 +212,23 @@ describe("the values the include blocks placed in the turn block", () => {
     expect(lost?.map((c) => [c.verdict, c.action])).toEqual([["unsupported", "block"]]);
   });
 });
+
+/** The two plans another agent's quote tool showed, with the prices they were shown at. */
+function offers(claimSafe = true): ConstraintsBlock {
+  const shown = (plan: string, price: number) => ({ ref: `health_plan:operadora:${plan}`, times: 1, values: { monthly_price: { v: price, role: "price_full", claim_safe: claimSafe } } });
+  return { version: "cv_0123456789abcdef", already_presented: [shown("pleno-1", 690), shown("essencial-1", 480)], text: "" };
+}
+
+describe("the offers the constraints block served", () => {
+  it("back the price an offer was shown at", () => {
+    const text = "Júlia, o plano Pleno sem coparticipação, por R$ 690, atende ao que você pediu.";
+    const guarded = guardText(HEALTH, blocks(null, offers()), text);
+    expect(guarded.text).toBe(text);
+    expect(guarded.claims.map((c) => [c.verdict, c.action, c.evidence?.ref])).toEqual([["matched", "none", "health_plan:operadora:pleno-1"]]);
+  });
+
+  it("warn on an offer too old to claim, and still block a price never shown", () => {
+    expect(guardText(HEALTH, blocks(null, offers(false)), "O Pleno custa R$ 690.").claims.map((c) => [c.verdict, c.action])).toEqual([["stale", "warn"]]);
+    expect(guardText(HEALTH, blocks(null, offers()), "O Pleno custa R$ 650.").claims.map((c) => [c.verdict, c.action])).toEqual([["unsupported", "block"]]);
+  });
+});
