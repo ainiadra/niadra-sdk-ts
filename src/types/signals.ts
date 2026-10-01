@@ -533,12 +533,14 @@ export interface OutcomeLink {
   /** The outcome definition of the `measurement` document. */
   outcome: string;
   position?: number | null;
+  /** The purchase it counts in, when the revenue definition counts a split purchase's parts as one order. */
+  purchase?: string | null;
   /** The state the object or its line is in. */
   state: string;
   turn_id?: string | null;
   /** When the outcome first counted. */
   valid_at: string;
-  /** In the currency's minor units; absent: none. */
+  /** In the currency's minor units, as the signed revenue definition counts it; absent: none. */
   value_minor?: number | null;
 }
 
