@@ -238,6 +238,12 @@ export interface DerivedState {
   /** The related objects it was computed over. */
   over: number;
   /**
+   * When it is not `yes`, the related objects, as `type:namespace:id`, that kept it from `yes`: for `all` and
+   * `any` the ones the condition does not hold for or that are not known, for `count`, `min` and `max` the
+   * ones not known. In the relation's order, the first 10.
+   */
+  pieces_out?: string[];
+  /**
    * How many of them were not known: out of the working set, not an exact match (`status_field`), or with the
    * data the condition reads not observed.
    */
