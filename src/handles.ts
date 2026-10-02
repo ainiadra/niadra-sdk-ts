@@ -37,10 +37,18 @@ export const handles = {
   /** The id of a person or organization in a system of record; `system` names that system, such as `crm`. */
   systemId: (value: string, system: string, options?: HandleOptions): Handle =>
     build("system_id", value, system, options),
-  /** An HMAC of a national document number; `country` is its ISO 3166-1 alpha-2 code. */
+  /**
+   * A person's national document, such as a CPF: `govIdHmac("529.982.247-25", "BR")`. Send the number
+   * itself, never a hash of it: the server checks its check digits, then keeps only a keyed hash with your
+   * space's secret and an encrypted copy, and shows it masked. `country` is its ISO 3166-1 alpha-2 code.
+   */
   govIdHmac: (value: string, country: string, options?: HandleOptions): Handle =>
     build("gov_id_hmac", value, country, options),
-  /** An HMAC of a company registry number. Identifies an organization. */
+  /**
+   * A company's registry number, such as a CNPJ: `orgRegistryHmac("11.222.333/0001-81", "BR")`. As with
+   * `govIdHmac`, send the number itself; the server checks it and keeps only a keyed hash. Identifies an
+   * organization.
+   */
   orgRegistryHmac: (value: string, country: string): Handle =>
     build("org_registry_hmac", value, country, { subjectKind: "account" }),
   /** An e-mail domain, such as `acme.com`. Identifies an organization. */
