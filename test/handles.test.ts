@@ -12,14 +12,18 @@ describe("handles", () => {
   it("puts the namespace of scoped handles in scope", () => {
     expect(handles.systemId("C-0042", "crm")).toEqual({ type: "system_id", value: "C-0042", scope: "crm" });
     expect(handles.waBsuid("BR.123", "waba-1")).toEqual({ type: "wa_bsuid", value: "BR.123", scope: "waba-1" });
-    expect(handles.govIdHmac("ab12", "BR")).toEqual({ type: "gov_id_hmac", value: "ab12", scope: "BR" });
+    expect(handles.govIdHmac("529.982.247-25", "BR")).toEqual({
+      type: "gov_id_hmac",
+      value: "529.982.247-25",
+      scope: "BR",
+    });
   });
 
   it("marks organization-only handles as accounts", () => {
     expect(handles.emailDomain("acme.com").subject_kind).toBe("account");
-    expect(handles.orgRegistryHmac("ff00", "BR")).toEqual({
+    expect(handles.orgRegistryHmac("11.222.333/0001-81", "BR")).toEqual({
       type: "org_registry_hmac",
-      value: "ff00",
+      value: "11.222.333/0001-81",
       scope: "BR",
       subject_kind: "account",
     });
