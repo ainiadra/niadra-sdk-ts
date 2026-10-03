@@ -334,6 +334,13 @@ export interface HistoryFilters {
   channels?: string[];
   categories?: string[];
   item_kinds?: HistoryItemKind[];
+  /**
+   * The open items to list, by status. Unset: the open and overdue ones and the promises kept in
+   * the last 7 days. `resolved` reaches every resolved item, with `closed_at` and `closed_by`;
+   * `merged`, the twins merged into another item, with `merged_into`. Named, the timeline lists
+   * open items too.
+   */
+  item_statuses?: ItemStatus[];
   outcome?: string | null;
   object?: ObjectRef | null;
   /**
@@ -368,6 +375,20 @@ export interface SearchRequest {
   limit?: number | null;
 }
 
+/** The open items history lists by status (`HistoryFilters.item_statuses`). */
+export type ItemStatus = "open" | "overdue" | "resolved" | "merged";
+
+/** What closed an open item: the same object the `open_item.closed` webhook carried. */
+export interface ClosedBy {
+  /** `action`, `system_event`, `conversation` or `feedback`. */
+  kind: string;
+  action_id?: string | null;
+  event_id?: string | null;
+  session_id?: string | null;
+  operation?: string | null;
+  source_id?: string | null;
+}
+
 export interface HistoryItem {
   id: string;
   kind: string;
@@ -380,6 +401,18 @@ export interface HistoryItem {
   origin_event_id?: string | null;
   /** Until when what the item states holds; after it, the item leaves reads unless `show_expired`. */
   valid_until?: string | null;
+  /** The business object the row is about: an open item's, a fact's, its own. */
+  object?: ObjectRef | null;
+  /** An open item's: the operation that closes it when done on its object. */
+  expected_operation?: string | null;
+  /** An open item's: `open`, `overdue`, `resolved` or `merged`. */
+  status?: string | null;
+  /** A resolved item's: when it was closed. */
+  closed_at?: string | null;
+  /** A resolved item's: what closed it. */
+  closed_by?: ClosedBy | null;
+  /** A merged item's: the `open_item:<id>` it was merged into, which carries it on. */
+  merged_into?: string | null;
 }
 
 /** The period a `when` filter was read as. */
@@ -476,7 +509,7 @@ export interface Commitment {
 /** One history item opened in full: structured summary, outcome and commitments. */
 export interface OpenedItem {
   id: string;
-  kind: "episode" | "object";
+  kind: "episode" | "object" | "open_item";
   summary: string;
   requested?: string | null;
   promises: Commitment[];
@@ -487,6 +520,13 @@ export interface OpenedItem {
   as_of?: string | null;
   /** Earlier and current versions, oldest first, when the item has them. */
   versions?: ItemVersion[];
+  /**
+   * An open item's status: `open`, `overdue`, `resolved`, or `merged` when the id is a twin of
+   * another item, which answers for it from then on.
+   */
+  status?: string | null;
+  /** The item a merged id answers for (`open_item:<id>`); `summary` is that item's. */
+  merged_into?: string | null;
 }
 
 /** System events and agent actions about one object, newest first; never conversation content. */

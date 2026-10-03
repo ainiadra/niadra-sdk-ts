@@ -4,6 +4,18 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-03
+
+### Added
+
+- `HistoryFilters.item_statuses` (`open`, `overdue`, `resolved`, `merged`) lists open items by status in
+  `search()` and `timeline()`; named, the timeline lists open items beside what happened. Unset, it is not sent
+  and the rows are what they were: the open and overdue items and the promises kept in the last 7 days.
+- `HistoryItem` types `object`, `expected_operation`, `status`, `closed_at`, `closed_by` (what closed a
+  resolved item, as its `open_item.closed` webhook said it, a `ClosedBy`) and `merged_into` (the item a merged
+  twin lives on in).
+- `OpenedItem.kind` takes `open_item`, with `status` and `merged_into` (the item a merged id answers for).
+
 ## [0.10.4] - 2026-10-03
 
 ### Fixed
