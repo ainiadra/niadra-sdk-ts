@@ -34,6 +34,7 @@ import {
 } from "./context.js";
 import type { ContextOptions, ContextParams, ContextResult, PrefetchParams, RequestOptions } from "./context.js";
 import { Conversation } from "./conversation.js";
+import { EVERY_MS as KEEP_WARM_EVERY_MS, KeepWarm } from "./warm.js";
 import type { ConversationParams } from "./conversation.js";
 import {
   NiadraAPIError,
@@ -198,6 +199,8 @@ export class Niadra {
   readonly enabled: boolean;
   private readonly core: Core | null;
   private readonly timeouts: Timeouts;
+  private readonly keepWarm: KeepWarm;
+  private warmTimer: ReturnType<typeof setInterval> | undefined;
   /** The read budgets the caller left at their defaults: they take the measured round trip on top. */
   private readonly defaultReads: ReadonlySet<"context" | "navigation">;
   private voiceStarted = false;
@@ -247,6 +250,7 @@ export class Niadra {
     this.strict = options.strict ?? false;
     this.logger = options.logger ?? consoleLogger;
     this.timeouts = { ...DEFAULT_TIMEOUTS, ...options.timeouts };
+    this.keepWarm = new KeepWarm(options.keepWarm ?? true);
     this.defaultReads = new Set((["context", "navigation"] as const).filter((name) => options.timeouts?.[name] === undefined));
     this.voice = new VoiceLines(
       options.voice === false ? { ...DEFAULT_VOICE, enabled: false } : { ...DEFAULT_VOICE, ...options.voice },
@@ -1150,17 +1154,21 @@ export class Niadra {
    * emits `conversation.ended` when you call `end()`.
    */
   conversation(params: ConversationParams): Conversation {
-    return new Conversation(this, params, {
+    const conversation = new Conversation(this, params, {
       endConversation: (id) => this.endScope(buildConversationEnded(id), `conversation:${id}`),
     });
+    this.warm(`conversation:${conversation.id}`, conversation);
+    return conversation;
   }
 
   /** A helper for one internal-agent task: binds `task_id` to reads and writes and emits `task.ended`. */
   task(params: TaskParams): Task {
-    return new Task(this, params, {
+    const task = new Task(this, params, {
       endTask: (id) => this.endScope(buildTaskEnded(id), `task:${id}`),
       verifyTask: (verify) => this.verifyWith(verify),
     });
+    this.warm(`task:${task.id}`, task);
+    return task;
   }
 
   /**
@@ -1182,6 +1190,8 @@ export class Niadra {
    */
   async shutdown(): Promise<void> {
     this.unregisterExit();
+    clearInterval(this.warmTimer);
+    this.warmTimer = undefined;
     if (!this.core) return;
     await this.turnSender?.stop(this.timeouts.write);
     await this.outbox.stop(this.timeouts.write);
@@ -1671,9 +1681,45 @@ export class Niadra {
     });
   }
 
+  /** Notes an open conversation or task; the first one starts the keep-warm timer (`warm.ts`). */
+  private warm(scope: string, session: object): void {
+    const core = this.core;
+    if (!core || !this.keepWarm.enabled) return;
+    this.keepWarm.add(scope, session, Date.now());
+    if (this.warmTimer !== undefined) return;
+    const timer = setInterval(() => {
+      this.warmTick(core);
+    }, KEEP_WARM_EVERY_MS);
+    // Never what keeps a Node process alive.
+    (timer as { unref?: () => void }).unref?.();
+    this.warmTimer = timer;
+  }
+
+  private warmTick(core: Core): void {
+    const step = this.keepWarm.step(Date.now(), core.transport.lastActivityAt);
+    if (step === "stop") {
+      clearInterval(this.warmTimer);
+      this.warmTimer = undefined;
+      return;
+    }
+    if (step !== "ping") return;
+    core.transport
+      .request<unknown>({
+        method: "GET",
+        path: "/healthz",
+        timeoutMs: 2_000,
+        retry: { kind: "read", maxAttempts: 1 },
+        activity: false,
+      })
+      .catch((error: unknown) => {
+        this.logger.debug(`keep-warm ping failed: ${describe(toNiadraError(error))}`);
+      });
+  }
+
   private async endScope(item: BatchItem & { idempotency_key: string }, scope: string): Promise<WriteResult> {
     // What the SDK kept for the conversation goes now, not once the server confirmed the end.
     this.forgetScope(scope);
+    this.keepWarm.end(scope);
     return this.sendNow(() => item);
   }
 

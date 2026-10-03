@@ -4,6 +4,16 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-03
+
+### Added
+
+- `keepWarm` (on by default): while a conversation or task is open (created and not ended) and the client was
+  used in the last 10 minutes, the client sends `GET /healthz` every 100 s when nothing else went out for 90 s,
+  one attempt with a 2-second budget, so the connection to the region stays open. A turn after a long pause no
+  longer pays TCP, TLS and often DNS again. The pings are not the client's use, the timer is `unref()`'d, and a
+  conversation nobody holds any more stops them. `keepWarm: false` never pings.
+
 ## [0.10.2] - 2026-10-03
 
 ### Changed

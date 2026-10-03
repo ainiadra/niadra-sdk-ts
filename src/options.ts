@@ -197,6 +197,12 @@ export interface ClientOptions {
   strict?: boolean;
   /** Flush queued events when a Node process is about to exit. Defaults to `true`. */
   flushOnExit?: boolean;
+  /**
+   * While a conversation or task is open and the client was used in the last 10 minutes, keep the connection to
+   * the region open with a `GET /healthz` every 100 s of quiet, so a turn after a long pause does not pay for a
+   * new connection (`warm.ts`). Defaults to `true`; `false` never pings.
+   */
+  keepWarm?: boolean;
   /** A `fetch` implementation. Defaults to the global one. */
   fetch?: typeof fetch;
   /**
