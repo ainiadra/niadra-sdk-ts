@@ -5,6 +5,13 @@ import type { Logger } from "./logger.js";
  * Per-method time budgets in milliseconds. They are the SDK's own and deliberately short:
  * managed agent platforms allow 7 to 10 seconds per turn and self-hosted frameworks allow no
  * limit at all, so a slow memory call must never become a slow agent.
+ *
+ * `context` and `navigation` left at their defaults are what the API may take: the client measures
+ * the round trip to the region once when it starts (`VoiceOptions.probe`) and adds it on top, so an
+ * agent far from the region (Sao Paulo is 170 ms from us-east-2) is not timed out by the network.
+ * A value you set is a ceiling the SDK keeps; when the measured round trip plus 50 ms exceeds it,
+ * the client logs one warning, since every such read would run out of time. Before the measurement
+ * ends, the defaults apply as they are (with `connect` on top while no connection is open).
  */
 export interface Timeouts {
   /** `context()` for every view except `voice`. */
@@ -112,8 +119,9 @@ export interface VoiceOptions {
    */
   minCoverage: number;
   /**
-   * Measure the round trip to the region once, with `GET /healthz`, and log a warning when the
-   * voice budgets cannot hold it.
+   * Measure the round trip to the region once, with `GET /healthz`, when the client starts: the
+   * default read budgets add it (`Timeouts`), and a warning says when a budget you set, or a voice
+   * budget once the client reads in voice, cannot hold it. `false` measures nothing.
    */
   probe: boolean;
 }
