@@ -181,3 +181,26 @@ describe("link() and endLink()", () => {
     ).rejects.toBeInstanceOf(NiadraAPIError);
   });
 });
+
+describe("contextUse()", () => {
+  it("reads the measurement report with its filters, the other blocks passing through", async () => {
+    const answer = {
+      since: "2026-09-26",
+      until: "2026-10-03",
+      group_by: ["source_id", "day"],
+      buckets: [{ source_id: "s-1", sessions: 42, no_context: 8, deliveries: 34, deliveries_used: 17 }],
+      claims: [{ source_id: "s-1" }],
+    };
+    const server = new MockServer().on("GET /v1/context-use", { body: answer });
+    const { data } = await makeClient(server).contextUse({ since: "2026-09-26", group_by: ["source_id", "day"], channel: "app" });
+    expect(data?.buckets[0]?.sessions).toBe(42);
+    expect(data?.claims).toEqual([{ source_id: "s-1" }]);
+    const url = server.calls[0]!.url;
+    expect(url.searchParams.getAll("group_by")).toEqual(["source_id", "day"]);
+    expect([url.searchParams.get("since"), url.searchParams.get("channel"), url.searchParams.get("until")]).toEqual([
+      "2026-09-26",
+      "app",
+      null,
+    ]);
+  });
+});

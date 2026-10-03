@@ -4,8 +4,13 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-03
+
 ### Added
 
+- `contextUse({ since, until, group_by, source_id, channel, view, experiment_group })`: the context-use report
+  (`GET /v1/context-use`) as `ContextUseReport`, with its buckets typed and the other blocks passing through.
+  A key of an `analyst` source with the `analytics` scope reads every source of the space.
 - `link({ person, organization, role })` and `endLink(linkId)`: a system of record that knows who works for whom
   (a CRM, an HR system) links a person to the account or partner they act for, and ends the link, with a key
   that has the `identity:link` scope instead of `admin`. `can_see_contacts` still needs `admin`. `Link` and

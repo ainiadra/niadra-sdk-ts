@@ -98,7 +98,15 @@ import type {
   TimelineRequest,
   TimelineResponse,
 } from "./types/context.js";
-import type { IngestStatus, KeyIdentity, Link, LinkMethod, LinkRequest } from "./types/admin.js";
+import type {
+  ContextUseParams,
+  ContextUseReport,
+  IngestStatus,
+  KeyIdentity,
+  Link,
+  LinkMethod,
+  LinkRequest,
+} from "./types/admin.js";
 import type { BatchItem, BatchResponse, FeedbackRequest, MediaUploadResponse } from "./types/events.js";
 import type {
   AgentMemoryBlock,
@@ -983,6 +991,20 @@ export class Niadra {
     } catch (error) {
       return { ok: false, idempotency_key: key, error: this.swallow(error, "feedback") };
     }
+  }
+
+  /**
+   * How the space's agents used the context they read (`GET /v1/context-use`): sessions, deliveries, use,
+   * repetition, transfers and recontact, with intervals, grouped by `group_by`. A key of an `analyst` source
+   * with the `analytics` scope reads every source of the space; a key with `admin` reads its own source.
+   */
+  contextUse(params: ContextUseParams = {}, options: RequestOptions = {}): Promise<Result<ContextUseReport>> {
+    return this.navigate(() => {
+      const { group_by: groups, ...filters } = params;
+      const query: Record<string, string | string[] | undefined> = { ...filters };
+      if (groups?.length) query.group_by = groups;
+      return { ...this.readSpec("GET", "/v1/context-use", undefined, this.timeouts.write, options), query };
+    });
   }
 
   /**
