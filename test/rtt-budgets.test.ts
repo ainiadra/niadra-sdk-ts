@@ -52,3 +52,27 @@ describe("read budgets and the round trip", () => {
     await niadra.shutdown();
   });
 });
+
+describe("read budgets before the round trip is known", () => {
+  const budget = (niadra: object): number => (niadra as { readBudget(name: "context"): number }).readBudget("context");
+
+  it("gets the connect allowance while the probe is on its way on an open connection, then the round trip", async () => {
+    const server = new MockServer().on("GET /healthz", { status: 200, body: { status: "ok" }, delay: 200 });
+    const niadra = makeClient(server, { timeouts: { connect: 1_000 }, keepAliveMs: 120_000 });
+    expect(budget(niadra)).toBe(300); // no connection yet: the transport adds `connect` itself
+    await sleep(300); // the first probe answered, the second is on its way
+    expect(budget(niadra)).toBe(1_300);
+    await sleep(400);
+    expect(budget(niadra)).toBeGreaterThan(450);
+    expect(budget(niadra)).toBeLessThan(600);
+    await niadra.shutdown();
+  });
+
+  it("keeps the defaults as they are once a probe failed", async () => {
+    const server = new MockServer().on("GET /healthz", { status: 503, body: { code: "down" } });
+    const niadra = makeClient(server, { timeouts: { connect: 1_000 } });
+    await sleep(50);
+    expect(budget(niadra)).toBe(300);
+    await niadra.shutdown();
+  });
+});
