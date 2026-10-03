@@ -46,6 +46,12 @@ export interface Timeouts {
    * on after its turn's budget.
    */
   prefetch: number;
+  /**
+   * Added once to a call's budget when no connection to the API is likely open (no answer within
+   * `keepAliveMs`): TCP and TLS take a few round trips, 300 ms or more from another continent. With a
+   * connection open, budgets are exact. 0 never adds it.
+   */
+  connect: number;
 }
 
 export const DEFAULT_TIMEOUTS: Timeouts = {
@@ -58,7 +64,14 @@ export const DEFAULT_TIMEOUTS: Timeouts = {
   token: 2_000,
   upload: 60_000,
   prefetch: 1_000,
+  connect: 1_000,
 };
+
+/**
+ * How long Node's `fetch` keeps an idle connection open (undici's default). A turn more than this after
+ * the previous call opens a new one.
+ */
+export const FETCH_KEEPALIVE_MS = 4_000;
 
 /** How `context()` reuses packs inside a conversation. */
 export interface CacheOptions {
@@ -178,6 +191,12 @@ export interface ClientOptions {
   flushOnExit?: boolean;
   /** A `fetch` implementation. Defaults to the global one. */
   fetch?: typeof fetch;
+  /**
+   * How long your `fetch` keeps an idle connection open: 4 s, undici's default over HTTP/1.1. A `fetch` with an undici
+   * `Agent({ keepAliveTimeout: 120_000 })` keeps a conversation's turns on one connection; say so here, and
+   * `timeouts.connect` is spent only when a connection really closed.
+   */
+  keepAliveMs?: number;
   logger?: Logger;
   /** Extra headers sent with every request. */
   defaultHeaders?: Record<string, string>;

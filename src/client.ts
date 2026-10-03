@@ -71,7 +71,7 @@ import type {
 import { baseURLFromKey, parseApiKey } from "./key.js";
 import { consoleLogger } from "./logger.js";
 import type { Logger } from "./logger.js";
-import { DEFAULT_CACHE, DEFAULT_QUEUE, DEFAULT_TIMEOUTS, DEFAULT_VOICE } from "./options.js";
+import { DEFAULT_CACHE, DEFAULT_QUEUE, DEFAULT_TIMEOUTS, DEFAULT_VOICE, FETCH_KEEPALIVE_MS } from "./options.js";
 import type { ClientOptions, Timeouts } from "./options.js";
 import { EventQueue, unref } from "./queue.js";
 import { Task } from "./task.js";
@@ -314,6 +314,8 @@ export class Niadra {
       fetch: fetchImpl,
       defaultHeaders: options.defaultHeaders ?? {},
       logger: this.logger,
+      coldAllowanceMs: this.timeouts.connect,
+      keepAliveMs: options.keepAliveMs ?? FETCH_KEEPALIVE_MS,
     });
     const queueOptions = { ...DEFAULT_QUEUE, ...options.queue };
     // One slot of the server's 500-item limit stays free for the heartbeat.
