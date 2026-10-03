@@ -226,3 +226,29 @@ export interface ContextUseEntry {
    */
   slots: Record<string, unknown>[];
 }
+
+export type LinkMethod = "system_import" | "co_occurrence" | "declared" | "login";
+
+/** Body of `POST /v1/identity/links`: a person who acts for an organization (an account or a partner). */
+export interface LinkRequest {
+  person: Handle;
+  organization: Handle;
+  /** buyer, driver, broker, technical_contact, owner... */
+  role: string;
+  /** Whether the person reads what the organization's other contacts said; needs the `admin` scope. */
+  can_see_contacts?: boolean;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  method?: LinkMethod;
+}
+
+/** A person-organization link: from `valid_from` until `valid_to` (open when absent). */
+export interface Link {
+  link_id: string;
+  person_handle_id: string;
+  org_handle_id: string;
+  role: string;
+  can_see_contacts: boolean;
+  valid_from: string;
+  valid_to?: string | null;
+}

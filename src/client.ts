@@ -1,3 +1,4 @@
+import { uuidv7 } from "./ids.js";
 import { Admin } from "./admin.js";
 import { InternalText } from "./claims/internal.js";
 import { AgentStates } from "./agent-state.js";
@@ -97,7 +98,7 @@ import type {
   TimelineRequest,
   TimelineResponse,
 } from "./types/context.js";
-import type { IngestStatus, KeyIdentity } from "./types/admin.js";
+import type { IngestStatus, KeyIdentity, Link, LinkMethod, LinkRequest } from "./types/admin.js";
 import type { BatchItem, BatchResponse, FeedbackRequest, MediaUploadResponse } from "./types/events.js";
 import type {
   AgentMemoryBlock,
@@ -982,6 +983,37 @@ export class Niadra {
     } catch (error) {
       return { ok: false, idempotency_key: key, error: this.swallow(error, "feedback") };
     }
+  }
+
+  /**
+   * Links a person to the organization they act for (an account or a partner), as a system of record that
+   * knows who works for whom: a CRM, an HR system. Needs a key with the `identity:link` scope (or `admin`);
+   * `can_see_contacts` needs `admin`. Reads with `about` reach the organization through the link.
+   */
+  link(
+    params: Omit<LinkRequest, "method"> & { method?: LinkMethod; idempotency_key?: string },
+    options: RequestOptions = {},
+  ): Promise<Result<Link>> {
+    const { idempotency_key: key, ...rest } = params;
+    const body: LinkRequest = { can_see_contacts: false, method: "system_import", ...rest };
+    return this.navigate(() => this.writeSpec("/v1/identity/links", body, key ?? uuidv7(), options));
+  }
+
+  /**
+   * Ends a link, from `valid_to` (now when absent): the person no longer acts for the organization, and reads
+   * with `about` for the pair go on with the person's own memory. Needs `identity:link` or `admin`.
+   */
+  endLink(
+    linkId: string,
+    params: { valid_to?: string; idempotency_key?: string } = {},
+    options: RequestOptions = {},
+  ): Promise<Result<Link>> {
+    return this.navigate(() => {
+      if (!linkId) throw new NiadraValidationError("endLink() needs a link id");
+      const body = params.valid_to ? { valid_to: params.valid_to } : {};
+      const path = `/v1/identity/links/${encodeURIComponent(linkId)}/end`;
+      return this.writeSpec(path, body, params.idempotency_key ?? uuidv7(), options);
+    });
   }
 
   /**
