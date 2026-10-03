@@ -204,6 +204,8 @@ export class Niadra {
   /** The read budgets the caller left at their defaults: they take the measured round trip on top. */
   private readonly defaultReads: ReadonlySet<"context" | "navigation">;
   private voiceStarted = false;
+  /** A probe is on its way: until it ends, default read budgets get `timeouts.connect` on top. */
+  private measuring = false;
   private voiceWarned = false;
   private readonly strict: boolean;
   /** Where the client reports what it swallows in fail-open mode. */
@@ -1403,6 +1405,7 @@ export class Niadra {
   /** Measures the round trip to the region once per client, in the background. */
   private probe(core: Core): void {
     if (!this.voice.claimProbe()) return;
+    this.measuring = true;
     void (async () => {
       const samples: number[] = [];
       // The first may pay for the connection; the second is the round trip.
@@ -1417,12 +1420,14 @@ export class Niadra {
           });
         } catch (error) {
           this.logger.debug(`round trip probe failed: ${describe(toNiadraError(error))}`);
+          this.measuring = false;
           return;
         }
         samples.push(Date.now() - started);
       }
       const rtt = Math.min(...samples);
       this.voice.rtt = rtt;
+      this.measuring = false;
       this.logger.debug(`round trip to the region ${Math.round(rtt)} ms`);
       const explicit = (["context", "navigation"] as const).filter((name) => !this.defaultReads.has(name));
       for (const warning of budgetWarnings(rtt, this.timeouts, explicit)) this.logger.warn(warning);
@@ -1436,8 +1441,14 @@ export class Niadra {
    * timed out by the network; one the caller set is a ceiling.
    */
   private readBudget(name: "context" | "navigation"): number {
+    if (!this.defaultReads.has(name)) return this.timeouts[name];
     const rtt = this.voice.rtt;
-    return rtt !== null && this.defaultReads.has(name) ? this.timeouts[name] + rtt : this.timeouts[name];
+    if (rtt !== null) return this.timeouts[name] + rtt;
+    // While the probe is on its way, `connect` on top: a read made right after the client starts timed out at
+    // the bare default from Sao Paulo (03/10/2026). With no connection open the transport adds it itself, never
+    // twice; a probe that failed leaves the defaults as they are.
+    const open = this.core?.transport.connectionOpen() ?? false;
+    return this.measuring && open ? this.timeouts[name] + this.timeouts.connect : this.timeouts[name];
   }
 
   /** The client reads in voice: the voice budgets' warnings matter from now on. */

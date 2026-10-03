@@ -92,6 +92,11 @@ export class Transport {
   /** When the client last sent a request of its own (`RequestSpec.activity`), in epoch milliseconds. */
   lastActivityAt: number | undefined;
 
+  /** Likely: an answer came within `keepAliveMs`. When not, the next budgeted call gets `coldAllowanceMs`. */
+  connectionOpen(): boolean {
+    return this.answeredAt !== undefined && Date.now() - this.answeredAt <= (this.config.keepAliveMs ?? 0);
+  }
+
   async request<T>(spec: RequestSpec): Promise<TransportResponse<T>> {
     if (spec.activity !== false) this.lastActivityAt = Date.now();
     const budgeted = this.withAllowance(spec);

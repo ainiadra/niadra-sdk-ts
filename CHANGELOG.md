@@ -4,6 +4,16 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-03
+
+### Fixed
+
+- A read made before the startup probe measured the round trip used the bare default budget, and timed out
+  from Sao Paulo (the first context read carrying the customer's turn took 674 ms). While the probe is on its
+  way and a connection is open, `timeouts.context` and `timeouts.navigation` you did not set get
+  `timeouts.connect` on top; with no connection open the transport already adds it, never twice. A probe that
+  failed, or `voice: { probe: false }`, leaves the defaults as they are.
+
 ## [0.10.3] - 2026-10-03
 
 ### Added
