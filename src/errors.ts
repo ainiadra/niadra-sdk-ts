@@ -65,11 +65,14 @@ export class NiadraAPIError extends NiadraError {
   constructor(status: number, problem: Problem | null, requestId: string | null, retryAfterMs: number | null = null) {
     const code = problem?.code ?? `http_${status}`;
     const detail = problem?.detail ? `: ${problem.detail}` : "";
-    super(`${status} ${code}${detail}`);
+    const id = requestId ?? problem?.request_id ?? null;
+    // What a stack trace or `String(error)` shows: the code, the API's detail and the request id, never the
+    // values sent.
+    super(`${status} ${code}${detail}${id ? ` (request ${id})` : ""}`);
     this.status = status;
     this.code = code;
     this.problem = problem;
-    this.requestId = requestId ?? problem?.request_id ?? null;
+    this.requestId = id;
     this.retryAfterMs = retryAfterMs;
   }
 }

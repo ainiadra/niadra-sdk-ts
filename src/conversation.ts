@@ -268,7 +268,7 @@ export class Conversation {
     params.turn = turn === undefined ? this.turnText : turn;
     const result = await this.client.context(params, requestOptions);
     this.features.observe(result);
-    return this.state.observe(this.state.absorb(result));
+    return this.state.observe(this.state.sayUnlinked(this.state.absorb(result), this.logger));
   }
 
   /**

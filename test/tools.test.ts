@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TOOL_DEFINITIONS, TOOL_NAMES } from "../src/index.js";
-import { MockServer, makeClient, marina, problem } from "./helpers.js";
+import { MockServer, contextBody, makeClient, marina, problem, spyLogger } from "./helpers.js";
+import { NiadraAPIError } from "../src/errors.js";
 
 const searchBody = { items: [{ id: "ep-1", kind: "episode", text: "Missed visit", at: "2026-09-12T14:00:00Z" }], withheld: 0, tokens_used: 90 };
 
@@ -63,6 +64,33 @@ describe("tools()", () => {
     expect(JSON.parse(await kit.call(TOOL_NAMES.open, { id: "ep-1" }))).toMatchObject({ kind: "episode" });
     expect(server.calls[0]!.body).toEqual({ item_id: "ep-1", subject: marina, verification: "V1", conversation_id: "wa-1" });
     expect(server.calls[0]!.url.search).toBe("");
+  });
+
+  it("opens an organization's item through the bound person when the kit is bound to one (about)", async () => {
+    const server = new MockServer().on("POST /v1/history/open", {
+      body: { id: "ep-9", kind: "episode", summary: "renewal", promises: [], derived: [], timeline: [] },
+    });
+    const account = { type: "system_id", scope: "crm", value: "A-9" } as const;
+    const kit = makeClient(server).tools(marina, { about: account, conversation_id: "wa-1" });
+    await kit.call(TOOL_NAMES.open, { id: "ep-9" });
+    expect(server.calls[0]!.body).toEqual({ item_id: "ep-9", subject: marina, about: account, conversation_id: "wa-1" });
+  });
+
+  it("says once per conversation that the organization it named has no link, and goes on", async () => {
+    const server = new MockServer().on("POST /v1/context", { body: contextBody({ about_unlinked: true }) });
+    const logger = spyLogger();
+    const niadra = makeClient(server, { logger });
+    const account = { type: "system_id", scope: "crm", value: "A-9" } as const;
+    const conversation = niadra.conversation({ subject: marina, about: account, channel: "whatsapp", conversation_id: "c-9" });
+    const first = await conversation.context();
+    await conversation.context();
+    expect(first.response?.about_unlinked).toBe(true);
+    expect(logger.warn.mock.calls.filter(([m]) => m.includes("no active link"))).toHaveLength(1);
+  });
+
+  it("puts the problem's code, detail and request id in an API error's message", () => {
+    const error = new NiadraAPIError(422, { type: "about:blank", title: "invalid input", status: 422, code: "invalid_input", detail: "unknown purpose legal", request_id: "req-7" }, null);
+    expect(error.message).toBe("422 invalid_input: unknown purpose legal (request req-7)");
   });
 
   it("answers the model with a readable error instead of throwing", async () => {

@@ -127,6 +127,11 @@ export interface OpenParams {
    * 404 otherwise. `tools()` passes the bound customer.
    */
   subject?: Handle;
+  /**
+   * The organization the customer acts for: also an item of it the customer's view shows (the pack's
+   * account block). Needs `subject`; `tools()` passes the bound one.
+   */
+  about?: Handle;
 }
 
 interface Core {
@@ -742,6 +747,7 @@ export class Niadra {
       if (!id) throw new NiadraValidationError("open() needs an item id");
       const body: OpenItemRequest = { item_id: id };
       if (params.subject) body.subject = params.subject;
+      if (params.about) body.about = params.about;
       if (params.verification) body.verification = params.verification;
       if (params.conversation_id) body.conversation_id = params.conversation_id;
       return this.readSpec("POST", "/v1/history/open", body, this.timeouts.navigation, options);
@@ -794,8 +800,10 @@ export class Niadra {
       search: (params, voice) => this.search(params, this.voiceBudget(voice)),
       timeline: (params, voice) => this.timeline(params, this.voiceBudget(voice)),
       open: (id, customer, bound, voice) => {
-        // The bound customer goes along, so the server opens only an item of theirs.
+        // The bound customer goes along, so the server opens only an item of theirs, or of the organization
+        // they act for when the kit is bound to one (`about`), as the pack's account block shows it.
         const scope: OpenParams = { subject: customer };
+        if (bound.about) scope.about = bound.about;
         if (bound.verification) scope.verification = bound.verification;
         if (bound.conversation_id) scope.conversation_id = bound.conversation_id;
         return this.open(id, scope, this.voiceBudget(voice));

@@ -125,6 +125,7 @@ describe("the Context Pack specification", () => {
 
 // The answer with the blocks a read adds by `include`.
 const responseKeys: Record<keyof ContextResponse, true> = {
+  about_unlinked: true,
   not_modified: true,
   text: true,
   variables: true,

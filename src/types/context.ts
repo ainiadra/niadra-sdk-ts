@@ -269,6 +269,11 @@ export interface BudgetBlock {
 export interface ContextResponse {
   /** `true` when `known_etag` still matches; `text` is then omitted. */
   not_modified: boolean;
+  /**
+   * `about` named an organization with no active link to the subject: the pack is the subject's own, without
+   * that organization's block. It never says whether the organization exists.
+   */
+  about_unlinked?: boolean;
   text?: string | null;
   variables: Record<string, string>;
   version: string;
@@ -405,6 +410,11 @@ export interface SearchResponse {
   window?: TimeWindow | null;
   /** Filters the server could not read and left out, such as `when`. */
   ignored?: string[];
+  /**
+   * `about` named an organization with no active link to the subject: the rows are the subject's own. It
+   * never says whether the organization exists.
+   */
+  about_unlinked?: boolean;
 }
 
 /** Body of `POST /v1/history/timeline`. */
@@ -427,6 +437,8 @@ export interface OpenItemRequest {
   item_id: string;
   /** The customer the item must belong to; any other item answers 404. */
   subject?: Handle | null;
+  /** The organization the customer acts for: also an item of it the customer's view shows. */
+  about?: Handle | null;
   verification?: Verification;
   conversation_id?: string | null;
 }
@@ -438,6 +450,11 @@ export interface TimelineResponse {
   as_of?: string | null;
   window?: TimeWindow | null;
   ignored?: string[];
+  /**
+   * `about` named an organization with no active link to the subject: the rows are the subject's own. It
+   * never says whether the organization exists.
+   */
+  about_unlinked?: boolean;
 }
 
 /** One version of a history item. */
