@@ -130,6 +130,9 @@ export function makeClient(server: MockServer, options: ClientOptions = {}): Nia
     logger: spyLogger(),
     flushOnExit: false,
     ...options,
+    // The mock answers in-process, with no connection to open: budgets are exact unless a test asks for the
+    // allowance (transport.test.ts, "opening a connection").
+    timeouts: { connect: 0, ...options.timeouts },
   });
 }
 

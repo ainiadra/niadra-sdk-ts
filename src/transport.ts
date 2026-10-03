@@ -62,6 +62,13 @@ interface TransportConfig {
   fetch: typeof fetch;
   defaultHeaders: Record<string, string>;
   logger: Logger;
+  /**
+   * Added once to the budget of a call made when no connection is likely open: no answer came within
+   * `keepAliveMs`. Opening one (TCP and TLS) takes a few round trips that a 300 ms read cannot hold from
+   * another continent; with a connection open, budgets are exact.
+   */
+  coldAllowanceMs?: number;
+  keepAliveMs?: number;
 }
 
 const RETRYABLE_WRITE_STATUS = new Set([408, 421, 429, 500, 502, 503, 504]);
@@ -76,8 +83,33 @@ export class Transport {
     this.baseURL = config.baseURL.replace(/\/+$/, "");
   }
 
+  private answeredAt: number | undefined;
+  /** When the allowance was first given since the last answer; it holds for the calls of that moment only. */
+  private grantedAt: number | undefined;
+
   async request<T>(spec: RequestSpec): Promise<TransportResponse<T>> {
-    return spec.retry.kind === "read" ? this.read<T>(spec, spec.retry) : this.write<T>(spec, spec.retry);
+    const budgeted = this.withAllowance(spec);
+    return budgeted.retry.kind === "read"
+      ? this.read<T>(budgeted, budgeted.retry)
+      : this.write<T>(budgeted, budgeted.retry);
+  }
+
+  /**
+   * `spec` with the allowance for opening a connection, when it has a budget and none is likely open. The calls
+   * that start while the first one opens it get it too; after that, none does until an answer comes, so an
+   * outage costs the allowance once, not on every turn.
+   */
+  private withAllowance(spec: RequestSpec): RequestSpec {
+    const allowance = this.config.coldAllowanceMs ?? 0;
+    const { retry } = spec;
+    if (allowance <= 0 || (retry.kind === "write" && retry.totalMs === undefined)) return spec;
+    const now = Date.now();
+    const keep = this.config.keepAliveMs ?? 0;
+    if (this.answeredAt !== undefined && now - this.answeredAt <= keep) return spec;
+    this.grantedAt ??= now;
+    if (now - this.grantedAt > allowance) return spec;
+    const total = retry.kind === "write" && retry.totalMs !== undefined ? { ...retry, totalMs: retry.totalMs + allowance } : retry;
+    return { ...spec, timeoutMs: spec.timeoutMs + allowance, retry: total };
   }
 
   private async read<T>(spec: RequestSpec, policy: { maxAttempts: number }): Promise<TransportResponse<T>> {
@@ -156,7 +188,19 @@ export class Transport {
       headers["content-type"] = "application/json";
       init.body = JSON.stringify(spec.body);
     }
-    return this.exchange<T>(this.url(spec.path, spec.query), init, deadline);
+    try {
+      const answer = await this.exchange<T>(this.url(spec.path, spec.query), init, deadline);
+      this.answered();
+      return answer;
+    } catch (error) {
+      if (error instanceof NiadraAPIError) this.answered();
+      throw error;
+    }
+  }
+
+  private answered(): void {
+    this.answeredAt = Date.now();
+    this.grantedAt = undefined;
   }
 
   private async exchange<T>(url: string, init: RequestInit, deadline: Deadline): Promise<TransportResponse<T>> {

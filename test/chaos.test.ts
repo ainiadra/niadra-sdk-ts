@@ -11,7 +11,8 @@
 // For each, during the outage:
 //
 // - a turn (a read, then two checks before outbound contacts) ends within the SDK's documented budgets, 300 ms
-//   for a chat read and 200 ms for each check;
+//   for a chat read and 200 ms for each check; one call of the outage (a read or a check) may also have
+//   `timeouts.connect`, when it finds no connection open (Node's fetch closes an idle one after 4 s), and only one;
 // - the read serves the last good pack (`fallback`) with its age, never an empty one;
 // - the customer's opt-out of marketing and of service, recorded before the conversation, holds: both checks
 //   deny with `suppressed`, and nothing goes out;
@@ -48,6 +49,7 @@ const SLOW_S = 6;
 const TURN_GAP_MS = 1_500;
 const OPTED_OUT = ["marketing", "service"] as const;
 const READ_BUDGET_MS = DEFAULT_TIMEOUTS.context;
+const CONNECT_MS = DEFAULT_TIMEOUTS.connect;
 const TURN_BUDGET_MS = READ_BUDGET_MS + OPTED_OUT.length * CHECK_BUDGET_MS;
 /** Scheduling on a loaded test machine, per call. */
 const SLACK_MS = 50;
@@ -380,10 +382,16 @@ describe("with Niadra down, the agent goes on", () => {
     }
     for (const purpose of OPTED_OUT) expect(await niadra.mayContact(side.subject, purpose, { channel: "whatsapp" })).toBe(false);
 
+    const calls = outage.flatMap((t) => [
+      { ms: t.readMs, budget: READ_BUDGET_MS },
+      ...t.checkMs.map((ms) => ({ ms, budget: CHECK_BUDGET_MS })),
+    ]);
+    const opening = calls.filter((c) => c.ms > c.budget + SLACK_MS);
+    expect(opening.length).toBeLessThanOrEqual(1);
+    for (const call of calls) expect(call.ms).toBeLessThanOrEqual(call.budget + (opening.includes(call) ? CONNECT_MS : 0) + SLACK_MS);
     for (const turn of outage) {
-      expect(turn.readMs).toBeLessThanOrEqual(READ_BUDGET_MS + SLACK_MS);
-      for (const ms of turn.checkMs) expect(ms).toBeLessThanOrEqual(CHECK_BUDGET_MS + SLACK_MS);
-      expect(turn.ms).toBeLessThanOrEqual(TURN_BUDGET_MS + 3 * SLACK_MS);
+      const connect = turn.readMs > READ_BUDGET_MS + SLACK_MS || turn.checkMs.some((ms) => ms > CHECK_BUDGET_MS + SLACK_MS) ? CONNECT_MS : 0;
+      expect(turn.ms).toBeLessThanOrEqual(TURN_BUDGET_MS + connect + 3 * SLACK_MS);
       expect(turn.context.text).toBe(good.text);
       expect(turn.context.source).toBe("fallback");
       expect(turn.context.ageMs).toBeGreaterThan(0);

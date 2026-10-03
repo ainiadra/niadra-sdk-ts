@@ -97,6 +97,65 @@ describe("errors", () => {
   });
 });
 
+describe("opening a connection", () => {
+  it("gives a cold call the connect allowance once, then keeps the exact budget", async () => {
+    const server = new MockServer().on("POST /v1/context", { body: contextBody(), delay: 80 });
+    const niadra = makeClient(server, { strict: true, timeouts: { context: 30, connect: 200 }, keepAliveMs: 60_000 });
+    expect((await niadra.context({ subject: marina, conversation_id: "c1" })).text).not.toBe("");
+    const late = await niadra.context({ subject: marina, conversation_id: "c2" }).catch((e: unknown) => e);
+    expect(late).toBeInstanceOf(NiadraTimeoutError);
+    expect(late).toMatchObject({ timeoutMs: 30 });
+  });
+
+  it("gives the allowance again once the connection was idle past the keepalive", async () => {
+    const server = new MockServer().on("POST /v1/context", { body: contextBody(), delay: 80 });
+    const niadra = makeClient(server, { strict: true, timeouts: { context: 30, connect: 200 }, keepAliveMs: 20 });
+    await niadra.context({ subject: marina, conversation_id: "c1" });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect((await niadra.context({ subject: marina, conversation_id: "c2" })).text).not.toBe("");
+  });
+
+  it("gives the allowance once in an outage, not on every turn", async () => {
+    const server = new MockServer().on("POST /v1/context", { body: contextBody(), delay: 80 });
+    const niadra = makeClient(server, { strict: true, timeouts: { context: 30, connect: 200 }, keepAliveMs: 20 });
+    await niadra.context({ subject: marina, conversation_id: "c1" });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    server.on("POST /v1/context", { body: contextBody(), delay: 1_000 });
+    const first = Date.now();
+    await niadra.context({ subject: marina, conversation_id: "c2" }).catch(() => undefined);
+    expect(Date.now() - first).toBeGreaterThanOrEqual(200);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const second = Date.now();
+    const late = await niadra.context({ subject: marina, conversation_id: "c3" }).catch((e: unknown) => e);
+    expect(Date.now() - second).toBeLessThan(150);
+    expect(late).toMatchObject({ timeoutMs: 30 });
+  });
+
+  it("leaves a batch of the background queue with its own timeout", async () => {
+    const slow = (async (_url: string, init: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(new Response("{}", { status: 200 })), 100);
+        init.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      })) as typeof fetch;
+    const t = new Transport({
+      baseURL: "https://api.example.test",
+      apiKey: KEY,
+      fetch: slow,
+      defaultHeaders: {},
+      logger: spyLogger(),
+      coldAllowanceMs: 1000,
+      keepAliveMs: 4000,
+    });
+    const batch = { kind: "write", maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1 } as const;
+    const error = await t.request({ method: "POST", path: "/v1/batch", body: {}, timeoutMs: 50, retry: batch }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(NiadraTimeoutError);
+    expect(error).toMatchObject({ timeoutMs: 50 });
+  });
+});
+
 describe("time budgets", () => {
   it("aborts a read that runs past its timeout", async () => {
     const server = new MockServer().on("POST /v1/context", { body: contextBody(), delay: 200 });
