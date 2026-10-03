@@ -2,6 +2,7 @@ import { Sources, backingOf, check, problems } from "./backing.js";
 import type { BackingReport, UnbackedValue } from "./backing.js";
 import { renderSuffix } from "./context.js";
 import type { ContextResult } from "./context.js";
+import type { Logger } from "./logger.js";
 import type { ContextResponse, PackGuard } from "./types/context.js";
 import type { Backing, ContextStamp, SpeakerRef } from "./types/events.js";
 import type { Speaker } from "./types/vocabulary.js";
@@ -35,6 +36,7 @@ export class SessionState {
   /** The guards of the last read: they hold the answers to the turn they were written for. */
   private guards = new Map<string, PackGuard>();
   private lastReport: BackingReport | null = null;
+  private unlinkedSaid = false;
 
   /** After the first pack, every read also asks what changed since. */
   get wantsDelta(): boolean {
@@ -69,6 +71,21 @@ export class SessionState {
     const absorbed = response ? withDeltas(result, response, this.deltas) : result;
     this.last = absorbed;
     return absorbed;
+  }
+
+  /**
+   * Once per session: the read named an organization (`about`) with no active link to the subject, so it went
+   * on with the subject's own memory, never the organization's.
+   */
+  sayUnlinked(result: ContextResult, logger: Logger): ContextResult {
+    if (result.response?.about_unlinked && !this.unlinkedSaid) {
+      this.unlinkedSaid = true;
+      logger.warn(
+        "`about` names an organization with no active link to the subject; the context is the subject's own, " +
+          "without that organization's memory. Create the link to read it.",
+      );
+    }
+    return result;
   }
 
   /** The last backing check of an agent's answer. */

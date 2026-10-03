@@ -4,6 +4,32 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-03
+
+### Added
+
+- `open(id, { about })`: with the person bound in `subject`, also an item of the organization they act for that
+  their view shows (the pack's account block). `tools()` bound with `about` passes it, so the kit reaches what
+  the pack shows.
+- `about_unlinked` on `ContextResponse`, `SearchResponse` and `TimelineResponse`: `about` named an organization
+  with no active link to the subject, and the read went on with the subject's own memory. A conversation or a
+  task warns once through its `logger`.
+- `explain(error)`: an API refusal for a log line, with its code, detail and request id. A coordination check
+  takes the client's `logger`, and `HistoryItemKind` includes `system_event`.
+
+### Changed
+
+- An API error's `message` ends with the request id: `422 invalid_input: <detail> (request <id>)`.
+- `govIdHmac` and `orgRegistryHmac` take the document number itself; the space keeps only a keyed hash of it.
+- Idle connections are kept for `keepAliveMs` between turns, and a call that has to open a connection gets
+  `timeouts.connect` (1,000 ms by default) on top of its method's budget, once per cold period, so a first read
+  after idle no longer times out on the TLS handshake.
+- A coordination check the API refuses (400, 401, 403 or 422) is `invalid_request`, never `unchecked`: an
+  outbound contact is deferred and an inbound one allowed, and `strict` throws. Refusals of background writes
+  (the outbox, turn records) log the problem's detail and request id.
+- The tool definitions follow the server's: the timeline tool says it also lists the open items, facts,
+  patterns or objects `filters.item_kinds` names.
+
 ## [0.9.1] - 2026-10-02
 
 ### Changed

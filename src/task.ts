@@ -176,12 +176,12 @@ export class Task {
     if (query) {
       const answered = await this.client.context({ ...params, query }, requestOptions);
       this.features.observe(answered);
-      return this.state.observe(answered);
+      return this.state.observe(this.state.sayUnlinked(answered, this.logger));
     }
     if (this.state.wantsDelta) params.delta = true;
     const result = await this.client.context(params, requestOptions);
     this.features.observe(result);
-    return this.state.observe(this.state.absorb(result));
+    return this.state.observe(this.state.sayUnlinked(this.state.absorb(result), this.logger));
   }
 
   /**
