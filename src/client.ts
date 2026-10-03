@@ -82,7 +82,7 @@ import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./
 import type { Route } from "./routes.js";
 import { READ_POLICY, Transport } from "./transport.js";
 import { BLOCK_RECHECK_AFTER_MS, MIN_PREFETCH, turnText } from "./turns.js";
-import { VoiceLines, compose, rttWarnings, wordsOf } from "./voice.js";
+import { VoiceLines, budgetWarnings, compose, rttWarnings, wordsOf } from "./voice.js";
 import type { TurnRead, VoiceLine } from "./voice.js";
 import type { RequestSpec, RetryPolicy } from "./transport.js";
 import type { Handle, ObjectRef } from "./types/common.js";
@@ -198,6 +198,10 @@ export class Niadra {
   readonly enabled: boolean;
   private readonly core: Core | null;
   private readonly timeouts: Timeouts;
+  /** The read budgets the caller left at their defaults: they take the measured round trip on top. */
+  private readonly defaultReads: ReadonlySet<"context" | "navigation">;
+  private voiceStarted = false;
+  private voiceWarned = false;
   private readonly strict: boolean;
   /** Where the client reports what it swallows in fail-open mode. */
   readonly logger: Logger;
@@ -243,6 +247,7 @@ export class Niadra {
     this.strict = options.strict ?? false;
     this.logger = options.logger ?? consoleLogger;
     this.timeouts = { ...DEFAULT_TIMEOUTS, ...options.timeouts };
+    this.defaultReads = new Set((["context", "navigation"] as const).filter((name) => options.timeouts?.[name] === undefined));
     this.voice = new VoiceLines(
       options.voice === false ? { ...DEFAULT_VOICE, enabled: false } : { ...DEFAULT_VOICE, ...options.voice },
     );
@@ -275,8 +280,8 @@ export class Niadra {
     this.states = new AgentStates(
       this.outbox,
       {
-        read: (scope, agent) => this.api.readAgentState({ scope, agent }, { timeout: this.timeouts.navigation }),
-        write: (write) => this.api.writeAgentState(write, { timeout: this.timeouts.navigation }),
+        read: (scope, agent) => this.api.readAgentState({ scope, agent }, { timeout: this.readBudget("navigation") }),
+        write: (write) => this.api.writeAgentState(write, { timeout: this.readBudget("navigation") }),
       },
       this.logger,
     );
@@ -304,6 +309,9 @@ export class Niadra {
     this.core = setup;
     this.enabled = true;
     this.disabledReason = null;
+    // The round trip to the region, measured now: the default read budgets take it on top, and the
+    // connection it opens is warm for the first read.
+    this.probe(setup);
     if (options.flushOnExit ?? true) this.unregisterExit = registerExitFlush(this);
   }
 
@@ -392,7 +400,7 @@ export class Niadra {
 
   private readContext(core: Core, params: ContextParams, request: ContextRequest, options: ContextOptions): Promise<ContextResult> {
 
-    const timeout = options.timeout ?? (request.view === "voice" ? this.timeouts.contextVoice : this.timeouts.context);
+    const timeout = options.timeout ?? (request.view === "voice" ? this.timeouts.contextVoice : this.readBudget("context"));
     // The read's own `query`, else the customer's turn: either picks the slots, never the pack.
     const { query: own, ...pinned } = request;
     const query = turnText(own ?? params.turn);
@@ -410,7 +418,7 @@ export class Niadra {
    */
   async profile(): Promise<SdkProfile | null> {
     if (!this.core) return null;
-    return this.profileCache.refresh(() => this.api.sdkProfile({ timeout: this.timeouts.navigation }));
+    return this.profileCache.refresh(() => this.api.sdkProfile({ timeout: this.readBudget("navigation") }));
   }
 
   /**
@@ -438,7 +446,7 @@ export class Niadra {
    */
   async mayContact(handle: Handle, purpose: string, options: { channel?: string; failOpen?: boolean } = {}): Promise<boolean> {
     if (this.core && this.suppressions.due()) {
-      const read = this.readSuppressions(this.suppressions.held ? this.timeouts.write : this.timeouts.navigation);
+      const read = this.readSuppressions(this.suppressions.held ? this.timeouts.write : this.readBudget("navigation"));
       if (!this.suppressions.held) await read;
     }
     const checkOptions: { channel?: string | null; failOpen?: boolean } = { channel: options.channel ?? null };
@@ -449,8 +457,8 @@ export class Niadra {
   private readSuppressions(budgetMs: number): Promise<void> {
     return this.suppressions.read(
       {
-        salt: () => this.api.suppressionSalt({ timeout: this.timeouts.navigation }),
-        page: (cursor, limit) => this.api.suppressions({ cursor, limit }, { timeout: this.timeouts.navigation }),
+        salt: () => this.api.suppressionSalt({ timeout: this.readBudget("navigation") }),
+        page: (cursor, limit) => this.api.suppressions({ cursor, limit }, { timeout: this.readBudget("navigation") }),
       },
       budgetMs,
     );
@@ -537,6 +545,8 @@ export class Niadra {
 
   /** What a conversation or a task needs of its client for the agent features. */
   get agentHost(): AgentHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the getter below reads the budget when used
+    const client = this;
     return {
       recorder: this.turns,
       coordinator: this.coordinator,
@@ -551,7 +561,9 @@ export class Niadra {
       verifyClaim: (ref, field, value, options) => this.verifyClaim(ref, field, value, options),
       enabled: this.enabled,
       strict: this.strict,
-      navigationMs: this.timeouts.navigation,
+      get navigationMs() {
+        return client.readBudget("navigation");
+      },
     };
   }
 
@@ -580,7 +592,7 @@ export class Niadra {
     if (!cache) return false;
     const key = cacheKey(request);
     const line = this.voice.line(cacheScope(request) ?? "");
-    this.probe(core);
+    this.startVoice(core);
     line.request = request;
     if (!cache.has(key) && line.inFlight().length === 0) {
       this.voiceRead(core, cache, line, key, request, null, this.timeouts.contextVoiceStart);
@@ -735,14 +747,14 @@ export class Niadra {
       if (!params.query || params.query.length > 2000) {
         throw new NiadraValidationError("query must be 1 to 2000 characters");
       }
-      return this.readSpec("POST", "/v1/history/search", params, this.timeouts.navigation, options);
+      return this.readSpec("POST", "/v1/history/search", params, this.readBudget("navigation"), options);
     });
   }
 
   /** The customer's history, newest first, one line per item, paginated by cursor. */
   async timeline(params: TimelineRequest, options: RequestOptions = {}): Promise<Result<TimelineResponse>> {
     return this.navigate(() =>
-      this.readSpec("POST", "/v1/history/timeline", params, this.timeouts.navigation, options),
+      this.readSpec("POST", "/v1/history/timeline", params, this.readBudget("navigation"), options),
     );
   }
 
@@ -759,7 +771,7 @@ export class Niadra {
       if (params.about) body.about = params.about;
       if (params.verification) body.verification = params.verification;
       if (params.conversation_id) body.conversation_id = params.conversation_id;
-      return this.readSpec("POST", "/v1/history/open", body, this.timeouts.navigation, options);
+      return this.readSpec("POST", "/v1/history/open", body, this.readBudget("navigation"), options);
     });
   }
 
@@ -772,7 +784,7 @@ export class Niadra {
    * const { data: invoice } = await niadra.objectState("invoice:erp:0823");
    */
   async objectState(object: ObjectRef | string, options: RequestOptions = {}): Promise<Result<ObjectRead>> {
-    return this.navigate(() => this.readSpec("GET", objectPath(object), undefined, this.timeouts.navigation, options));
+    return this.navigate(() => this.readSpec("GET", objectPath(object), undefined, this.readBudget("navigation"), options));
   }
 
   /**
@@ -790,7 +802,7 @@ export class Niadra {
         throw new NiadraValidationError("limit must be between 1 and 100");
       }
       const path = `${objectPath(object)}/timeline`;
-      const spec = this.readSpec("GET", path, undefined, this.timeouts.navigation, options);
+      const spec = this.readSpec("GET", path, undefined, this.readBudget("navigation"), options);
       spec.query = { cursor: params.cursor, limit: String(limit) };
       return spec;
     });
@@ -849,7 +861,7 @@ export class Niadra {
     const fresh = cache?.fresh(key);
     if (fresh) return blockResult(fresh, "cache");
 
-    const timeout = options.timeout ?? (params.view === "voice" ? this.timeouts.contextVoice : this.timeouts.context);
+    const timeout = options.timeout ?? (params.view === "voice" ? this.timeouts.contextVoice : this.readBudget("context"));
     const spec = this.readSpec("GET", "/v1/agent-memory/block", undefined, timeout, options);
     spec.query = {
       max_tokens: String(params.max_tokens ?? 300),
@@ -891,7 +903,7 @@ export class Niadra {
       if (params.limit !== undefined) body.limit = params.limit;
       if (params.conversation_id) body.conversation_id = params.conversation_id;
       if (params.task_id) body.task_id = params.task_id;
-      return this.readSpec("POST", "/v1/agent-memory/search", body, this.timeouts.navigation, options);
+      return this.readSpec("POST", "/v1/agent-memory/search", body, this.readBudget("navigation"), options);
     });
     return result.error ? result : { data: result.data.notes, error: null };
   }
@@ -1402,8 +1414,34 @@ export class Niadra {
       const rtt = Math.min(...samples);
       this.voice.rtt = rtt;
       this.logger.debug(`round trip to the region ${Math.round(rtt)} ms`);
-      for (const warning of rttWarnings(rtt, this.timeouts)) this.logger.warn(warning);
+      const explicit = (["context", "navigation"] as const).filter((name) => !this.defaultReads.has(name));
+      for (const warning of budgetWarnings(rtt, this.timeouts, explicit)) this.logger.warn(warning);
+      if (this.voiceStarted) this.warnVoice();
     })();
+  }
+
+  /**
+   * A read budget: one the caller left at its default is what the API may take, and the measured round trip
+   * to the region goes on top, so an agent far from the region (Sao Paulo, 170 ms from us-east-2) is not
+   * timed out by the network; one the caller set is a ceiling.
+   */
+  private readBudget(name: "context" | "navigation"): number {
+    const rtt = this.voice.rtt;
+    return rtt !== null && this.defaultReads.has(name) ? this.timeouts[name] + rtt : this.timeouts[name];
+  }
+
+  /** The client reads in voice: the voice budgets' warnings matter from now on. */
+  private startVoice(core: Core): void {
+    this.voiceStarted = true;
+    this.probe(core);
+    this.warnVoice();
+  }
+
+  private warnVoice(): void {
+    const rtt = this.voice.rtt;
+    if (this.voiceWarned || rtt === null) return;
+    this.voiceWarned = true;
+    for (const warning of rttWarnings(rtt, this.timeouts)) this.logger.warn(warning);
   }
 
   /**
@@ -1422,7 +1460,7 @@ export class Niadra {
     const key = cacheKey(request);
     const deadline = Date.now() + timeout;
     const line = this.voice.line(scope);
-    this.probe(core);
+    this.startVoice(core);
     line.request = request;
     const words = wordsOf(query);
     const background = this.timeouts.prefetch;

@@ -32,6 +32,11 @@ export type Reply = ReplySpec | Error | ((request: Recorded) => ReplySpec | Erro
  */
 export class MockServer {
   readonly calls: Recorded[] = [];
+  /**
+   * The round trip probes every client sends when it starts (`GET /healthz`), answered here and kept out of
+   * `calls`, unless a test routes `GET /healthz` itself.
+   */
+  readonly probes: Recorded[] = [];
   private readonly routes = new Map<string, Reply[]>();
 
   on(route: string, ...replies: Reply[]): this {
@@ -54,6 +59,10 @@ export class MockServer {
       body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
     };
     if (init.body instanceof Uint8Array) recorded.bytes = init.body;
+    if (recorded.method === "GET" && recorded.path === "/healthz" && !this.routes.has("GET /healthz")) {
+      this.probes.push(recorded);
+      return new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     this.calls.push(recorded);
 
     const queue = this.routes.get(`${recorded.method} ${recorded.path}`);

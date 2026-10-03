@@ -183,6 +183,26 @@ export function compose(body: ContextResponse, read: TurnRead | null): ContextRe
 }
 
 /** What to warn about once the round trip to the region is known. Log-safe: numbers only. */
+/** What a read needs on top of the round trip at the least: the API's own time (20 to 40 ms at its p95). */
+export const RTT_MARGIN_MS = 50;
+
+/**
+ * The read budgets the caller set below the round trip plus `RTT_MARGIN_MS`: every such read would run out of
+ * time. Log-safe: numbers only.
+ */
+export function budgetWarnings(rttMs: number, timeouts: Timeouts, explicit: readonly ("context" | "navigation")[]): string[] {
+  const ms = Math.round(rttMs);
+  return [...explicit]
+    .sort()
+    .filter((name) => timeouts[name] < rttMs + RTT_MARGIN_MS)
+    .map(
+      (name) =>
+        `timeouts.${name} (${timeouts[name]} ms) is shorter than the round trip to the region (${ms} ms) plus ` +
+        `${RTT_MARGIN_MS} ms for the API: its reads will run out of time. Leave it at its default, which adds the ` +
+        "measured round trip, or raise it",
+    );
+}
+
 export function rttWarnings(rttMs: number, timeouts: Timeouts): string[] {
   const ms = Math.round(rttMs);
   const found: string[] = [];

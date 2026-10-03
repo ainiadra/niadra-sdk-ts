@@ -13,8 +13,10 @@ function space() {
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-    calls.push({ path: url.pathname, body });
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { "content-type": "application/json" } });
+    // The round trip probe every client sends when it starts: answered, not counted.
+    if (url.pathname === "/healthz") return json({ status: "ok" });
+    calls.push({ path: url.pathname, body });
     if (url.pathname === "/v1/context") {
       return json({ not_modified: false, text: PACK, variables: {}, version: "1", etag: "e1", coverage: [], verification: { requested: "V2", effective: "V2" }, withheld: 0, live: [], live_complete: true, timing: {}, path: "t0", degraded: false });
     }
