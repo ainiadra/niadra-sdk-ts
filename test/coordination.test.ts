@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { NiadraContactTokenError, Niadra, silentLogger } from "../src/index.js";
+import { NiadraAPIError, NiadraContactTokenError, Niadra, silentLogger } from "../src/index.js";
 import type { Handle } from "../src/index.js";
 import { Cell, SPACE } from "./support/cell.js";
-import { KEY, marina } from "./helpers.js";
+import { KEY, marina, spyLogger } from "./helpers.js";
 
 const OTHER: Handle = { type: "phone_e164", value: "+5511998765432" };
 const GATEWAY_KEY = new Uint8Array(32).fill(107);
@@ -49,6 +49,42 @@ describe("coordination in the agent's process", () => {
     const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-2" });
     const result = await conversation.check("offer", { purpose, direction, ...(effectKey ? { effectKey } : {}) });
     expect([result.decision, result.reasons, result.contact_token]).toEqual([decision, [reason], undefined]);
+  });
+
+  it.each([
+    ["outbound", "defer"],
+    ["inbound", "allow"],
+  ] as const)("takes a refused %s check for the integration's error, never unchecked", async (direction, decision) => {
+    const cell = new Cell();
+    cell.features.add("coordination");
+    const logger = spyLogger();
+    const niadra = new Niadra({ apiKey: KEY, fetch: cell.fetch, logger, flushOnExit: false, turns: { intervalMs: 3_600_000 } });
+    cell.failNext("/v1/coordination/check", 422);
+    const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-9" });
+    const result = await conversation.check("deadline_reminder", { purpose: "legal", direction });
+    expect([result.decision, result.reasons, result.valid_for_s]).toEqual([decision, ["invalid_request"], 0]);
+    expect(logger.warn.mock.calls.flat().join("\n")).toContain("the coordination check was refused: 422");
+  });
+
+  it("throws a refused check when strict", async () => {
+    const cell = new Cell();
+    cell.features.add("coordination");
+    const niadra = new Niadra({ apiKey: KEY, fetch: cell.fetch, logger: silentLogger, flushOnExit: false, strict: true });
+    cell.failNext("/v1/coordination/check", 422);
+    const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-10" });
+    await expect(conversation.check("deadline_reminder", { purpose: "legal" })).rejects.toBeInstanceOf(NiadraAPIError);
+  });
+
+  it("names the route and the reason of a declaration the API refuses", async () => {
+    const cell = new Cell();
+    cell.features.add("coordination");
+    const logger = spyLogger();
+    const niadra = new Niadra({ apiKey: KEY, fetch: cell.fetch, logger, flushOnExit: false, turns: { intervalMs: 3_600_000 } });
+    cell.failNext("/v1/coordination/declare", 422);
+    const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-11", agent_id: "closing" });
+    conversation.declare.effect("farewell:c-11", "done", 1);
+    await niadra.flush();
+    expect(logger.warn.mock.calls.flat().join("\n")).toContain("POST /v1/coordination/declare was refused: 422");
   });
 
   it("holds the local opt-out with Niadra down", async () => {

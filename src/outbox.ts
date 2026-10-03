@@ -8,7 +8,7 @@
  * write that went through hears the answer. Putting a write never waits. Past `capacity` writes the oldest go.
  */
 
-import { NiadraAPIError } from "./errors.js";
+import { explain } from "./errors.js";
 import type { Logger } from "./logger.js";
 import { isTransient } from "./transport.js";
 
@@ -17,6 +17,8 @@ const MAX_PAUSE_MS = 60_000;
 
 export interface Write {
   send(): Promise<unknown>;
+  /** `POST /v1/coordination/declare`: what a refusal names in the log. */
+  route?: string;
   settled?: (answer: unknown, error: unknown) => void;
 }
 
@@ -98,7 +100,7 @@ export class Outbox {
         return false;
       }
       this.writes.shift();
-      this.logger.warn(`a write was refused (${error instanceof NiadraAPIError ? error.code : String(error)})`);
+      this.logger.warn(`${write.route ?? "a write"} was refused: ${explain(error)}`);
       this.settle(write, undefined, error);
       return true;
     }

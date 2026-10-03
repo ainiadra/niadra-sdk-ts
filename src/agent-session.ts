@@ -11,7 +11,7 @@ import { ClaimCheck } from "./capture/check.js";
 import { currentTurn } from "./capture/frame.js";
 import type { TurnFrame, TurnKind } from "./capture/frame.js";
 import type { OpenTurn, TurnRecorder } from "./capture/recorder.js";
-import { CHECK_BUDGET_MS, Checked, Declarations, checkRequest, claimed } from "./coordination/client.js";
+import { CHECK_BUDGET_MS, Checked, Declarations, checkRequest, claimed, refused } from "./coordination/client.js";
 import type { CheckOptions, Claimed, Coordinator } from "./coordination/client.js";
 import type { ContextResult } from "./context.js";
 import { toObjectRef } from "./handles.js";
@@ -33,6 +33,8 @@ export interface AgentHost {
   claim(request: ClaimRequest, timeoutMs: number): Promise<OwnershipClaim>;
   verifyClaim(ref: StateRef | string, field: string, value: unknown, options: { subject?: Handle; budgetMs?: number }): Promise<ClaimVerdict>;
   enabled: boolean;
+  /** Throw what the API refused instead of falling back. */
+  strict: boolean;
   navigationMs: number;
 }
 
@@ -155,6 +157,7 @@ export class AgentSession {
     try {
       return this.host.coordinator.decided(await this.host.check(request, options.timeoutMs ?? CHECK_BUDGET_MS), request, this.checked);
     } catch (error) {
+      if (this.host.strict && refused(error)) throw error;
       return this.host.coordinator.failed(request, options.failOpen, error);
     }
   }

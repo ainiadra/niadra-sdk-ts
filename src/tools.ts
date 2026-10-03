@@ -89,7 +89,7 @@ export const AGENT_MEMORY_TOOL_NAMES = {
   remember: "remember",
 } as const;
 
-const ITEM_KINDS: HistoryItemKind[] = ["episode", "fact", "open_item", "action", "object", "trait"];
+const ITEM_KINDS: HistoryItemKind[] = ["episode", "fact", "open_item", "action", "object", "trait", "system_event"];
 const NOTE_KINDS: AgentNoteKind[] = ["procedure", "tool_note", "process_note", "pitfall"];
 
 /**
@@ -102,7 +102,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     "type": "function",
     "function": {
       "name": "search_customer_history",
-      "description": "Search everything that already happened with this customer: past conversations, promises, agent actions, orders and invoices. Use it when the customer refers to something earlier or asks whether a problem happened before. Do not call it when the answer is already in the context block, including its 'Do histórico' line, which already counts recurrences. Returns short items with date, channel and outcome, plus a recurrence count. Open one with open_history_item.",
+      "description": "Search everything that already happened with this customer: past conversations, promises, agent actions, orders and invoices. Use it when the customer refers to something earlier or asks whether a problem happened before. Do not call it when the answer is already in the context block, including its 'Histórico' line, which already counts recurrences. Returns short items with date, channel and outcome, plus a recurrence count. Open a conversation (`episode:`) or an object (`object:`) with open_history_item; the other items are complete as listed.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -146,7 +146,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
                     "open_item",
                     "action",
                     "object",
-                    "trait"
+                    "trait",
+                    "system_event"
                   ]
                 }
               },
@@ -221,7 +222,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
                     "open_item",
                     "action",
                     "object",
-                    "trait"
+                    "trait",
+                    "system_event"
                   ]
                 }
               },
@@ -240,7 +242,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
     "type": "function",
     "function": {
       "name": "open_history_item",
-      "description": "Open one conversation or business object returned by search_customer_history or get_customer_timeline: what was asked, what was promised and by whom, the outcome and what memory came from it. Use it only after a search or timeline pointed to the item.",
+      "description": "Open one conversation (`episode:`) or business object (`object:`) returned by search_customer_history or get_customer_timeline: what was asked, what was promised and by whom, the outcome and what memory came from it. Actions, events, facts and promises are complete as listed and do not open. Use it only after a search or timeline pointed to the item.",
       "parameters": {
         "type": "object",
         "properties": {

@@ -3,7 +3,7 @@ import { Niadra, TurnFrame, currentTurn, silentLogger, tool } from "../src/index
 import type { ClientOptions } from "../src/index.js";
 import { TurnQueue } from "../src/capture/queue.js";
 import { Cell } from "./support/cell.js";
-import { KEY, marina } from "./helpers.js";
+import { KEY, marina, spyLogger } from "./helpers.js";
 
 type Json = Record<string, any>;
 
@@ -19,6 +19,19 @@ const stock = tool("stock", async (sku: string) => ({ sku, qty: 3 }), {
 });
 
 describe("turn records", () => {
+  it("say which field and why when the API refuses them, never the value", async () => {
+    const cell = new Cell();
+    const logger = spyLogger();
+    const niadra = client(cell, { logger });
+    cell.failNext("/v1/turns", 422);
+    const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-40", agent_id: "store" });
+    await conversation.turn(async () => {
+      quote("ouro");
+    });
+    await niadra.flush();
+    expect(logger.warn.mock.calls.flat().join("\n")).toContain("1 turn records were refused: 422");
+  });
+
   it("record a turn's read, its tools and what the agent said", async () => {
     const cell = new Cell();
     const niadra = client(cell);

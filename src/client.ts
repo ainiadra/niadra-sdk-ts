@@ -252,8 +252,11 @@ export class Niadra {
       return contract === null ? [] : checkTurn(frame, contract, this.internalText);
     };
     this.outbox = new Outbox(this.logger);
-    this.coordinator = new Coordinator(this.outbox, this.suppressions, (body, key) =>
-      this.api.declare(body as unknown as DeclareRequest, { idempotency_key: key }),
+    this.coordinator = new Coordinator(
+      this.outbox,
+      this.suppressions,
+      (body, key) => this.api.declare(body as unknown as DeclareRequest, { idempotency_key: key }),
+      this.logger,
     );
     this.states = new AgentStates(
       this.outbox,
@@ -533,6 +536,7 @@ export class Niadra {
       claim: (request, timeoutMs) => this.api.claim(request, {}, { timeout: timeoutMs }),
       verifyClaim: (ref, field, value, options) => this.verifyClaim(ref, field, value, options),
       enabled: this.enabled,
+      strict: this.strict,
       navigationMs: this.timeouts.navigation,
     };
   }

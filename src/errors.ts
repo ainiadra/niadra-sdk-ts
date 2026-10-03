@@ -108,3 +108,14 @@ export function toNiadraError(error: unknown): NiadraError {
   const message = error instanceof Error ? error.message : String(error);
   return new NiadraError(message, { cause: error });
 }
+
+/**
+ * A refusal for a log line: `422 invalid_input: unknown purpose ... (request <id>)` for an API error, the
+ * error's name otherwise. The API's detail names fields and rules, never the values sent.
+ */
+export function explain(error: unknown): string {
+  if (!(error instanceof NiadraAPIError)) return error instanceof Error ? error.name : String(error);
+  const detail = error.problem?.detail?.trim();
+  const said = `${error.status} ${error.code}${detail ? `: ${detail.slice(0, 300)}` : ""}`;
+  return error.requestId ? `${said} (request ${error.requestId})` : said;
+}
