@@ -28,7 +28,7 @@ describe("keep-warm", () => {
     const niadra = makeClient(server);
     await vi.advanceTimersByTimeAsync(10);
     const probes = server.probes.length; // the round trip probe at start
-    const conversation = niadra.conversation({ subject: marina, conversation_id: "c-warm" });
+    const conversation = niadra.conversation({ subject: marina, channel: "chat", conversation_id: "c-warm" });
     await vi.advanceTimersByTimeAsync(100_000);
     expect(server.probes.length).toBe(probes + 1);
     await vi.advanceTimersByTimeAsync(100_000);
@@ -45,7 +45,7 @@ describe("keep-warm", () => {
     const niadra = makeClient(server, { keepWarm: false });
     await vi.advanceTimersByTimeAsync(10);
     const probes = server.probes.length;
-    const conversation = niadra.conversation({ subject: marina, conversation_id: "c-cold" });
+    const conversation = niadra.conversation({ subject: marina, channel: "chat", conversation_id: "c-cold" });
     await vi.advanceTimersByTimeAsync(300_000);
     expect(server.probes.length).toBe(probes);
     expect(conversation.id).toBe("c-cold");
