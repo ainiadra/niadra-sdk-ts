@@ -226,3 +226,91 @@ export interface ContextUseEntry {
    */
   slots: Record<string, unknown>[];
 }
+
+export type LinkMethod = "system_import" | "co_occurrence" | "declared" | "login";
+
+/** Body of `POST /v1/identity/links`: a person who acts for an organization (an account or a partner). */
+export interface LinkRequest {
+  person: Handle;
+  organization: Handle;
+  /** buyer, driver, broker, technical_contact, owner... */
+  role: string;
+  /** Whether the person reads what the organization's other contacts said; needs the `admin` scope. */
+  can_see_contacts?: boolean;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  method?: LinkMethod;
+}
+
+/** A person-organization link: from `valid_from` until `valid_to` (open when absent). */
+export interface Link {
+  link_id: string;
+  person_handle_id: string;
+  org_handle_id: string;
+  role: string;
+  can_see_contacts: boolean;
+  valid_from: string;
+  valid_to?: string | null;
+}
+
+/** A rate with its 95% Wilson interval; `n` is the denominator, so a small sample gets a wide interval. */
+export interface ContextUseRate {
+  value: number;
+  low: number;
+  high: number;
+  n: number;
+}
+
+/** One group of the context-use report: the dimensions asked for, the counts and the rates. */
+export interface ContextUseBucket {
+  day?: string | null;
+  source_id?: string | null;
+  vendor?: string | null;
+  channel?: string | null;
+  view?: string | null;
+  experiment_group?: string | null;
+  sessions: number;
+  no_context: number;
+  deliveries: number;
+  not_measured: number;
+  late_deliveries: number;
+  deliveries_used: number;
+  questions: number;
+  repeated: number;
+  contradicted: number;
+  selection_misses: number;
+  transfers: number;
+  transfers_unread: number;
+  recontacts: number;
+  trimmed_deliveries: number;
+  tokens_saved: number;
+  answers_checked: number;
+  unbacked_values: number;
+  guard_violations: number;
+  unbacked_per_1000?: number | null;
+  usage_rate?: ContextUseRate | null;
+  repetition_rate?: ContextUseRate | null;
+  transfer_unread_rate?: ContextUseRate | null;
+  recontact_rate?: ContextUseRate | null;
+}
+
+/** `GET /v1/context-use`: how the agents used the context they read; the other blocks pass through as sent. */
+export interface ContextUseReport {
+  since: string;
+  until: string;
+  group_by: string[];
+  buckets: ContextUseBucket[];
+  [block: string]: unknown;
+}
+
+export type ContextUseDimension = "day" | "source_id" | "vendor" | "channel" | "view" | "experiment_group";
+
+export interface ContextUseParams {
+  since?: string;
+  until?: string;
+  group_by?: ContextUseDimension[];
+  source_id?: string;
+  channel?: string;
+  view?: string;
+  experiment_group?: string;
+}

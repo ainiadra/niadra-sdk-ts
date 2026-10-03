@@ -139,3 +139,68 @@ describe("uploadMedia()", () => {
     expect((await disabled.feedback({ subject: marina, action: "retract_fact" })).ok).toBe(false);
   });
 });
+
+describe("link() and endLink()", () => {
+  const acme = { type: "system_id", value: "ACC-9", scope: "crm", subject_kind: "account" } as const;
+  const linked = {
+    link_id: "0192f7a2-0000-7000-8000-000000000001",
+    person_handle_id: "0192f7a2-0000-7000-8000-000000000002",
+    org_handle_id: "0192f7a2-0000-7000-8000-000000000003",
+    role: "buyer",
+    can_see_contacts: false,
+    valid_from: "2026-10-03T00:00:00Z",
+  };
+
+  it("links a person to their company with an identity:link key, then ends the link", async () => {
+    const server = new MockServer()
+      .on("POST /v1/identity/links", { status: 201, body: linked })
+      .on(`POST /v1/identity/links/${linked.link_id}/end`, { body: { ...linked, valid_to: "2026-10-04T00:00:00Z" } });
+    const niadra = makeClient(server);
+    const { data } = await niadra.link({ person: marina, organization: acme, role: "buyer", idempotency_key: "lk-1" });
+    expect(data?.role).toBe("buyer");
+    expect(server.calls[0]!.body).toEqual({
+      person: marina,
+      organization: acme,
+      role: "buyer",
+      can_see_contacts: false,
+      method: "system_import",
+    });
+    expect(server.calls[0]!.headers["idempotency-key"]).toBe("lk-1");
+    const ended = await niadra.endLink(linked.link_id);
+    expect(ended.data?.valid_to).toBe("2026-10-04T00:00:00Z");
+    expect(server.calls[1]!.body).toEqual({});
+    expect(server.calls[1]!.headers["idempotency-key"]).toBeTruthy();
+  });
+
+  it("fails open, and throws in strict mode", async () => {
+    const server = new MockServer().on("POST /v1/identity/links", problem(403, "scope_missing"));
+    const lenient = await makeClient(server).link({ person: marina, organization: acme, role: "buyer" });
+    expect(lenient.data).toBeNull();
+    await expect(
+      makeClient(server, { strict: true }).link({ person: marina, organization: acme, role: "buyer" }),
+    ).rejects.toBeInstanceOf(NiadraAPIError);
+  });
+});
+
+describe("contextUse()", () => {
+  it("reads the measurement report with its filters, the other blocks passing through", async () => {
+    const answer = {
+      since: "2026-09-26",
+      until: "2026-10-03",
+      group_by: ["source_id", "day"],
+      buckets: [{ source_id: "s-1", sessions: 42, no_context: 8, deliveries: 34, deliveries_used: 17 }],
+      claims: [{ source_id: "s-1" }],
+    };
+    const server = new MockServer().on("GET /v1/context-use", { body: answer });
+    const { data } = await makeClient(server).contextUse({ since: "2026-09-26", group_by: ["source_id", "day"], channel: "app" });
+    expect(data?.buckets[0]?.sessions).toBe(42);
+    expect(data?.claims).toEqual([{ source_id: "s-1" }]);
+    const url = server.calls[0]!.url;
+    expect(url.searchParams.getAll("group_by")).toEqual(["source_id", "day"]);
+    expect([url.searchParams.get("since"), url.searchParams.get("channel"), url.searchParams.get("until")]).toEqual([
+      "2026-09-26",
+      "app",
+      null,
+    ]);
+  });
+});
