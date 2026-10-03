@@ -37,6 +37,8 @@ export interface RequestSpec {
   retry: RetryPolicy;
   signal?: AbortSignal | undefined;
   headers?: Record<string, string> | undefined;
+  /** `false` for the SDK's own upkeep (the keep-warm ping): it is not the client's use. */
+  activity?: boolean;
 }
 
 /** Bytes for a pre-signed storage URL. The URL is the credential; nothing of the API's goes along. */
@@ -87,7 +89,11 @@ export class Transport {
   /** When the allowance was first given since the last answer; it holds for the calls of that moment only. */
   private grantedAt: number | undefined;
 
+  /** When the client last sent a request of its own (`RequestSpec.activity`), in epoch milliseconds. */
+  lastActivityAt: number | undefined;
+
   async request<T>(spec: RequestSpec): Promise<TransportResponse<T>> {
+    if (spec.activity !== false) this.lastActivityAt = Date.now();
     const budgeted = this.withAllowance(spec);
     return budgeted.retry.kind === "read"
       ? this.read<T>(budgeted, budgeted.retry)
