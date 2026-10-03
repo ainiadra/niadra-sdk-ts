@@ -14,7 +14,7 @@
  * - Any other error: the batch is counted and dropped.
  */
 
-import { NiadraAPIError, toNiadraError } from "../errors.js";
+import { NiadraAPIError, explain, toNiadraError } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { unref } from "../queue.js";
 import { isTransient } from "../transport.js";
@@ -222,8 +222,7 @@ export class TurnSender {
         return true;
       }
     }
-    const code = error instanceof NiadraAPIError ? error.code : toNiadraError(error).name;
-    this.recorder.rejected(batch.frames.length, [code]);
+    this.recorder.rejected(batch.frames.length, [explain(error)]);
     return true;
   }
 
@@ -232,7 +231,7 @@ export class TurnSender {
     this.resumeAt = 0;
     this.recorder.sent(answer.accepted, answer.duplicates);
     const again: TurnFrame[] = [];
-    const codes = new Set<string>();
+    const reasons = new Set<string>();
     let refused = 0;
     for (const error of answer.errors ?? []) {
       const frame = batch.frames[error.index];
@@ -243,11 +242,11 @@ export class TurnSender {
         again.push(frame);
       } else {
         refused++;
-        codes.add(error.code);
+        reasons.add(error.detail ? `${error.code}: ${error.detail.slice(0, 300)}` : error.code);
       }
     }
     if (again.length > 0) this.queue.requeue(again);
-    if (refused > 0) this.recorder.rejected(refused, [...codes]);
+    if (refused > 0) this.recorder.rejected(refused, [...reasons]);
   }
 }
 

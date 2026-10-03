@@ -20,12 +20,19 @@
  *   refuses without a token): `defer`, `unavailable`;
  * - any other purpose (`transactional`, `service`...): `allow`, `unchecked`, and the declaration says so.
  *
- * `failOpen` overrides the purpose's direction; a space that does not coordinate (404) holds nothing back.
+ * A check the API refuses (400, 401, 403 or 422: a purpose or channel the space does not declare, a key without the
+ * `coordinate` scope) is the integration's error, not an outage: an outbound contact gets `defer` with the reason
+ * `invalid_request` (an inbound message is never held: `allow`), the problem is logged with its request id, and
+ * `strict: true` throws it.
+ *
+ * `failOpen` overrides the purpose's direction when Niadra did not answer; a space that does not coordinate
+ * (404) holds nothing back.
  * Declarations (`conversation.declare`) leave in the background with an idempotency key and are sent again
  * until Niadra takes them; a turn records its decisions and the effects it reported.
  */
 
-import { NiadraAPIError } from "../errors.js";
+import { NiadraAPIError, explain } from "../errors.js";
+import type { Logger } from "../logger.js";
 import { uuidv7 } from "../ids.js";
 import type { Outbox } from "../outbox.js";
 import { replaying } from "../replay/playback.js";
@@ -33,6 +40,14 @@ import { currentTurn } from "../capture/frame.js";
 import type { Handle, ObjectRef } from "../types/common.js";
 import type { CheckRequest, CheckResult, OwnershipClaim } from "../types/coordination.js";
 import type { SuppressionCopy } from "./suppression.js";
+
+/** Statuses of a check the API refused as asked: the integration's error, never an outage. */
+export const REFUSED = new Set([400, 401, 403, 422]);
+
+/** Whether the API refused the check as asked (`REFUSED`). */
+export function refused(error: unknown): error is NiadraAPIError {
+  return error instanceof NiadraAPIError && REFUSED.has(error.status);
+}
 
 /** Purposes that wait when Niadra cannot decide; every other purpose goes, marked unchecked. */
 export const FAIL_CLOSED = new Set(["marketing", "retention", "collection"]);
@@ -91,9 +106,15 @@ export class Coordinator {
     private readonly outbox: Outbox,
     private readonly suppressions: SuppressionCopy,
     private readonly declareNow: (body: Record<string, unknown>, key: string) => Promise<unknown>,
+    private readonly logger?: Logger,
   ) {}
 
   async failed(request: CheckRequest, failOpen: boolean | undefined, error?: unknown): Promise<CheckResult> {
+    if (refused(error)) {
+      this.logger?.warn(`the coordination check was refused: ${explain(error)}`);
+      const decision = request.direction === "inbound" ? "allow" : "defer";
+      return recorded({ decision, decision_id: uuidv7(), reasons: ["invalid_request"], valid_for_s: 0 });
+    }
     const off = error instanceof NiadraAPIError && error.status === 404;
     const suppressed =
       request.subject != null && request.direction === "outbound"
@@ -119,7 +140,7 @@ export class Coordinator {
     if (who.subject) body.subject = who.subject;
     if (who.object) body.object = who.object;
     const key = uuidv7();
-    this.outbox.put({ send: () => this.declareNow(body, key) });
+    this.outbox.put({ send: () => this.declareNow(body, key), route: "POST /v1/coordination/declare" });
     return key;
   }
 }

@@ -171,9 +171,12 @@ export class TurnRecorder implements Submit {
     this.duplicates += duplicates;
   }
 
-  rejected(count: number, codes: readonly string[]): void {
+  /** `reasons`: the API's code and detail of each refusal (field paths and rules, never a value). */
+  rejected(count: number, reasons: readonly string[]): void {
     this.rejectedTurns += count;
-    this.logger.warn(`${count} turn records were refused (${[...codes].sort().join(", ")})`);
+    const shown = [...new Set(reasons)].sort();
+    const more = shown.length > 3 ? ` (and ${shown.length - 3} more)` : "";
+    this.logger.warn(`${count} turn records were refused: ${shown.slice(0, 3).join("; ")}${more}`);
   }
 
   /** The space does not record turns: these are dropped, and with `off` (a 404) recording stops a while. */

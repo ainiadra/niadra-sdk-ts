@@ -77,7 +77,8 @@ export type HistoryItemKind =
   | "open_item"
   | "action"
   | "object"
-  | "trait";
+  | "trait"
+  | "system_event";
 
 /**
  * The shape of the pack. Channel views (`voice`, `chat`) size it for the medium; `account`
