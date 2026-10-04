@@ -51,6 +51,35 @@ describe("timeline()", () => {
     expect(server.calls[0]!.body).toEqual({ subject: marina, cursor: "c1", limit: 10, filters: { since: "2026-01-01T00:00:00Z" } });
     expect(result.data).toEqual({ items: [], next_cursor: "c2", withheld: 1 });
   });
+
+  it("lists items by status, with what closed them and the item a merged one lives on in", async () => {
+    const resolved = {
+      id: "open_item:019a",
+      kind: "open_item",
+      text: "Credit invoice 0823 · kept on 22/09",
+      at: "2026-09-22T14:02:00Z",
+      outcome: "resolved",
+      object: { type: "invoice", namespace: "erp", id: "0823" },
+      expected_operation: "credit",
+      status: "resolved",
+      closed_at: "2026-09-22T14:06:00Z",
+      closed_by: { kind: "action", action_id: "a-1", event_id: "e-1", operation: "credit" },
+    };
+    const merged = { ...resolved, id: "open_item:019b", status: "merged", merged_into: "open_item:019a" };
+    const server = new MockServer().on("POST /v1/history/timeline", { body: { items: [resolved, merged], withheld: 0 } });
+    const result = await makeClient(server).timeline({
+      subject: marina,
+      filters: { item_kinds: ["open_item"], item_statuses: ["resolved", "merged"] },
+    });
+    expect(server.calls[0]!.body).toEqual({
+      subject: marina,
+      filters: { item_kinds: ["open_item"], item_statuses: ["resolved", "merged"] },
+    });
+    const [done, twin] = result.data!.items;
+    expect(done!.closed_by?.operation).toBe("credit");
+    expect(done!.closed_at).toBe("2026-09-22T14:06:00Z");
+    expect(twin!.merged_into).toBe("open_item:019a");
+  });
 });
 
 describe("open()", () => {
@@ -65,6 +94,15 @@ describe("open()", () => {
     expect(call.url.href).toBe(`${call.url.origin}/v1/history/open`);
     expect(call.body).toEqual({ item_id: "ep-1", verification: "V2", conversation_id: "+5511912345678" });
     expect(result.data?.summary).toBe("Visit missed");
+  });
+
+  it("opens an open item, and says the root a merged id answers for", async () => {
+    const server = new MockServer().on("POST /v1/history/open", {
+      body: { id: "open_item:019b", kind: "open_item", summary: "File the reply", promises: [], derived: [], timeline: [], status: "merged", merged_into: "open_item:019a" },
+    });
+    const result = await makeClient(server).open("open_item:019b", { verification: "V2" });
+    expect(result.data?.kind).toBe("open_item");
+    expect(result.data?.merged_into).toBe("open_item:019a");
   });
 
   it("sends the customer when given", async () => {
