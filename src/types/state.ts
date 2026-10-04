@@ -314,6 +314,55 @@ export interface FieldState {
   was?: PreviousValue | null;
 }
 
+/** One row of what people and agents said about an object, kept under the person who said it. */
+export interface SaidAbout {
+  attr?: string | null;
+  /**
+   * `shared` reaches every participant of the object, a customer-facing agent included; `internal`, the
+   * internal readers only.
+   */
+  audience: "shared" | "internal";
+  /** The handle of who said it; only in the Console. */
+  by?: string | null;
+  /** Always false: what was said may be reported as said, never stated as the record. */
+  claim_safe?: false;
+  /** The value said differs from the one recorded: a data issue was opened. */
+  diverges?: boolean;
+  due_at?: string | null;
+  expires_at?: string | null;
+  /** The fact, open item or instruction it is. */
+  id: string;
+  item_kind?: "promise" | "dispute" | "request" | null;
+  kind: "observation" | "item" | "instruction";
+  /**
+   * The field of the object's type an observation is about: shown beside the value the system of record
+   * holds, never in its place.
+   */
+  observes?: string | null;
+  overdue?: boolean;
+  predicate?: string | null;
+  /** The value the system of record holds for `observes`. */
+  recorded?: unknown;
+  /** The role of who said it on the object (`owner`, `participant`, `lawyer`). */
+  role?: string | null;
+  said_at: string;
+  strength?: "must" | "must_not" | null;
+  text: string;
+}
+
+/**
+ * What the owner and participants of an object said about it (memory bound to the object), newest
+ * first, at most 20 of each kind, as this reader may read it.
+ */
+export interface ObjectMemoryOut {
+  /** What must or must not be done about the object. */
+  instructions?: SaidAbout[];
+  /** Promises, disputes and requests about the object still open. */
+  items?: SaidAbout[];
+  /** Observations about the object. */
+  said?: SaidAbout[];
+}
+
 export interface OutcomeState {
   at?: string | null;
   final: boolean;
@@ -404,6 +453,8 @@ export interface ObjectRead {
   expired_by?: string[];
   fields?: Record<string, FieldState>;
   latches?: Record<string, string>;
+  /** What its owner and participants said about it, in a context read that serves a pack. */
+  memory?: ObjectMemoryOut | null;
   outcome?: OutcomeState | null;
   prohibitions?: string[];
   readings?: Record<string, ReadingResult>;

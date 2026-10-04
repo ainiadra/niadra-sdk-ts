@@ -145,7 +145,8 @@ export function render(
     const disputed = new Set(conflicts.map((c) => c.id));
     const allowed = new Set([
       ...hard
-        .filter((h) => SAID.has(h.source) && (h.scope === "turn" || h.scope === "session") && !disputed.has(h.id))
+        // An instruction about an object is in the block only while the read is about that object.
+        .filter((h) => SAID.has(h.source) && (h.scope === "turn" || h.scope === "session" || h.scope === "object") && !disputed.has(h.id))
         .map((h) => h.id),
       ...attributes.filter((a) => a.source === "stated" || a.source === "correction").map((a) => a.id),
     ]);

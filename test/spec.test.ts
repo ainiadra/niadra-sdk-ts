@@ -160,6 +160,7 @@ const blockKeys: Record<string, Record<string, true>> = {
     conflicts: true,
     exclude: true,
     hard: true,
+    instructions: true,
     precedence: true,
     relaxation_order: true,
     rendered: true,

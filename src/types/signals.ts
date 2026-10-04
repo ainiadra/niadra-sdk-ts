@@ -172,12 +172,41 @@ export interface HardConstraint {
   category?: string | null;
   expires_at?: string | null;
   id: string;
+  /** With `scope: object`, the object the instruction is about. */
+  object?: string | null;
   op: "in" | "not_in" | "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "between";
   origin: ConstraintOrigin;
   relax?: "never" | "ask";
-  scope: "turn" | "session" | "persistent";
+  scope: "turn" | "session" | "persistent" | "object";
   source: "stated" | "tool_args" | "correction";
   values: (boolean | number | string)[];
+}
+
+/**
+ * What someone said must or must not be done about an object the read is about: a task on the object,
+ * a read by the object, or a task view of its type. Hard, never relaxed, never inferred; one about a field
+ * of the object's type is also in `hard`, where a tool binding applies it.
+ */
+export interface ObjectInstruction {
+  /**
+   * Naming no object: the organization (its profile) it is about, a client the read is about, its own reads
+   * or a contact's read with `about`.
+   */
+  about?: string | null;
+  /** The field of the object's type it is about. */
+  attr?: string | null;
+  expires_at?: string | null;
+  /** The entry of `hard` that carries it for a tool, when `attr` is set. */
+  hard?: string | null;
+  id: string;
+  /** The object it is about. */
+  object?: string | null;
+  /** The role on the object of who said it (`owner`, `participant`, `lawyer`). */
+  role?: string | null;
+  said_at: string;
+  strength: "must" | "must_not";
+  /** As it was said, short: what a reader honors without a tool binding. */
+  text: string;
 }
 
 /** The block for one tool, through its bindings (`constraints.v0`, rendering). */
@@ -236,6 +265,8 @@ export interface ConstraintsBlock {
   conflicts?: Conflict[];
   exclude?: string[];
   hard?: HardConstraint[];
+  /** What people said must or must not be done about the objects the read is about. */
+  instructions?: ObjectInstruction[];
   precedence?: ("current_utterance" | "stated_persistent" | "inferred")[];
   /** What gives way first when a search finds nothing: `soft`, ids. */
   relaxation_order?: string[];
@@ -412,9 +443,11 @@ export interface Inference {
   key: string;
   /**
    * `soft_constraint` when the constraints block carries it as a soft entry, `attribute` for the inferred
-   * size, `affinity` for a value with evidence and no entry yet, `interest` for an object.
+   * size, `affinity` for a value with evidence and no entry yet, `interest` for an object, `instruction` for
+   * what the subject said must or must not be done about an object (`ref`, the words in `value`): said, not
+   * inferred, and listed so a correction can withdraw it.
    */
-  kind: "affinity" | "soft_constraint" | "attribute" | "interest";
+  kind: "affinity" | "soft_constraint" | "attribute" | "interest" | "instruction";
   /**
    * `interactions`, `implicit_negative` (shown often and never engaged with), or why an interest was kept:
    * `engaged`, `feedback`, `watch`.

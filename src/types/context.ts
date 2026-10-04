@@ -413,6 +413,10 @@ export interface HistoryItem {
   closed_by?: ClosedBy | null;
   /** A merged item's: the `open_item:<id>` it was merged into, which carries it on. */
   merged_into?: string | null;
+  /** An open item's: a promise someone made, a dispute raised or a request. */
+  item_kind?: "promise" | "dispute" | "request" | null;
+  /** A row about an object: `shared` reaches every participant, a customer-facing agent included; `internal`, internal readers only. */
+  audience?: "shared" | "internal" | null;
 }
 
 /** The period a `when` filter was read as. */
