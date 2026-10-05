@@ -42,7 +42,7 @@ import type { CheckRequest, CheckResult, OwnershipClaim } from "../types/coordin
 import type { SuppressionCopy } from "./suppression.js";
 
 /** Statuses of a check the API refused as asked: the integration's error, never an outage. */
-export const REFUSED = new Set([400, 401, 403, 422]);
+const REFUSED = new Set([400, 401, 403, 422]);
 
 /** Whether the API refused the check as asked (`REFUSED`). */
 export function refused(error: unknown): error is NiadraAPIError {

@@ -303,7 +303,7 @@ class Deadline {
   }
 }
 
-export const VERSIONING_DOCS = "https://docs.niadra.com/en/security/api-versioning";
+const VERSIONING_DOCS = "https://docs.niadra.com/en/security/api-versioning";
 const DEPRECATION_LINK = /<([^>]*)>[^,]*;\s*rel="?deprecation"?/gi;
 const deprecationsSeen = new Set<string>();
 
@@ -313,7 +313,7 @@ const deprecationsSeen = new Set<string>();
  * each deprecated route to its own note, so the note (the path, when the answer links none) tells
  * the routes apart. The warning never carries the path, which can hold an id.
  */
-export function warnIfDeprecated(logger: Logger, method: string, url: string, headers: Headers): void {
+function warnIfDeprecated(logger: Logger, method: string, url: string, headers: Headers): void {
   const since = headers.get("deprecation");
   if (since === null) return;
   const links = [...(headers.get("link") ?? "").matchAll(DEPRECATION_LINK)].map((match) => match[1] ?? "");

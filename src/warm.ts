@@ -13,9 +13,9 @@
 /** Under the 120 s an SDK connection is commonly kept idle and the 180 s the edge keeps one. */
 export const EVERY_MS = 100_000;
 /** A ping goes only when nothing else went out for this long. */
-export const IDLE_MS = 90_000;
+const IDLE_MS = 90_000;
 /** How long after the client's last use an open conversation keeps the connection warm. */
-export const WARM_FOR_MS = 600_000;
+const WARM_FOR_MS = 600_000;
 
 export type WarmStep = "ping" | "wait" | "stop";
 
