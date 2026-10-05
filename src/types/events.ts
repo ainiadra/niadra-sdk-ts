@@ -58,6 +58,7 @@ export interface VoiceInfo {
  * canonical `operation`; the server rejects any other combination.
  */
 export interface Closes {
+  /** An open item's `id`, a bare UUID. */
   item_id?: string | null;
   object?: ObjectRef | null;
   operation?: string | null;
@@ -271,7 +272,9 @@ export interface FeedbackRequest {
   idempotency_key: string;
   subject: Handle;
   action: FeedbackAction;
+  /** A fact's `id`, a bare UUID. */
   fact_id?: string | null;
+  /** The open item `resolve_open_item` closes: its `id`, a bare UUID. */
   open_item_id?: string | null;
   conversation_id?: string | null;
   /** Up to 2,000 characters. */

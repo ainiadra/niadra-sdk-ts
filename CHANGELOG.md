@@ -4,6 +4,25 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-05
+
+The server gives every item one id, a bare UUID, on every surface. This release follows it and removes the
+forms it no longer sends or accepts.
+
+### Changed
+
+- History rows (`search()`, `timeline()`, `open()`) carry each row's own id as a bare UUID; `kind` says what
+  the row is. `open()` takes the `id` of an `episode` or `object` row as listed, and `OpenedItem.kind` is
+  `"episode" | "object"`.
+- `admin.correct()` and `admin.factHistory()` send the fact id as given: a bare UUID. The SDK no longer
+  strips a `fact:` prefix; the server refuses a prefixed id. `feedback()` and `closes` take bare ids too.
+- The canonical tool definitions name the kind of an openable row instead of an id prefix.
+
+### Removed
+
+- The `merged` open item status (`ItemStatus`), `HistoryItem.merged_into`, and `OpenedItem.status` and
+  `merged_into`: the server derives one id per item, so twins are not created and nothing is merged.
+
 ## [0.10.5] - 2026-10-03
 
 ### Added

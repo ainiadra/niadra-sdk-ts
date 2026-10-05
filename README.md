@@ -287,7 +287,7 @@ if (first) {
 
 `search()` also reports recurrence: how many times the same kind of issue came back, and how it was last resolved.
 
-`filters.when` takes the period in the customer's own words, in Portuguese, English or Spanish (`"semana passada"`, `"last week"`, `"en marzo"`); the answer says in `window` how the server read it, and lists in `ignored` a filter it could not read. Items whose validity ended (an event recorded with `valid_until`, such as an offer valid until Friday) leave reads unless you pass `show_expired: true`. An opened item carries its `versions`, oldest first.
+`filters.when` takes the period in the customer's own words, in Portuguese, English or Spanish (`"semana passada"`, `"last week"`, `"en marzo"`); the answer says in `window` how the server read it, and lists in `ignored` a filter it could not read. Items whose validity ended (an event recorded with `valid_until`, such as an offer valid until Friday) leave reads unless you pass `show_expired: true`. An opened item carries its `versions`, oldest first. Every row's `id` is a bare UUID and `kind` says what it is; `open()` takes the `id` of an `episode` or `object` row, and feedback and `closes` take the `id` of a fact or an open item as listed.
 
 The handle, the search and the conversation id go in request bodies, never in a URL: a conversation id may be a phone number or an e-mail. `open()` sends `POST /v1/history/open`, and the tool kit adds the bound customer to it, so the server opens only that customer's items.
 

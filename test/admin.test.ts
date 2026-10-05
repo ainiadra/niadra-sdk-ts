@@ -91,7 +91,7 @@ describe("admin", () => {
     expect(server.calls[0]!.body).toEqual({ query: "+5511987654321", limit: 20 });
     const memory = await niadra.admin.memory(found.data!.items[0]!.profile_id);
     expect(memory.data?.facts[0]?.value).toBe("Marina");
-    const history = await niadra.admin.factHistory(PROFILE, `fact:${FACT}`);
+    const history = await niadra.admin.factHistory(PROFILE, FACT);
     expect(history.data?.relations[0]?.type).toBe("supersedes");
   });
 
@@ -104,7 +104,7 @@ describe("admin", () => {
       .on("POST /v1/export", { status: 201, body: { run_id: "r1", profile_id: PROFILE, sha256: "ab" } });
     const niadra = makeClient(server);
 
-    await niadra.admin.correct(PROFILE, { action: "correct_fact", fact_id: `fact:${FACT}`, value: "Mari" });
+    await niadra.admin.correct(PROFILE, { action: "correct_fact", fact_id: FACT, value: "Mari" });
     const one = server.callsTo("POST /v1/corrections")[0]!;
     expect(one.body).toEqual({ profile_id: PROFILE, action: "correct_fact", fact_id: FACT, value: "Mari" });
     expect(one.headers["idempotency-key"]).toBeTruthy();

@@ -36,7 +36,7 @@ const segment = (value: string) => encodeURIComponent(value);
 
 function correction(profileId: string, params: CorrectParams): CorrectionRequest {
   const body: CorrectionRequest = { profile_id: profileId, action: params.action };
-  if (params.fact_id) body.fact_id = params.fact_id.replace(/^fact:/, "");
+  if (params.fact_id) body.fact_id = params.fact_id;
   if (params.open_item_id) body.open_item_id = params.open_item_id;
   if (params.value) body.value = params.value;
   if (params.reason) body.reason = params.reason;
@@ -69,9 +69,9 @@ export class Admin {
     );
   }
 
-  /** Every value a fact's slot held, oldest first, with who replaced whom. Takes `fact:<id>` or the bare id. */
+  /** Every value a fact's slot held, oldest first, with who replaced whom. Takes the fact's bare id. */
   factHistory(profileId: string, factId: string, options: RequestOptions = {}): Promise<Result<FactHistory>> {
-    const fact = segment(factId.replace(/^fact:/, ""));
+    const fact = segment(factId);
     return this.port.send(() =>
       this.port.read("GET", `/v1/profiles/${segment(profileId)}/facts/${fact}/history`, undefined, options),
     );
