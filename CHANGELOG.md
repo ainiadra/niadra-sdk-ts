@@ -4,6 +4,16 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-05
+
+### Fixed
+
+- The first read of a conversation, task or object in a client gets `timeouts.contextFirst` (1,000 ms, plus
+  the measured round trip) when `context` is left at its default, and so does the first `agentMemory()` read.
+  The API compiles the pack on that read: one right after a customer's first message took 410 ms on the
+  server, the 300 ms default plus the round trip cut it short, and the agent answered without memory. Later
+  reads of the same key keep the short budget. A `context` you set stays a ceiling.
+
 ## [0.11.0] - 2026-10-05
 
 The server gives every item one id, a bare UUID, on every surface. This release follows it and removes the

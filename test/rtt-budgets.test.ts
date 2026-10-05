@@ -53,6 +53,39 @@ describe("read budgets and the round trip", () => {
   });
 });
 
+describe("the first read of a key", () => {
+  it("fits while the API compiles the pack, and the next read keeps the short budget", async () => {
+    // 05/10/2026: 170 ms away, and the first read of a conversation took 410 ms on the server.
+    const server = new MockServer()
+      .on("GET /healthz", { status: 200, body: { status: "ok" }, delay: 170 })
+      .on(
+        "POST /v1/context",
+        { status: 200, body: contextBody(), delay: 170 + 410 },
+        { status: 200, body: contextBody(), delay: 190 },
+      );
+    const niadra = makeClient(server);
+    await sleep(500); // the probe: two round trips
+    const budget = (first: boolean): number =>
+      (niadra as unknown as { readBudget(name: "context", first: boolean): number }).readBudget("context", first);
+    expect(budget(true)).toBeGreaterThan(1_150);
+    expect(budget(false)).toBeLessThan(500);
+    const first = await niadra.context({ subject: marina, conversation_id: "c-new" }, { cache: false });
+    expect(first.error).toBeNull();
+    const again = await niadra.context({ subject: marina, conversation_id: "c-new" }, { cache: false });
+    expect(again.error).toBeNull();
+    await niadra.shutdown();
+  });
+
+  it("never stretches a budget the caller set", async () => {
+    const server = new MockServer().on("GET /healthz", { status: 200, body: { status: "ok" }, delay: 10 });
+    const niadra = makeClient(server, { timeouts: { context: 250 } });
+    await sleep(100);
+    const budget = (niadra as unknown as { readBudget(name: "context", first: boolean): number }).readBudget("context", true);
+    expect(budget).toBe(250);
+    await niadra.shutdown();
+  });
+});
+
 describe("read budgets before the round trip is known", () => {
   const budget = (niadra: object): number => (niadra as { readBudget(name: "context"): number }).readBudget("context");
 
