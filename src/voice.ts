@@ -184,7 +184,7 @@ export function compose(body: ContextResponse, read: TurnRead | null): ContextRe
 
 /** What to warn about once the round trip to the region is known. Log-safe: numbers only. */
 /** What a read needs on top of the round trip at the least: the API's own time (20 to 40 ms at its p95). */
-export const RTT_MARGIN_MS = 50;
+const RTT_MARGIN_MS = 50;
 
 /**
  * The read budgets the caller set below the round trip plus `RTT_MARGIN_MS`: every such read would run out of

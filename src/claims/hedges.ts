@@ -27,7 +27,7 @@ import { WINDOW } from "./roles.js";
 import { type Span, pattern, sentenceOf, units, words } from "./text.js";
 
 /** Before a number, to the end of its clause: the output says it cannot confirm what follows, or asks it. */
-export const DENIALS: readonly string[] = [
+const DENIALS: readonly string[] = [
   "nao posso confirmar", "nao consigo confirmar", "nao tenho como confirmar", "nao da para confirmar",
   "nao e possivel confirmar", "nao posso garantir", "nao consigo garantir", "nao tenho como garantir",
   "nao posso afirmar", "nao consigo afirmar", "nao tenho como afirmar", "nao posso verificar",
@@ -48,7 +48,7 @@ export const DENIALS: readonly string[] = [
 ];
 
 /** Beside a number: a value that no longer holds, as the one seen before. */
-export const PAST_MARKERS: readonly string[] = [
+const PAST_MARKERS: readonly string[] = [
   "valor anterior", "preco anterior", "total anterior", "valor antigo", "preco antigo", "o anterior",
   "a anterior", "os anteriores", "anteriormente", "quando visto", "quando vista", "quando voce viu",
   "antes era", "era antes",
@@ -61,7 +61,7 @@ export const PAST_MARKERS: readonly string[] = [
 ];
 
 /** After a number: the output doubts that it still holds. */
-export const DOUBTS: readonly string[] = [
+const DOUBTS: readonly string[] = [
   "pode ter mudado", "pode ter sido alterado", "pode ter sido alterada", "pode ter sido atualizado",
   "pode ter sido atualizada", "pode nao valer", "pode nao estar valendo", "nao vale mais", "ja nao vale",
   "precisa ser confirmado", "precisa ser confirmada", "precisa ser verificado", "precisa ser verificada",
@@ -78,14 +78,14 @@ export const DOUBTS: readonly string[] = [
 ];
 
 /** A clause of its own before the number's: what follows is said as it was. */
-export const OPENERS: readonly string[] = [
+const OPENERS: readonly string[] = [
   "antes", "anteriormente", "da ultima vez", "na ultima vez", "na ultima consulta", "na ultima cotacao",
   "previously", "earlier", "before", "last time", "the last time", "in the last quote",
   "la ultima vez", "en la ultima cotizacion",
 ];
 
 /** In the number's clause, with a later denial that it still holds: the number said as it was. */
-export const PAST_WORDS: readonly string[] = [
+const PAST_WORDS: readonly string[] = [
   "foi", "foram", "era", "eram", "estava", "estavam", "ficou", "ficava", "custava", "custavam",
   "registrado", "registrada", "informado", "informada",
   "was", "were", "had been", "used to be", "on file", "on record", "quoted",
@@ -93,7 +93,7 @@ export const PAST_WORDS: readonly string[] = [
 ];
 
 /** After a denial: what it denies is that the value still holds. */
-export const CONTINUITY: readonly string[] = [
+const CONTINUITY: readonly string[] = [
   "ainda", "continua", "continuam", "segue", "seguem", "mesmo", "mesma", "igual", "atual", "atualizado",
   "atualizada", "vigente", "vale", "valendo", "valido", "valida", "mantem", "mantido", "mantida",
   "still", "remains", "remain", "current", "same", "valid", "applies", "apply", "holds", "unchanged",
@@ -105,21 +105,21 @@ export const CONTINUITY: readonly string[] = [
  * Right before a number: the output says it is not that. Not the Spanish "no": it is also the Portuguese "no"
  * ("no dia 20").
  */
-export const NEGATIONS: readonly string[] = [
+const NEGATIONS: readonly string[] = [
   "nao", "em vez de", "ao inves de",
   "not", "instead of", "rather than",
   "en vez de", "en lugar de",
 ];
 
 /** Between a past marker and a number: the number is the one that holds now. */
-export const PRESENT: readonly string[] = [
+const PRESENT: readonly string[] = [
   "agora", "hoje", "atual", "atualmente", "novo", "nova", "para",
   "now", "today", "current", "currently", "new", "to",
   "ahora", "hoy", "actual", "actualmente", "nuevo", "nueva",
 ];
 
 /** Words that start a clause. The Portuguese "e" only as written: folded, "é" is "e" too. */
-export const CLAUSE_WORDS: readonly string[] = [
+const CLAUSE_WORDS: readonly string[] = [
   "mas", "porem", "contudo", "entretanto", "pois", "porque", "ja que", "e",
   "but", "however", "because", "since", "although", "though", "and",
   "pero", "sino", "pues", "aunque", "ya que", "y",
