@@ -123,6 +123,9 @@ import type { ClaimContractSummary, ObjectRead, SdkProfile, StateRef, StateVerif
 import type { TurnPins, TurnsResponse } from "./types/turns.js";
 import type { Verification } from "./types/vocabulary.js";
 
+/** Keys of answered reads a client remembers to tell a first read from the next (`timeouts.contextFirst`). */
+const READ_KEYS_KEPT = 4096;
+
 /** What `identify()`, `verify()`, `handoff()` and the `end()` helpers resolve to. */
 export type WriteResult =
   | { ok: true; idempotency_key: string; error: null }
@@ -206,6 +209,8 @@ export class Niadra {
   private voiceStarted = false;
   /** A probe is on its way: until it ends, default read budgets get `timeouts.connect` on top. */
   private measuring = false;
+  /** The keys whose read answered in this client, oldest first: a first read gets `timeouts.contextFirst`. */
+  private readonly answeredReads = new Map<string, true>();
   private voiceWarned = false;
   private readonly strict: boolean;
   /** Where the client reports what it swallows in fail-open mode. */
@@ -404,16 +409,30 @@ export class Niadra {
     return result;
   }
 
-  private readContext(core: Core, params: ContextParams, request: ContextRequest, options: ContextOptions): Promise<ContextResult> {
-
-    const timeout = options.timeout ?? (request.view === "voice" ? this.timeouts.contextVoice : this.readBudget("context"));
+  private async readContext(core: Core, params: ContextParams, request: ContextRequest, options: ContextOptions): Promise<ContextResult> {
     // The read's own `query`, else the customer's turn: either picks the slots, never the pack.
     const { query: own, ...pinned } = request;
     const query = turnText(own ?? params.turn);
+    const readKey = cacheKey(pinned);
+    const first = !this.answeredReads.has(readKey);
+    const timeout = options.timeout ?? (request.view === "voice" ? this.timeouts.contextVoice : this.readBudget("context", first));
     const voiceCache = this.voiceCache(core, pinned, options.cache);
-    if (voiceCache) return this.voiceContext(core, voiceCache, pinned, query, timeout, options);
-    if (query !== null) return this.turnContext(core, pinned, query, timeout, options);
-    return this.pinnedContext(core, pinned, timeout, options);
+    let result: ContextResult;
+    if (voiceCache) result = await this.voiceContext(core, voiceCache, pinned, query, timeout, options);
+    else if (query !== null) result = await this.turnContext(core, pinned, query, timeout, options);
+    else result = await this.pinnedContext(core, pinned, timeout, options);
+    if (result.error === null) this.readAnswered(readKey);
+    return result;
+  }
+
+  private readAnswered(key: string): void {
+    this.answeredReads.delete(key);
+    this.answeredReads.set(key, true);
+    while (this.answeredReads.size > READ_KEYS_KEPT) {
+      const oldest = this.answeredReads.keys().next().value;
+      if (oldest === undefined) break;
+      this.answeredReads.delete(oldest);
+    }
   }
 
   /**
@@ -867,7 +886,9 @@ export class Niadra {
     const fresh = cache?.fresh(key);
     if (fresh) return blockResult(fresh, "cache");
 
-    const timeout = options.timeout ?? (params.view === "voice" ? this.timeouts.contextVoice : this.readBudget("context"));
+    const readKey = `agent-memory:${key}`;
+    const first = !this.answeredReads.has(readKey);
+    const timeout = options.timeout ?? (params.view === "voice" ? this.timeouts.contextVoice : this.readBudget("context", first));
     const spec = this.readSpec("GET", "/v1/agent-memory/block", undefined, timeout, options);
     spec.query = {
       max_tokens: String(params.max_tokens ?? 300),
@@ -878,6 +899,7 @@ export class Niadra {
     if (etag) spec.headers = { ...options.headers, "if-none-match": etag };
     try {
       const response = await core.transport.request<AgentMemoryBlock>(spec);
+      this.readAnswered(readKey);
       cache?.store(key, response.data);
       return blockResult(response.data, "network");
     } catch (error) {
@@ -1440,15 +1462,17 @@ export class Niadra {
    * to the region goes on top, so an agent far from the region (Sao Paulo, 170 ms from us-east-2) is not
    * timed out by the network; one the caller set is a ceiling.
    */
-  private readBudget(name: "context" | "navigation"): number {
+  private readBudget(name: "context" | "navigation", first = false): number {
     if (!this.defaultReads.has(name)) return this.timeouts[name];
+    // A first read of a key may take the compile of its pack (`timeouts.contextFirst`).
+    const base = first && name === "context" ? Math.max(this.timeouts.context, this.timeouts.contextFirst) : this.timeouts[name];
     const rtt = this.voice.rtt;
-    if (rtt !== null) return this.timeouts[name] + rtt;
+    if (rtt !== null) return base + rtt;
     // While the probe is on its way, `connect` on top: a read made right after the client starts timed out at
     // the bare default from Sao Paulo (03/10/2026). With no connection open the transport adds it itself, never
     // twice; a probe that failed leaves the defaults as they are.
     const open = this.core?.transport.connectionOpen() ?? false;
-    return this.measuring && open ? this.timeouts[name] + this.timeouts.connect : this.timeouts[name];
+    return this.measuring && open ? base + this.timeouts.connect : base;
   }
 
   /** The client reads in voice: the voice budgets' warnings matter from now on. */

@@ -29,6 +29,14 @@ export interface Timeouts {
    */
   contextVoice: number;
   /**
+   * The default budget of the first read of a conversation, task or object in this client, before the round
+   * trip: the API compiles its pack on that read. One right after a customer's first message took 410 ms on
+   * the server (05/10/2026: resolving the customer 153 ms, the pack 120 ms), more than `context`, and the
+   * agent answered without memory. Later reads of the same key find the pack compiled. Only when `context`
+   * is left at its default.
+   */
+  contextFirst: number;
+  /**
    * The first read of a voice call, made while the phone rings or the inbound webhook runs
    * (`begin()`, `ready()`). A cold connection costs three round trips (TCP, TLS, the request)
    * plus the server's first compile: 3 x 400 ms + 300 ms at a 400 ms round trip.
@@ -63,6 +71,7 @@ export interface Timeouts {
 
 export const DEFAULT_TIMEOUTS: Timeouts = {
   context: 300,
+  contextFirst: 1_000,
   contextVoice: 200,
   contextVoiceStart: 1_500,
   navigation: 600,
