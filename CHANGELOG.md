@@ -4,6 +4,15 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-07
+
+### Added
+
+- `handles.staff(value, system)` names someone who works for your company by the id one of your systems gives
+  them (`subject_kind: "staff"`). A conversation with staff is internal; a conversation with anyone else is
+  customer-facing, whatever the key, so one key can serve your team and your customers. Nothing changes for
+  code that does not use it.
+
 ## [0.11.1] - 2026-10-05
 
 ### Fixed

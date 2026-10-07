@@ -13,7 +13,7 @@ export type Speaker = "customer" | "ai_agent" | "human_agent" | "system";
 export type Visibility = "public" | "internal";
 
 /** Subjects are people by default; accounts and partners are organizations. */
-export type SubjectKind = "person" | "account" | "partner";
+export type SubjectKind = "person" | "account" | "partner" | "staff";
 
 /**
  * How a handle identifies a subject. Scoped types (`wa_bsuid`, `system_id`, `gov_id_hmac`,

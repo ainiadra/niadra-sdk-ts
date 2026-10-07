@@ -38,6 +38,13 @@ export const handles = {
   systemId: (value: string, system: string, options?: HandleOptions): Handle =>
     build("system_id", value, system, options),
   /**
+   * Someone who works for your company, by the id one of your systems gives them: `staff("U-17", "hr")`.
+   * A conversation with staff is internal: the agent reads what your team may read, and what the person says
+   * is your company's word. A conversation with anyone else is customer-facing, whatever the key. Only a
+   * system id names staff: a phone or an e-mail always names a customer.
+   */
+  staff: (value: string, system: string): Handle => build("system_id", value, system, { subjectKind: "staff" }),
+  /**
    * A person's national document, such as a CPF: `govIdHmac("529.982.247-25", "BR")`. Send the number
    * itself, never a hash of it: the server checks its check digits, then keeps only a keyed hash with your
    * space's secret and an encrypted copy, and shows it masked. `country` is its ISO 3166-1 alpha-2 code.
