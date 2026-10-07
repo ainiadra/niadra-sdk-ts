@@ -32,6 +32,15 @@ describe("handles", () => {
   it("lets the caller set the subject kind", () => {
     expect(handles.systemId("P-9", "erp", { subjectKind: "partner" }).subject_kind).toBe("partner");
   });
+
+  it("names staff by a system id of kind staff", () => {
+    expect(handles.staff("U-17", "hr")).toEqual({
+      type: "system_id",
+      value: "U-17",
+      scope: "hr",
+      subject_kind: "staff",
+    });
+  });
 });
 
 describe("toObjectRef", () => {
