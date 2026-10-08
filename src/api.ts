@@ -17,7 +17,7 @@ import type { RouteCall } from "./routes.js";
 import type { CheckBatchRequest, CheckBatchResponse, CheckRequest, CheckResult, ClaimRelease, ClaimRequest, ContactKeys, CoordinationOverview, CoordinationReportPage, DeclareRequest, DeclareResult, Effect, EffectReserve, EffectSettle, Handoff, HandoffCreate, HandoffOutcome, OwnershipClaim, ShadowRequest, ShadowRun, SuppressionPage, SuppressionSalt } from "./types/coordination.js";
 import type { AttributionReport, BiUpload, BiUploadRequest, ConstraintsBlock, ConstraintsRequest, CounterfactualRun, CounterfactualRunCreate, CounterfactualRunPage, ExperimentReport, Inference, InferenceCorrection, InferencePage, InterleavingReport, LegalHold, LegalHoldCreate, LegalHoldRelease, OutcomePage, PowerRequest, PowerResult, ReconcileRequest, ReconcileResult, ReviewRequest, ReviewRequestCreate, ReviewRequestPage, ReviewResolution, UnmetDemandPage } from "./types/signals.js";
 import type { AgentState, AgentStateMetaPage, AgentStateReadRequest, AgentStateWrite, AgentStateWriteResult, ContentRelease, ContentReleaseResult, ObjectCoverage, ObjectPushRequest, ObjectPushResponse, ObjectSnapshotResponse, RefreshRelease, RefreshReleased, RefreshRequestPage, SdkProfile, StateReadRequest, StateReadResponse, StateVerifyRequest, StateVerifyResponse, StateView, StateViewRequest, TypeFingerprintRequest, TypeFingerprintResponse } from "./types/state.js";
-import type { ChangePage, DataIssue, DataIssuePage, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnIndexPage, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
+import type { ChangePage, DataIssue, DataIssuePage, FailedIntakePage, FailedIntakeRetried, FailedIntakeRetry, NotificationPage, PromoteRequest, PromoteResponse, ReplayCase, ReplayCaseRequest, Scenario, ScenarioCreate, ScenarioFromReport, ScenarioPage, ScenarioRun, ScenarioRunCreate, ScenarioUpdate, TurnIndexPage, TurnSearchRequest, TurnSearchResponse, TurnView, TurnsRequest, TurnsResponse } from "./types/turns.js";
 
 /** The routes of `niadra.api`. See the module. */
 export class Api {
@@ -42,6 +42,24 @@ export class Api {
    */
   acknowledgeDataIssue(issueId: string, options: RequestOptions = {}): Promise<DataIssue> {
     return this.call({ method: "POST", path: `/v1/data-issues/${segment(issueId)}/ack` }, options);
+  }
+
+  /**
+   * `GET /v1/intake/failed`. The batches that failed every attempt to be taken in (`row_failed`): kept aside,
+   * sealed, never
+   * deleted, oldest first. Kind, source and times only, never their content.
+   */
+  failedIntake(options: RequestOptions = {}): Promise<FailedIntakePage> {
+    return this.call({ method: "GET", path: "/v1/intake/failed" }, options);
+  }
+
+  /**
+   * `POST /v1/intake/failed/retry`. Puts kept batches back in the space's order for a worker to store, every
+   * one when no ids are given.
+   * A batch that fails again is kept aside again, with a new `row_failed` occurrence.
+   */
+  retryFailedIntake(body: FailedIntakeRetry, options: RequestOptions = {}): Promise<FailedIntakeRetried> {
+    return this.call({ method: "POST", path: "/v1/intake/failed/retry", body }, options);
   }
 
   /**

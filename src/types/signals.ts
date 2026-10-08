@@ -277,6 +277,12 @@ export interface ConstraintsBlock {
   hard?: HardConstraint[];
   /** What people said must or must not be done about the objects the read is about. */
   instructions?: ObjectInstruction[];
+  /**
+   * How many entries of each kind (`hard`, `soft`, `exclude`, `already_presented`, `instructions`) the
+   * block's sizes left out; the restrictions keep their room first. Absent when nothing was left out; `text`
+   * says it too.
+   */
+  omitted?: Record<string, number>;
   precedence?: ("current_utterance" | "stated_persistent" | "inferred")[];
   /** What gives way first when a search finds nothing: `soft`, ids. */
   relaxation_order?: string[];

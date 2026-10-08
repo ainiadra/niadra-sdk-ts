@@ -14,8 +14,9 @@
  * The SDK keeps, per scope and agent, the last version it wrote or read, and serves the higher of that and
  * what a read brings (read your writes). With Niadra out of reach, a read serves that copy (`degraded`), and a
  * write applies to it at once and leaves again later with the same `ifVersion`: the answer says `pending`. A
- * compare-and-swap that then conflicts is never merged in silence: it lands in `conflicts` and is logged. Over
- * the cap a write is not stored and the previous state stays (`reason: "over_cap"`), never an error.
+ * compare-and-swap that then conflicts is never merged in silence: it lands in `conflicts` and is logged. A
+ * state is kept whole, with no size cap: a body over the request's own size limit is refused with an error,
+ * and nothing is stored.
  */
 
 import { NiadraAPIError } from "./errors.js";
@@ -41,8 +42,8 @@ export interface WorkingState {
 }
 
 /**
- * A write's answer: `stored` and the version after it; `reason` is `over_cap` or `not_declared_field` (not
- * stored, the state as it was), or `conflict` (412: the version moved; read and try again). `pending` says
+ * A write's answer: `stored` and the version after it; `reason` is `not_declared_field` (not stored, the
+ * state as it was), or `conflict` (412: the version moved; read and try again). `pending` says
  * Niadra did not answer and the write leaves later, already applied to the SDK's copy.
  */
 export interface StateWrite {

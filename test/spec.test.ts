@@ -161,6 +161,7 @@ const blockKeys: Record<string, Record<string, true>> = {
     exclude: true,
     hard: true,
     instructions: true,
+    omitted: true,
     precedence: true,
     relaxation_order: true,
     rendered: true,
