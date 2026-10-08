@@ -125,10 +125,16 @@ export interface DataIssue {
    * `coverage_drop`: a field filled less often than before; `divergence`: two sources of one value disagree;
    * `drift`: the schema a type mirrors changed, and a new field is already served to agents as it came (a
    * note, nothing to fix); `field_held`: a new field that may be personal data or free text, held from agents
-   * until the type declares it; `rule_conflict`: two rules decide one thing differently; `type_undeclared`:
-   * tools showed objects of a type the space never declared.
+   * until the type declares it; `row_failed`: a row that failed every attempt to be taken in is kept aside,
+   * sealed, never deleted, until an admin retries it (`POST /v1/intake/failed/retry`), `source` naming where
+   * it came from; `rule_conflict`: two rules decide one thing differently; `type_undeclared`: tools showed
+   * objects of a type the space never declared; `budget_reached`: the space spent its day's AI ceiling for a
+   * purpose (`source`), and memory waits for the next UTC day; `inference_limit`: what the space's systems
+   * send passed a limit of what Niadra infers on its own (types, fields or states of a type, operations), or
+   * a name was not safe to use; what passed it is still stored and served as it came, and `field` names the
+   * limit.
    */
-  kind: "null_field" | "out_of_vocabulary" | "stale_source" | "coverage_drop" | "invalid_value" | "divergence" | "drift" | "rule_conflict" | "type_undeclared" | "field_held";
+  kind: "null_field" | "out_of_vocabulary" | "stale_source" | "coverage_drop" | "invalid_value" | "divergence" | "drift" | "rule_conflict" | "type_undeclared" | "field_held" | "budget_reached" | "row_failed" | "inference_limit";
   last_seen_at: string;
   object_type?: string | null;
   occurrences: number;
@@ -151,6 +157,41 @@ export interface Engaged {
   how: "click" | "detail" | "mention" | "add_to_cart" | "compare" | "share" | "other";
   kind: "engaged";
   ref: string;
+}
+
+/**
+ * A batch of the company's data that failed every attempt to be taken in: kept aside, sealed as it
+ * came, never deleted, until an admin retries it. What kind of batch, from which source and when; never
+ * its content.
+ */
+export interface FailedIntake {
+  attempts: number;
+  failed_at: string;
+  intake_id: string;
+  /** `events` for `POST /v1/events` and the webhooks, `turns` for `POST /v1/turns`. */
+  kind: "events" | "turns";
+  received_at: string;
+  source_id: string;
+}
+
+export interface FailedIntakePage {
+  /** Oldest first, up to 500 of each kind. */
+  items: FailedIntake[];
+  /**
+   * Every batch kept aside, listed or not; past the listing, `POST /v1/intake/failed/retry` with no ids
+   * retries all of them.
+   */
+  kept: number;
+}
+
+export interface FailedIntakeRetried {
+  /** Batches put back in the space's order for a worker to store. */
+  retried: number;
+}
+
+export interface FailedIntakeRetry {
+  /** The batches to retry; none retries every kept batch. */
+  intake_ids?: string[] | null;
 }
 
 export interface Feedback {

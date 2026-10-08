@@ -30,12 +30,12 @@ describe("the agent's working state", () => {
     expect(await state.get()).toMatchObject({ version: 3, body: { offer: { status: "accepted" } } });
   });
 
-  it("keeps the previous state over the cap, without failing", async () => {
+  it("keeps a large state whole", async () => {
     const { niadra } = setup();
     const state = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-3", agent_id: "closing" }).agentState;
     await state.put({ note: "short" });
-    expect(await state.put({ note: "x".repeat(20_000) })).toMatchObject({ stored: false, reason: "over_cap", version: 1 });
-    expect((await state.get()).body).toEqual({ note: "short" });
+    expect(await state.put({ note: "x".repeat(20_000) })).toMatchObject({ stored: true, version: 2 });
+    expect((await state.get()).body).toEqual({ note: "x".repeat(20_000) });
   });
 
   it("never reads behind its own write", async () => {

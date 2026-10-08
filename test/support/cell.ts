@@ -307,7 +307,6 @@ export class Cell {
         else next[name] = value;
       }
     }
-    if (JSON.stringify(next).length > 16 * 1024) return json(200, { stored: false, version: held.version, reason: "over_cap" });
     this.agentStates.set(id, { body: next, version: held.version + 1 });
     return json(200, { stored: true, version: held.version + 1 });
   }

@@ -32,7 +32,8 @@ export interface AgentStateMeta {
   scope_kind: "conversation" | "task" | "object" | "subject";
   source_id: string;
   updated_at: string;
-  valid_until: string;
+  /** When the state goes, by its type's retention; null while it names none. */
+  valid_until?: string | null;
   version: number;
 }
 
@@ -73,7 +74,7 @@ export interface AgentStateWrite {
 }
 
 export interface AgentStateWriteResult {
-  reason?: "over_cap" | "not_declared_field" | null;
+  reason?: "not_declared_field" | null;
   stored: boolean;
   version: number;
 }
@@ -238,6 +239,11 @@ export interface DerivedState {
   /** The related objects it was computed over. */
   over: number;
   /**
+   * The relation names more related objects than one read takes: the first ones were read and the rest
+   * counted as not known, so `over` and `unknown` are at least what they say.
+   */
+  partial?: boolean;
+  /**
    * When it is not `yes`, the related objects, as `type:namespace:id`, that kept it from `yes`: for `all` and
    * `any` the ones the condition does not hold for or that are not known, for `count`, `min` and `max` the
    * ones not known. In the relation's order, the first 10.
@@ -269,8 +275,9 @@ export interface DriftChanges {
 }
 
 /**
- * The agent features a space turns on: everything is off until the space's `features`
- * document lists it, and `GET /v1/sdk/profile` announces what is on.
+ * The agent features of a space: every one is on by default, so a space works with no
+ * configuration; the space's `features` document lists fewer to turn some off, and
+ * `GET /v1/sdk/profile` announces what is on.
  */
 export type Feature = "turns" | "state" | "agent_state" | "signals" | "claims" | "coordination" | "measurement" | "notifications" | "legal_holds";
 

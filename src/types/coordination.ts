@@ -196,7 +196,10 @@ export interface CommitmentDecided {
   subject?: Handle | null;
 }
 
-/** `score` ranks commitments of a `best_wins` type: the higher holds. */
+/**
+ * `score` ranks commitments of a `best_wins` type: the higher holds. Its `terms` are kept whole, in the
+ * commitment and in the action memory records of it (`terms_text`), up to an event's text.
+ */
 export interface CommitmentMadeDetail {
   commitment_id: string;
   score?: number | null;
@@ -501,6 +504,8 @@ export interface HandoffPackage {
   handoff_id: string;
   level: Verification;
   open_objects?: OpenObject[];
+  /** The subject's open objects past the 50 a package carries, left out. */
+  open_objects_more?: number;
   outcome?: OutcomeRequest;
   owner?: Owner | null;
   promises_open?: PromiseRef[];
