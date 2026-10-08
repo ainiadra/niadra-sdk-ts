@@ -278,8 +278,8 @@ export interface Presented {
 }
 
 /**
- * Moves turns from the short tier (every turn, 7 days) to the kept one, by conversation or by id, with
- * the reason: the complaint arrives days after the turn.
+ * Moves turns from the short tier (every turn) to the kept one, which search reads, by conversation or by
+ * id, with the reason: the complaint arrives days after the turn.
  */
 export interface PromoteRequest {
   conversation_id?: string | null;
@@ -544,8 +544,11 @@ export interface TurnRecord {
 export interface ReplayCase {
   assertions?: ReplayAssertion[];
   case_id: string;
-  /** When the turn leaves storage; after it, `replay_expired`. */
-  expires_at: string;
+  /**
+   * When the turn leaves storage, after which a case is `replay_expired`; null while the space sets no
+   * retention for recordings.
+   */
+  expires_at?: string | null;
   history?: ReplayHistoryEntry[];
   input: ReplayInput;
   mode: "hermetic_turn" | "hermetic_conversation" | "era_memory";
