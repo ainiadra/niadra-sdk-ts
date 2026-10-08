@@ -50,6 +50,8 @@ export class Cell {
   readonly runs: Json[] = [];
   readonly constraints = new Map<string, ConstraintsBlock>();
   readonly views = new Map<string, StateView>();
+  /** Blocks a read leaves out as the server does when one fails to read: the answer says `degraded`. */
+  readonly failingBlocks = new Set<string>();
   /** The declared types, served summarized in the profile, as the server summarizes the registry. */
   types: Json[] = [];
   /** The tool bindings the profile serves this source. */
@@ -233,8 +235,9 @@ export class Cell {
       path: "t0",
       degraded: false,
     };
-    if (include.includes("constraints")) response.constraints = this.constraints.get(subject) ?? { version: `cv_${"0".repeat(16)}`, text: "" };
-    if (include.includes("state")) response.state = this.views.get(subject) ?? {};
+    if (include.includes("constraints") && !this.failingBlocks.has("constraints")) response.constraints = this.constraints.get(subject) ?? { version: `cv_${"0".repeat(16)}`, text: "" };
+    if (include.includes("state") && !this.failingBlocks.has("state")) response.state = this.views.get(subject) ?? {};
+    if (include.some((name) => this.failingBlocks.has(name))) response.degraded = true;
     return json(200, response);
   }
 

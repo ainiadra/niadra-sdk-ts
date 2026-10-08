@@ -32,7 +32,7 @@ import {
   mergeNotModified,
   resultFrom,
 } from "./context.js";
-import type { ContextOptions, ContextParams, ContextResult, PrefetchParams, RequestOptions } from "./context.js";
+import type { ContextOptions, ContextParams, ContextResult, PrefetchParams, RequestOptions, ServedContext } from "./context.js";
 import { Conversation } from "./conversation.js";
 import { EVERY_MS as KEEP_WARM_EVERY_MS, KeepWarm } from "./warm.js";
 import type { ConversationParams } from "./conversation.js";
@@ -90,6 +90,7 @@ import type { Handle, ObjectRef } from "./types/common.js";
 import type {
   ContextRequest,
   ContextResponse,
+  Include,
   ObjectTimeline,
   OpenedItem,
   OpenItemRequest,
@@ -1338,15 +1339,17 @@ export class Niadra {
     const started = Date.now();
     try {
       const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", request, timeout, { signal, headers }));
-      return normalizeContext(response.data);
+      return normalizeContext(response.data, request.include ?? undefined);
     } catch (error) {
-      // A space that serves none of the blocks answers 404: the read goes on without them.
+      // A space that serves none of the blocks answers 404: the read goes on without them. `/v1/context` also
+      // answers 404 for an object or a profile it does not know, so the blocks count as refused only when the
+      // read without them answers; otherwise every read of this client would go without its constraints.
       const refused = error instanceof NiadraAPIError && error.status === 404;
       const left = timeout - (Date.now() - started);
       if (!request.include?.length || !refused || left <= 0) throw error;
-      for (const name of request.include) this.refusedBlocks.set(name, Date.now() + BLOCK_RECHECK_AFTER_MS);
       const { include: _dropped, ...plain } = request;
       const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", plain, left, { signal, headers }));
+      for (const name of request.include) this.refusedBlocks.set(name, Date.now() + BLOCK_RECHECK_AFTER_MS);
       return normalizeContext(response.data);
     }
   }
@@ -1791,7 +1794,8 @@ export class Niadra {
  * Checks the fields the SDK relies on and fills list and map defaults, so a leaner response
  * from a future server version cannot turn into a crash in the caller's prompt code.
  */
-function normalizeContext(data: unknown): ContextResponse {
+/** The answer as the SDK keeps it, with the blocks the read asked by `include` (`ContextResult.unreadBlocks`). */
+function normalizeContext(data: unknown, asked?: Include[]): ServedContext {
   if (typeof data !== "object" || data === null) throw new NiadraError("unexpected response from /v1/context");
   const body = data as Partial<ContextResponse>;
   if (typeof body.etag !== "string" || typeof body.path !== "string" || !body.verification) {
@@ -1811,6 +1815,7 @@ function normalizeContext(data: unknown): ContextResponse {
     timing: body.timing ?? {},
     withheld: body.withheld ?? 0,
     degraded: body.degraded ?? false,
+    asked_blocks: asked ?? [],
     // A read without a turn may send a pack without `slots`: the list is then empty.
     ...(body.pack ? { pack: { ...body.pack, slots: Array.isArray(body.pack.slots) ? body.pack.slots : [] } } : {}),
   };
