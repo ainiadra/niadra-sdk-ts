@@ -99,7 +99,7 @@ export interface TrackEvent extends EventBase {
 export interface ActionEvent extends EventBase {
   /** Canonical operation, such as `credit` or `reschedule`. */
   operation: string;
-  /** What happened, up to 2,000 characters. */
+  /** What happened, up to 200,000 characters, stored whole. */
   result?: string | null;
   purpose?: string | null;
   /** The open item this action fulfils, which the server then marks resolved. */

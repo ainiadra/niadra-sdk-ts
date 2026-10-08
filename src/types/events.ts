@@ -67,7 +67,7 @@ export interface Closes {
 export interface ActionInfo {
   /** Canonical operation, such as `credit` or `reschedule`. */
   operation: string;
-  /** What happened, up to 2,000 characters. */
+  /** What happened, up to 200,000 characters, stored whole. */
   result?: string | null;
   purpose?: string | null;
   closes?: Closes | null;

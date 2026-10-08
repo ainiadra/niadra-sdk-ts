@@ -31,6 +31,8 @@ export interface AgentMemoryResult {
   tokens: number;
   /** `false` when agent memory is off for the space (or not served yet by its cell). */
   enabled: boolean;
+  /** Notes the reader may see that the block's size left out: each is kept, and the note search reads it. */
+  left_out: number;
   source: AgentMemorySource;
   error: NiadraError | null;
 }
@@ -38,9 +40,9 @@ export interface AgentMemoryResult {
 /** Arguments of `remember()`: one working note, never about a customer. */
 export interface RememberParams {
   kind: AgentNoteKind;
-  /** Up to 120 characters. */
+  /** Up to 300 characters. */
   title: string;
-  /** Up to 2,000 characters. */
+  /** Up to 20,000 characters, stored whole. */
   body: string;
   /** Up to 8, such as `invoice`, `credit`, `erp`. */
   tags?: string[];
@@ -60,15 +62,19 @@ export function checkTags(tags: string[] | undefined): void {
   for (const tag of tags) if (!TAG.test(tag)) throw new NiadraValidationError("tags are lowercase words such as `invoice` or `erp`");
 }
 
+/** The note limits the API takes: a note within them is sent whole, never cut on this side. */
+export const MAX_NOTE_TITLE = 300;
+export const MAX_NOTE_BODY = 20_000;
+
 export function checkNote(note: RememberParams): void {
   if (!KINDS.has(note.kind)) throw new NiadraValidationError("kind is procedure, tool_note, process_note or pitfall");
-  if (!note.title || note.title.length > 120) throw new NiadraValidationError("title must be 1 to 120 characters");
-  if (!note.body || note.body.length > 2000) throw new NiadraValidationError("body must be 1 to 2000 characters");
+  if (!note.title || note.title.length > MAX_NOTE_TITLE) throw new NiadraValidationError(`title must be 1 to ${MAX_NOTE_TITLE} characters`);
+  if (!note.body || note.body.length > MAX_NOTE_BODY) throw new NiadraValidationError(`body must be 1 to ${MAX_NOTE_BODY} characters`);
   checkTags(note.tags);
 }
 
 export function emptyBlock(error: NiadraError | null): AgentMemoryResult {
-  return { text: "", notes: [], etag: null, tokens: 0, enabled: true, source: "none", error };
+  return { text: "", notes: [], etag: null, tokens: 0, enabled: true, left_out: 0, source: "none", error };
 }
 
 export function blockResult(block: AgentMemoryBlock, source: AgentMemorySource, error: NiadraError | null = null): AgentMemoryResult {
@@ -78,6 +84,7 @@ export function blockResult(block: AgentMemoryBlock, source: AgentMemorySource, 
     etag: block.etag,
     tokens: block.tokens ?? 0,
     enabled: block.enabled ?? true,
+    left_out: block.left_out ?? 0,
     source,
     error,
   };

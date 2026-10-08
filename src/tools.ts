@@ -312,11 +312,11 @@ export const AGENT_MEMORY_TOOL_DEFINITIONS: readonly ToolDefinition[] = [
           },
           "title": {
             "type": "string",
-            "maxLength": 120
+            "maxLength": 300
           },
           "body": {
             "type": "string",
-            "maxLength": 2000
+            "maxLength": 20000
           },
           "tags": {
             "type": "array",

@@ -130,6 +130,8 @@ export interface ProfileMemory {
   traits: TraitOut[];
   /** Items left out, by reason. */
   withheld: Record<string, number>;
+  /** Where the timeline's next page starts (`timeline_cursor`); null when it holds no more. */
+  timeline_next?: string | null;
 }
 
 /** `GET /v1/profiles/{profile_id}/facts/{fact_id}/history`. */

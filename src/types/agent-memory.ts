@@ -53,6 +53,8 @@ export interface AgentMemoryBlock {
   tokens?: number;
   /** `false` when agent memory is off for the space. */
   enabled?: boolean;
+  /** Notes the reader may see that this block's size left out: each is kept, and the note search reads it. */
+  left_out?: number;
 }
 
 /** Body of `POST /v1/agent-memory/search`. */
