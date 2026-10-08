@@ -4,6 +4,17 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-10-08
+
+### Changed
+
+- The generated types follow the server's current specification: the instruction fields `contact` and
+  `only_with` on constraints and signals, and the `field_held` data issue kind.
+- Internal types that nothing outside their module uses are no longer exported (`AdminPort`,
+  `StateTransport`, `AsyncStore`, `CallStatus`, `CallEntry`, `Body`, `SendTurns`, `Fetch`,
+  `ConversationHooks`, `SuppressionReader`, `Write`, `TaskHooks`, `WarmStep`); none was part of the
+  package's entry points.
+
 ## [0.11.2] - 2026-10-07
 
 ### Added

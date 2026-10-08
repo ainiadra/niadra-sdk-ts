@@ -22,7 +22,7 @@ import type { ClaimRecord, TurnPins } from "../types/turns.js";
 import { store } from "./context.js";
 
 export type TurnKind = "message" | "action" | "event" | "timer";
-export type CallStatus = "ok" | "error" | "timeout" | "cancelled";
+type CallStatus = "ok" | "error" | "timeout" | "cancelled";
 export type Flag =
   | "error"
   | "guard_acted"
@@ -71,7 +71,7 @@ export interface StateValue {
 }
 
 /** A call's entry in the record, as the frame keeps it. */
-export type CallEntry = Record<string, unknown> & { call_id: string; kind: "tool" | "model" };
+type CallEntry = Record<string, unknown> & { call_id: string; kind: "tool" | "model" };
 
 export interface Observation {
   ref: string;

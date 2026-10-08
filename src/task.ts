@@ -48,7 +48,7 @@ export interface TaskParams {
 export type TaskEvent = Omit<TrackEvent, "channel" | "task_id"> & { channel?: string };
 export type TaskAction = Omit<ActionEvent, "channel" | "task_id"> & { channel?: string };
 
-export interface TaskHooks {
+interface TaskHooks {
   endTask(id: string): Promise<WriteResult>;
   /** `verify()` for a task, which may have no subject to default the handle to. */
   verifyTask(params: Omit<VerifyParams, "handle"> & { handle: Handle | undefined }): Promise<WriteResult>;

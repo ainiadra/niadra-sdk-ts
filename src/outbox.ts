@@ -15,7 +15,7 @@ import { isTransient } from "./transport.js";
 const CAPACITY = 1000;
 const MAX_PAUSE_MS = 60_000;
 
-export interface Write {
+interface Write {
   send(): Promise<unknown>;
   /** `POST /v1/coordination/declare`: what a refusal names in the log. */
   route?: string;

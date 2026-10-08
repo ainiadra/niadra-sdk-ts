@@ -17,7 +17,7 @@ const IDLE_MS = 90_000;
 /** How long after the client's last use an open conversation keeps the connection warm. */
 const WARM_FOR_MS = 600_000;
 
-export type WarmStep = "ping" | "wait" | "stop";
+type WarmStep = "ping" | "wait" | "stop";
 
 /** The open conversations of a client, by scope, held weakly: one nobody holds any more is gone. */
 export class KeepWarm {

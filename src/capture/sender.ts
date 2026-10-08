@@ -31,13 +31,13 @@ const DECODED_ROOM = 16 * 1024 * 1024 - 256 * 1024;
 const MAX_PAUSE_MS = 60_000;
 
 /** A request body: its bytes, and whether they are gzip. */
-export interface Body {
+interface Body {
   bytes: Uint8Array<ArrayBuffer>;
   gzip: boolean;
 }
 
 /** Sends one body to `POST /v1/turns` and resolves with the answer. */
-export type SendTurns = (body: Body) => Promise<TurnsResponse>;
+type SendTurns = (body: Body) => Promise<TurnsResponse>;
 
 interface Batch {
   frames: TurnFrame[];

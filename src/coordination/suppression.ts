@@ -29,7 +29,7 @@ const PAGE = 200;
 /** Pages one read takes at most; the next read goes on from its cursor. */
 const MAX_PAGES = 50;
 
-export interface SuppressionReader {
+interface SuppressionReader {
   salt(): Promise<SuppressionSalt>;
   page(cursor: string | null, limit: number): Promise<SuppressionPage>;
 }

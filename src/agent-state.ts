@@ -87,7 +87,7 @@ function applied(base: Record<string, unknown>, write: AgentStateWrite): Record<
   return out;
 }
 
-export interface StateTransport {
+interface StateTransport {
   read(scope: Scope, agent: string): Promise<AgentState>;
   write(write: AgentStateWrite): Promise<AgentStateWriteResult>;
 }

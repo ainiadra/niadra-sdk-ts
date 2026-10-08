@@ -123,10 +123,12 @@ export interface DataIssue {
   /**
    * `null_field`, `out_of_vocabulary`, `stale_source`, `invalid_value`: a value an agent's tool showed;
    * `coverage_drop`: a field filled less often than before; `divergence`: two sources of one value disagree;
-   * `drift`: the schema a type mirrors changed; `rule_conflict`: two rules decide one thing differently;
-   * `type_undeclared`: tools showed objects of a type the space never declared.
+   * `drift`: the schema a type mirrors changed, and a new field is already served to agents as it came (a
+   * note, nothing to fix); `field_held`: a new field that may be personal data or free text, held from agents
+   * until the type declares it; `rule_conflict`: two rules decide one thing differently; `type_undeclared`:
+   * tools showed objects of a type the space never declared.
    */
-  kind: "null_field" | "out_of_vocabulary" | "stale_source" | "coverage_drop" | "invalid_value" | "divergence" | "drift" | "rule_conflict" | "type_undeclared";
+  kind: "null_field" | "out_of_vocabulary" | "stale_source" | "coverage_drop" | "invalid_value" | "divergence" | "drift" | "rule_conflict" | "type_undeclared" | "field_held";
   last_seen_at: string;
   object_type?: string | null;
   occurrences: number;

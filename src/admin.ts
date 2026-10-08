@@ -17,7 +17,7 @@ import type { Handle } from "./types/common.js";
 import type { BatchResponse } from "./types/events.js";
 
 /** What `Admin` needs from the client: sending a request with its fail-open policy, and the specs. */
-export interface AdminPort {
+interface AdminPort {
   send<T>(build: () => RequestSpec): Promise<Result<T>>;
   read(method: "GET" | "POST", path: string, body: unknown, options: RequestOptions): RequestSpec;
   write(path: string, body: unknown, idempotencyKey: string, options: RequestOptions): RequestSpec;
