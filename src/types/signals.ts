@@ -195,12 +195,22 @@ export interface ObjectInstruction {
   about?: string | null;
   /** The field of the object's type it is about. */
   attr?: string | null;
+  /**
+   * A contact preference (a channel, hours): how the company reaches `only_with`, never a limit on what may
+   * be said to them.
+   */
+  contact?: boolean;
   expires_at?: string | null;
   /** The entry of `hard` that carries it for a tool, when `attr` is set. */
   hard?: string | null;
   id: string;
   /** The object it is about. */
   object?: string | null;
+  /**
+   * The one person it holds with, as the conversation named them: it binds the readers dealing with that
+   * person, not whoever is speaking. With `contact`, the person it is the preference of.
+   */
+  only_with?: string | null;
   /** The role on the object of who said it (`owner`, `participant`, `lawyer`). */
   role?: string | null;
   said_at: string;

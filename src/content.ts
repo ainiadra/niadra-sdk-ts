@@ -17,7 +17,7 @@
 
 import type { FieldState, StateView } from "./types/state.js";
 
-export type Fetch = (pointer: string) => Promise<string> | string;
+type Fetch = (pointer: string) => Promise<string> | string;
 
 export class ContentResolver {
   private fetchText: Fetch | null = null;

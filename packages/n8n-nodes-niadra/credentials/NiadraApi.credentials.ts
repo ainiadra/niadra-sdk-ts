@@ -6,7 +6,7 @@ import type { IAuthenticateGeneric, Icon, ICredentialTestRequest, ICredentialTyp
  * The address of a space, read from its key (`nia_sk_<live|test>_<region>_<space>_<key_id>_<secret>`)
  * unless a base URL is given, as the SDKs do.
  */
-export const BASE_URL_EXPRESSION =
+const BASE_URL_EXPRESSION =
   '={{ $credentials.baseUrl ? $credentials.baseUrl : "https://" + $credentials.apiKey.split("_")[4] + "." + $credentials.apiKey.split("_")[3] + ".api.niadra.com" }}';
 
 export class NiadraApi implements ICredentialType {

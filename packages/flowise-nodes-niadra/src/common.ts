@@ -57,7 +57,7 @@ export function clientFor(nodeData: INodeData): Niadra {
   return client;
 }
 
-export function handleOf(nodeData: INodeData): Handle | null {
+function handleOf(nodeData: INodeData): Handle | null {
   const type = String(nodeData.inputs?.handleType ?? "app_user_id");
   const value = String(nodeData.inputs?.handleValue ?? "").trim();
   if (!value) return null;

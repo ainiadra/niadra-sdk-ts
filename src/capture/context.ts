@@ -10,7 +10,7 @@
  * opened explicitly: capture keeps working, only the implicit lookup is missing.
  */
 
-export interface AsyncStore<T> {
+interface AsyncStore<T> {
   getStore(): T | undefined;
   run<R>(store: T, fn: () => R): R;
   enterWith(store: T): void;

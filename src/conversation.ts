@@ -82,7 +82,7 @@ export interface AgentTurnOptions extends TurnOptions {
 export type ConversationEvent = Omit<TrackEvent, "channel" | "conversation_id"> & { channel?: string };
 export type ConversationAction = Omit<ActionEvent, "channel" | "conversation_id"> & { channel?: string };
 
-export interface ConversationHooks {
+interface ConversationHooks {
   endConversation(id: string): Promise<WriteResult>;
 }
 
