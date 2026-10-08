@@ -151,6 +151,12 @@ export interface ContextResult {
   state?: StateView | null;
   /** With `include: ["coordination"]`: what coordination knows of the subject. */
   coordination?: CoordinationBlock | null;
+  /**
+   * Blocks the read asked by `include` that the answer does not carry: the server could not read them this time
+   * and said `degraded`. A missing `constraints` block is said in `suffix`, never left silent: a model that is
+   * not told a restriction may hold would answer as if none did. Always set by the SDK.
+   */
+  unreadBlocks?: Include[];
 }
 
 const VIEW = /^(voice|chat|brief|full|custom|account|partner|task:[a-z0-9_]{1,40})$/;
@@ -282,11 +288,24 @@ export function resultFrom(
     state: response.state ?? null,
     coordination: response.coordination ?? null,
   };
-  return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, ageMs, response, error, ...blocks };
+  const unreadBlocks = unreadOf(response);
+  return { text, suffix: renderSuffix(response), variables: response.variables, pack, source, ageMs, response, error, ...blocks, unreadBlocks };
 }
 
 export function emptyResult(error: NiadraError | null): ContextResult {
-  return { text: "", suffix: "", variables: {}, pack: null, source: "none", ageMs: null, response: null, error, constraints: null, state: null, coordination: null };
+  return { text: "", suffix: "", variables: {}, pack: null, source: "none", ageMs: null, response: null, error, constraints: null, state: null, coordination: null, unreadBlocks: [] };
+}
+
+/**
+ * An answer as the SDK keeps it: `asked_blocks`, set by the SDK and never sent by the API, are the blocks the read
+ * asked by `include`, after any the space does not serve. A block asked and absent is one the server could not
+ * read (`ContextResult.unreadBlocks`).
+ */
+export type ServedContext = ContextResponse & { asked_blocks?: Include[] };
+
+/** The blocks the read asked by `include` that the answer does not carry. */
+export function unreadOf(response: ServedContext): Include[] {
+  return (response.asked_blocks ?? []).filter((name) => response[name] == null);
 }
 
 /**
@@ -296,7 +315,7 @@ export function emptyResult(error: NiadraError | null): ContextResult {
  */
 export function renderSuffix(response: ContextResponse): string {
   if (response.path === "holdout") return "";
-  const included = includeText(response.text, response.state, response.constraints);
+  const included = includeText(response.text, response.state, response.constraints, unreadOf(response));
   return [renderLive(response), response.slots ?? "", included, response.delta ?? ""].filter(Boolean).join("\n\n");
 }
 

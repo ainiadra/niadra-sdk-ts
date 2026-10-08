@@ -28,9 +28,26 @@ export function language(pack: string | null | undefined, state?: StateView | nu
   return "en";
 }
 
-/** The `<niadra>` section of the blocks a read asked for, or "" when they hold nothing to say. */
-export function includeText(pack: string | null | undefined, state?: StateView | null, constraints?: ConstraintsBlock | null): string {
-  const parts = [state?.text, constraints?.text].filter((text): text is string => Boolean(text));
+const UNREAD_CONSTRAINTS: Record<string, string> = {
+  pt: "<restrições>\n- as restrições deste cliente não puderam ser lidas agora: pode haver alguma que não está aqui\n</restrições>",
+  en: "<constraints>\n- this customer's constraints could not be read just now: some may hold that are not listed here\n</constraints>",
+  es: "<restricciones>\n- las restricciones de este cliente no se pudieron leer ahora: puede haber alguna que no está aquí\n</restricciones>",
+};
+
+/**
+ * The `<niadra>` section of the blocks a read asked for, or "" when they hold nothing to say. A `constraints`
+ * block the read asked for and the server could not read (`unread`) is said, in the space's language, where the
+ * block would be: a restriction that may hold is never left silent.
+ */
+export function includeText(
+  pack: string | null | undefined,
+  state?: StateView | null,
+  constraints?: ConstraintsBlock | null,
+  unread: readonly string[] = [],
+): string {
+  const lang = language(pack, state);
+  const said = constraints?.text ?? (constraints == null && unread.includes("constraints") ? UNREAD_CONSTRAINTS[lang] : undefined);
+  const parts = [state?.text, said].filter((text): text is string => Boolean(text));
   if (parts.length === 0) return "";
-  return ["<niadra>", OPENINGS[language(pack, state)] ?? "", ...parts, "</niadra>"].join("\n");
+  return ["<niadra>", OPENINGS[lang] ?? "", ...parts, "</niadra>"].join("\n");
 }

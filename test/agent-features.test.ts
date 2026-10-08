@@ -76,6 +76,32 @@ describe("the warm cache", () => {
     expect(context.constraints ?? null).toBeNull();
   });
 
+  it("keeps asking for the blocks after a 404 that was not about them", async () => {
+    // `/v1/context` answers 404 for an object or a profile it does not know too: no feature turned off.
+    const cell = store();
+    const niadra = client(cell);
+    cell.failNext("/v1/context", 404, 2);
+    const failed = await niadra.context({ subject: marina, conversation_id: "c-404", include: ["constraints"] });
+    expect(failed.text).toBe("");
+    const context = await niadra.context({ subject: marina, conversation_id: "c-after", include: ["constraints"] });
+    expect(context.constraints?.version).toBe("cv_0123456789abcdef");
+  });
+
+  it("says constraints the server could not read, never leaves them silent", async () => {
+    const cell = store();
+    cell.failingBlocks.add("constraints");
+    const niadra = client(cell);
+    const context = await niadra.context({ subject: marina, conversation_id: "c-unread", include: ["constraints"] });
+    expect(context.text).not.toBe("");
+    expect(context.constraints ?? null).toBeNull();
+    expect(context.response?.degraded).toBe(true);
+    expect(context.unreadBlocks).toEqual(["constraints"]);
+    expect(context.suffix).toContain("could not be read");
+    const plain = await niadra.context({ subject: marina, conversation_id: "c-plain" });
+    expect(plain.unreadBlocks).toEqual([]);
+    expect(plain.suffix).not.toContain("<constraints>");
+  });
+
   it("counts a turn's claims against its tools", async () => {
     const cell = store();
     const niadra = client(cell);
