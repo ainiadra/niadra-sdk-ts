@@ -99,7 +99,17 @@ export async function buildRecord(
   const calls = frame.calls.slice(0, MAX_CALLS).map((entry) => callOf(entry, blobs));
   const found = claimsOf(frame, options.claims ?? null, options.logger);
   if (found === null) completeness = "incomplete";
-  const lost = frame.calls.length > MAX_CALLS || frame.blobs.size > MAX_BLOBS || frame.reads.length > MAX_READS;
+  // The record's lists are as long as the server takes them; past that the record says it is partial, never
+  // silently shorter.
+  const lost =
+    frame.calls.length > MAX_CALLS ||
+    frame.blobs.size > MAX_BLOBS ||
+    frame.reads.length > MAX_READS ||
+    (found ?? []).length > MAX_CLAIMS ||
+    frame.interactions.length > MAX_INTERACTIONS ||
+    frame.coordination.length > MAX_DECISIONS ||
+    frame.effects.size > MAX_DECISIONS ||
+    frame.eventKeys.length > MAX_EVENT_KEYS;
   if (lost && completeness === "complete") completeness = "partial";
   const agent: Record<string, unknown> = { name: frame.agent };
   if (frame.role) agent.role = frame.role;

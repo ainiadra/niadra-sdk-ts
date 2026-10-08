@@ -240,3 +240,17 @@ describe("turn records", () => {
     expect(Math.min(...rounds)).toBeLessThan(process.env.NIADRA_BENCH === "1" ? 2 : 20);
   });
 });
+
+describe("a record cut to the server's list sizes", () => {
+  it("says it is partial, never silently shorter", async () => {
+    const { buildRecord } = await import("../src/capture/record.js");
+    const frame = new TurnFrame(null, { agent: "a", conversationId: "c" });
+    for (let n = 0; n < 51; n += 1) frame.eventKeys.push(`k${n}`);
+    const record = await buildRecord(frame, "stored");
+    expect((record.output as { event_keys: string[] }).event_keys).toHaveLength(50);
+    expect(record.completeness).toBe("partial");
+    const busy = new TurnFrame(null, { agent: "a", conversationId: "c" });
+    for (let n = 0; n < 201; n += 1) busy.interactions.push({ kind: "viewed" });
+    expect((await buildRecord(busy, "stored")).completeness).toBe("partial");
+  });
+});
