@@ -4,6 +4,14 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- `mayContact`'s first check asks for the first page of the suppression list whatever the salt took: each
+  round trip has its own budget. On a new connection from far from the region the salt took the read's one
+  budget, the first page was never asked for, and the first check of a purpose that fails closed
+  (`marketing`, `client_contact`) said no on every channel for customers the list does not name. When the
+  first check runs out anyway, the read goes on in the background, so the next check has the copy.
+
 ## [0.11.5] - 2026-10-09
 
 ### Added

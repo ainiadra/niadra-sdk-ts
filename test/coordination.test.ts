@@ -116,6 +116,55 @@ describe("coordination in the agent's process", () => {
     expect(reads).toEqual([""]);
   });
 
+  /** The cell, with the salt of the suppression list taking `saltMs` and its pages `pageMs`; an abort ends the wait. */
+  function slowList(cell: Cell, saltMs: number, pageMs = 0): typeof fetch {
+    return (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      const ms = url.pathname === "/v1/suppressions/salt" ? saltMs : url.pathname === "/v1/suppressions" ? pageMs : 0;
+      if (ms === 0) return cell.fetch(input, init);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(cell.fetch(input, init)), ms);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    };
+  }
+
+  it("asks for the first page after a salt that took the whole budget on a new connection", async () => {
+    // 09/10/2026, from Sao Paulo on a new client: the salt took the read's one budget, the first page was never
+    // asked for, and the first check of a purpose that fails closed said no on every channel, for a customer the
+    // list does not name.
+    const cell = new Cell();
+    cell.features.add("coordination");
+    await cell.suppress(marina, "marketing");
+    const niadra = new Niadra({
+      apiKey: KEY,
+      logger: silentLogger,
+      flushOnExit: false,
+      fetch: slowList(cell, 700),
+      timeouts: { navigation: 500, connect: 1_000 },
+    });
+    expect(await niadra.mayContact(OTHER, "marketing", { channel: "voice" })).toBe(true);
+    expect(await niadra.mayContact(marina, "marketing", { channel: "voice" })).toBe(false);
+  });
+
+  it("goes on reading in the background when the first check runs out", async () => {
+    const cell = new Cell();
+    cell.features.add("coordination");
+    const niadra = new Niadra({
+      apiKey: KEY,
+      logger: silentLogger,
+      flushOnExit: false,
+      fetch: slowList(cell, 700, 700),
+      timeouts: { navigation: 500, connect: 0 },
+    });
+    expect(await niadra.mayContact(OTHER, "marketing")).toBe(false); // no copy yet, and marketing waits
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    expect(await niadra.mayContact(OTHER, "marketing")).toBe(true);
+  });
+
   it("holds nothing back in a space that does not coordinate", async () => {
     const { cell, niadra } = setup();
     cell.features.delete("coordination");

@@ -27,7 +27,14 @@ const REFRESH_MS = 60_000;
 const FAIL_OPEN = new Set(["transactional", "service"]);
 const PAGE = 200;
 /** Pages one read takes at most; the next read goes on from its cursor. */
-const MAX_PAGES = 50;
+export const MAX_PAGES = 50;
+/**
+ * Round trips the first check waits for, each within its own budget: the salt and the first page, the whole
+ * list of a space with up to `PAGE` entries. A read stopped at one budget for all of them: from Sao Paulo the
+ * salt on a new connection took that budget alone (09/10/2026), the first page was never asked for, and the
+ * first check of a purpose that fails closed said no on every channel. A longer list goes on in the background.
+ */
+export const FIRST_READ_ROUNDS = 2;
 
 interface SuppressionReader {
   salt(): Promise<SuppressionSalt>;
@@ -54,17 +61,20 @@ export class SuppressionCopy {
     return this.absent || this.readAt !== null;
   }
 
-  /** Reads the list with `reader`, one read at a time, within `budgetMs`; never rejects. */
-  read(reader: SuppressionReader, budgetMs: number): Promise<void> {
-    this.reading ??= this.readAll(reader, this.now() + budgetMs).finally(() => {
+  /**
+   * Reads the list with `reader`, one read at a time, in up to `rounds` round trips, each within the reader's
+   * own budget; never rejects. A read already under way is the one returned.
+   */
+  read(reader: SuppressionReader, rounds: number = MAX_PAGES): Promise<void> {
+    this.reading ??= this.readAll(reader, rounds).finally(() => {
       this.reading = null;
     });
     return this.reading;
   }
 
-  private async readAll(reader: SuppressionReader, deadline: number): Promise<void> {
+  private async readAll(reader: SuppressionReader, rounds: number): Promise<void> {
     try {
-      for (let i = 0; i < MAX_PAGES && this.now() < deadline; i++) {
+      for (let i = 0; i < rounds; i++) {
         if (this.saltValue === null) {
           this.takeSalt(await reader.salt());
           continue;

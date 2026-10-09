@@ -10,7 +10,7 @@ import { TurnRecorder, DEFAULT_TURNS } from "./capture/recorder.js";
 import { TurnSender } from "./capture/sender.js";
 import { ContentResolver } from "./content.js";
 import { Coordinator } from "./coordination/client.js";
-import { SuppressionCopy } from "./coordination/suppression.js";
+import { FIRST_READ_ROUNDS, SuppressionCopy } from "./coordination/suppression.js";
 import { ContactGateway } from "./coordination/token.js";
 import type { SeenTokens } from "./coordination/token.js";
 import { Outbox } from "./outbox.js";
@@ -471,27 +471,33 @@ export class Niadra {
    * copy of the space's suppression list: the opt-out holds with Niadra down, from the last copy read. Only
    * messages the agent starts need it; an answer to the customer is never suppressed.
    *
-   * The copy is read on the first call (within `timeouts.navigation`) and again in the background once a
-   * minute. With no copy and Niadra out of reach, the purpose decides: `transactional` and `service` go,
-   * every other purpose waits; `failOpen` overrides that. A space without a list suppresses nothing.
+   * The copy is read on the first call, the salt and the first page each within `timeouts.navigation`, and
+   * again in the background once a minute; a list longer than a page goes on in the background. With no copy
+   * and Niadra out of reach, the purpose decides: `transactional` and `service` go, every other purpose waits;
+   * `failOpen` overrides that. A space without a list suppresses nothing.
    */
   async mayContact(handle: Handle, purpose: string, options: { channel?: string; failOpen?: boolean } = {}): Promise<boolean> {
     if (this.core && this.suppressions.due()) {
-      const read = this.readSuppressions(this.suppressions.held ? this.timeouts.write : this.readBudget("navigation"));
-      if (!this.suppressions.held) await read;
+      if (this.suppressions.held) {
+        void this.readSuppressions(this.timeouts.write);
+      } else {
+        await this.readSuppressions(this.readBudget("navigation"), FIRST_READ_ROUNDS);
+        this.keepSuppressions(); // what the first check could not read goes on in the background
+      }
     }
     const checkOptions: { channel?: string | null; failOpen?: boolean } = { channel: options.channel ?? null };
     if (options.failOpen !== undefined) checkOptions.failOpen = options.failOpen;
     return this.suppressions.mayContact(handle, purpose, checkOptions);
   }
 
-  private readSuppressions(budgetMs: number): Promise<void> {
+  /** Reads the copy in up to `rounds` round trips, each within `timeoutMs`. */
+  private readSuppressions(timeoutMs: number, rounds?: number): Promise<void> {
     return this.suppressions.read(
       {
-        salt: () => this.api.suppressionSalt({ timeout: this.readBudget("navigation") }),
-        page: (cursor, limit) => this.api.suppressions({ cursor, limit }, { timeout: this.readBudget("navigation") }),
+        salt: () => this.api.suppressionSalt({ timeout: timeoutMs }),
+        page: (cursor, limit) => this.api.suppressions({ cursor, limit }, { timeout: timeoutMs }),
       },
-      budgetMs,
+      rounds,
     );
   }
 
