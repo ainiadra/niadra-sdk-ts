@@ -6,6 +6,14 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Fixed
 
+- A read that starts while every open connection is busy gets the cold-connection allowance
+  (`timeouts.connect`): the transport counts one connection for each request a caller waits on that was in
+  flight at once. One answer used to stand for every connection, so after the keep-warm ping held one open,
+  a turn that read its context, notes and state at once opened two more without the allowance, and from far
+  from the region a 300 ms read ran out while the API answered in under 50 ms.
+
+### Fixed
+
 - `mayContact`'s first check asks for the first page of the suppression list whatever the salt took: each
   round trip has its own budget. On a new connection from far from the region the salt took the read's one
   budget, the first page was never asked for, and the first check of a purpose that fails closed

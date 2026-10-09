@@ -46,6 +46,11 @@ export interface RequestSpec {
   ceilingMs?: number;
 }
 
+/** A request a caller waits on: a read, or a write with a total budget. A batch of the background queue is not. */
+function waited(spec: RequestSpec): boolean {
+  return spec.retry.kind === "read" || spec.retry.totalMs !== undefined;
+}
+
 /** `spec` with its budget as its ceiling when a voice turn waits for it (`RequestSpec.ceilingMs`). */
 export function voiced(spec: RequestSpec, voice: boolean): RequestSpec {
   return voice ? { ...spec, ceilingMs: spec.timeoutMs } : spec;
@@ -95,7 +100,15 @@ export class Transport {
     this.baseURL = config.baseURL.replace(/\/+$/, "");
   }
 
-  private answeredAt: number | undefined;
+  /**
+   * When each connection the client likely keeps last answered, the latest first: one for each request a caller
+   * waits on that was in flight at once. One answer used to stand for every connection: the keep-warm ping kept
+   * one open, a turn that read its context, notes and state at once opened two more without the allowance, and
+   * from Sao Paulo the notes' 300 ms ran out (09/10/2026) while the API answered in under 50 ms.
+   */
+  private open: number[] = [];
+  /** The requests a caller waits on in flight now. */
+  private inFlight = 0;
   /** When the allowance was first given since the last answer; it holds for the calls of that moment only. */
   private grantedAt: number | undefined;
 
@@ -104,31 +117,37 @@ export class Transport {
 
   /** Likely: an answer came within `keepAliveMs`. When not, the next budgeted call gets `coldAllowanceMs`. */
   connectionOpen(): boolean {
-    return this.answeredAt !== undefined && Date.now() - this.answeredAt <= (this.config.keepAliveMs ?? 0);
+    return this.live(Date.now()).length > 0;
   }
 
   async request<T>(spec: RequestSpec): Promise<TransportResponse<T>> {
     if (spec.activity !== false) this.lastActivityAt = Date.now();
-    const budgeted = this.withAllowance(spec);
-    return budgeted.retry.kind === "read"
-      ? this.read<T>(budgeted, budgeted.retry)
-      : this.write<T>(budgeted, budgeted.retry);
+    if (!waited(spec)) return this.dispatch<T>(spec);
+    const busy = this.inFlight++;
+    try {
+      return await this.dispatch<T>(this.withAllowance(spec, busy));
+    } finally {
+      this.inFlight--;
+    }
+  }
+
+  private dispatch<T>(spec: RequestSpec): Promise<TransportResponse<T>> {
+    return spec.retry.kind === "read" ? this.read<T>(spec, spec.retry) : this.write<T>(spec, spec.retry);
   }
 
   /**
-   * `spec` with the allowance for opening a connection, when it has a budget and none is likely open. The calls
-   * that start while the first one opens it get it too; after that, none does until an answer comes, so an
-   * outage costs the allowance once, not on every turn. A call with a `ceilingMs` (a voice read) never grows
-   * past it: a voice turn keeps its budget, and a cold connection there answers empty in time instead of
-   * holding the turn.
+   * `spec` with the allowance for opening a connection, when no idle one is likely left for it: `busy` requests
+   * are out, and the connections that answered within `keepAliveMs` are that many or fewer. The calls that start
+   * while the first one opens it get it too; after that, none does until an answer comes, so an outage costs the
+   * allowance once, not on every turn. A call with a `ceilingMs` (a voice read) never grows past it: a voice turn
+   * keeps its budget, and a cold connection there answers empty in time instead of holding the turn.
    */
-  private withAllowance(spec: RequestSpec): RequestSpec {
+  private withAllowance(spec: RequestSpec, busy: number): RequestSpec {
     const allowance = this.config.coldAllowanceMs ?? 0;
     const { retry } = spec;
-    if (allowance <= 0 || (retry.kind === "write" && retry.totalMs === undefined)) return spec;
+    if (allowance <= 0) return spec;
     const now = Date.now();
-    const keep = this.config.keepAliveMs ?? 0;
-    if (this.answeredAt !== undefined && now - this.answeredAt <= keep) return spec;
+    if (this.live(now).length > busy) return spec;
     this.grantedAt ??= now;
     if (now - this.grantedAt > allowance) return spec;
     const extra = spec.ceilingMs === undefined ? allowance : Math.min(allowance, spec.ceilingMs - spec.timeoutMs);
@@ -223,9 +242,18 @@ export class Transport {
     }
   }
 
+  /** An answer came while `inFlight` requests were out: that many connections, one at least, answered just now. */
   private answered(): void {
-    this.answeredAt = Date.now();
+    const now = Date.now();
+    const fresh = Math.max(this.inFlight, 1);
+    this.open = [...Array<number>(fresh).fill(now), ...this.live(now).slice(fresh)];
     this.grantedAt = undefined;
+  }
+
+  private live(now: number): number[] {
+    const keep = this.config.keepAliveMs ?? 0;
+    this.open = this.open.filter((at) => now - at <= keep);
+    return this.open;
   }
 
   private async exchange<T>(url: string, init: RequestInit, deadline: Deadline): Promise<TransportResponse<T>> {
