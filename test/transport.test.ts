@@ -131,6 +131,40 @@ describe("opening a connection", () => {
     expect(late).toMatchObject({ timeoutMs: 30 });
   });
 
+  it("gives the allowance to reads that start while every open connection is busy", async () => {
+    // juridico-zero, 09/10/2026: the keep-warm ping kept one connection open; a turn read its context, notes and
+    // state at once, two of them opened a connection again from Sao Paulo, and the notes' 300 ms ran out.
+    let calls = 0;
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      const n = ++calls;
+      // The first call opens the connection; of the turn's three, the first finds it and the others open one;
+      // after that the three are open.
+      const ms = n === 3 || n === 4 ? 120 : 10;
+      return new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(new Response(JSON.stringify({ n }), { status: 200, headers: { "content-type": "application/json" } })), ms);
+        init.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    }) as typeof fetch;
+    const t = new Transport({
+      baseURL: "https://api.example.test",
+      apiKey: KEY,
+      fetch: fetchFn,
+      defaultHeaders: {},
+      logger: spyLogger(),
+      coldAllowanceMs: 500,
+      keepAliveMs: 60_000,
+    });
+    const read = () => t.request<{ n: number }>({ method: "POST", path: "/v1/context", body: {}, timeoutMs: 60, retry: READ_POLICY });
+    expect((await read()).data.n).toBe(1);
+    const turn = await Promise.all([read(), read(), read()]);
+    expect(turn.map((r) => r.data.n).sort()).toEqual([2, 3, 4]);
+    const again = await Promise.all([read(), read(), read()]);
+    expect(again.map((r) => r.data.n).sort()).toEqual([5, 6, 7]);
+  });
+
   it("leaves a batch of the background queue with its own timeout", async () => {
     const slow = (async (_url: string, init: RequestInit) =>
       new Promise<Response>((resolve, reject) => {
