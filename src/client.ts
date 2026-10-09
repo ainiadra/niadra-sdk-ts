@@ -647,6 +647,20 @@ export class Niadra {
   }
 
   /**
+   * Items that will never reach memory and that no caller heard about: what `track()` and `action()` queued,
+   * or a write that stayed queued after its caller stopped waiting, when the queue was full or the API
+   * refused it, the whole batch or the item alone in a 207 (`unknown_object`, say).
+   */
+  get dropped(): number {
+    return this.core?.queue.dropped ?? 0;
+  }
+
+  /** `dropped` by reason: `queue_full`, or the code the API refused the item with. */
+  get droppedByReason(): Record<string, number> {
+    return this.core?.queue.droppedByReason ?? {};
+  }
+
+  /**
    * Sends a partial transcript of the customer's turn while they are still speaking, to
    * `POST /v1/context/prefetch`. The server reads it the way it will read the final turn and warms
    * what that read needs, so the `context()` that answers the turn spends less of its
@@ -1713,13 +1727,14 @@ export class Niadra {
         this.logger.warn(`write not confirmed within ${this.timeouts.write} ms; it stays queued`);
         settle(new NiadraTimeoutError(this.timeouts.write));
       }, this.timeouts.write);
-      const settle = (error: NiadraError | null): void => {
-        if (settled) return;
+      const settle = (error: NiadraError | null): boolean => {
+        if (settled) return false;
         settled = true;
         clearTimeout(timer);
         if (!error) resolve({ ok: true, idempotency_key: key, error: null });
         else if (this.strict) reject(error);
         else resolve({ ok: false, idempotency_key: key, error });
+        return true;
       };
       core.queue.push(item, settle);
       core.queue.flushInBackground(true);

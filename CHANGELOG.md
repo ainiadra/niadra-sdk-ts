@@ -6,6 +6,13 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [0.11.5] - 2026-10-09
 
+### Added
+
+- `dropped` and `droppedByReason` on the client, as in the Python SDK: the items that will never reach memory
+  and that no caller heard about, by reason: `queue_full`, or the code the API refused the item with, for the
+  whole batch or for the item alone in a 207 (`unknown_object`, say). A write that stayed queued after its
+  caller stopped waiting counts too; a refused heartbeat does not.
+
 ### Fixed
 
 - A voice read keeps its turn's budget whatever the connection. The cold-connection allowance
