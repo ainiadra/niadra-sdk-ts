@@ -336,11 +336,63 @@ describe("partial failures and heartbeats", () => {
     );
     const queue = new EventQueue(send, { ...DEFAULT_QUEUE, flushAt: 100 }, spyLogger());
     const outcomes: (string | null)[] = [];
-    queue.push({ type: "task.ended", idempotency_key: "a", task_id: "t", occurred_at: "x" }, (e) => outcomes.push(e?.message ?? null));
-    queue.push({ type: "task.ended", idempotency_key: "b", task_id: "t", occurred_at: "x" }, (e) => outcomes.push(e?.message ?? null));
+    const heard = (e: Error | null) => outcomes.push(e?.message ?? null) > 0;
+    queue.push({ type: "task.ended", idempotency_key: "a", task_id: "t", occurred_at: "x" }, heard);
+    queue.push({ type: "task.ended", idempotency_key: "b", task_id: "t", occurred_at: "x" }, heard);
     const report = await queue.flush();
     expect(outcomes).toEqual([null, "invalid_input: channel"]);
     expect(report).toMatchObject({ sent: 1, failed: 1 });
+    expect(queue.dropped).toBe(0);
+  });
+
+  it("counts the items a 207 refuses as dropped, by the code the API gave each", async () => {
+    const server = new MockServer().on("POST /v1/batch", {
+      status: 207,
+      body: {
+        accepted: 1,
+        duplicates: 0,
+        errors: [
+          { index: 0, code: "unknown_object", detail: "no such object" },
+          { index: 2, code: "invalid_input" },
+        ],
+      },
+    });
+    const niadra = makeClient(server, { queue: { flushAt: 100 } });
+    niadra.track(message("a"));
+    niadra.track(message("b"));
+    niadra.track(message("c"));
+    await niadra.flush();
+    expect(niadra.dropped).toBe(2);
+    expect(niadra.droppedByReason).toEqual({ unknown_object: 1, invalid_input: 1 });
+  });
+
+  it("counts a refused batch and what a full queue turns away", async () => {
+    const server = new MockServer().on("POST /v1/batch", problem(400, "invalid_input"));
+    const niadra = makeClient(server, { queue: { flushAt: 100, flushIntervalMs: 60_000, maxQueueSize: 2 } });
+    expect(niadra.track(message("a"))).not.toBeNull();
+    expect(niadra.track(message("b"))).not.toBeNull();
+    expect(niadra.track(message("c"))).toBeNull();
+    expect(niadra.droppedByReason).toEqual({ queue_full: 1 });
+    await niadra.flush();
+    expect(niadra.dropped).toBe(3);
+    expect(niadra.droppedByReason).toEqual({ queue_full: 1, invalid_input: 2 });
+  });
+
+  it("never counts a refused heartbeat as a dropped item", async () => {
+    let now = Date.parse("2026-09-22T17:00:00Z");
+    const send = vi.fn(async (items: BatchItem[]): Promise<BatchResponse> => {
+      const beat = items.findIndex((item) => item.type === "heartbeat");
+      const errors = beat < 0 ? [] : [{ index: beat, code: "invalid_input" }];
+      return { accepted: items.length - errors.length, duplicates: 0, errors, masked: {} };
+    });
+    const queue = new EventQueue(send, { ...DEFAULT_QUEUE, flushAt: 100 }, spyLogger(), () => now);
+    queue.push({ type: "task.ended", idempotency_key: "a", task_id: "t", occurred_at: "x" });
+    await queue.flush();
+    now += 61_000;
+    queue.push({ type: "task.ended", idempotency_key: "b", task_id: "t", occurred_at: "x" });
+    await queue.flush();
+    expect(send.mock.calls[1]![0].at(-1)?.type).toBe("heartbeat");
+    expect(queue.dropped).toBe(0);
   });
 
   it("adds a heartbeat with the previous minute's count to the next batch", async () => {

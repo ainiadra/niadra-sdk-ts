@@ -1,4 +1,4 @@
-import { NiadraError, NiadraValidationError, toNiadraError } from "./errors.js";
+import { NiadraAPIError, NiadraError, NiadraValidationError, toNiadraError } from "./errors.js";
 import type { Logger } from "./logger.js";
 import type { QueueOptions } from "./options.js";
 import { isTransient } from "./transport.js";
@@ -7,8 +7,9 @@ import type { BatchItem, BatchResponse, HeartbeatItem } from "./types/events.js"
 /**
  * Called with `null` when the server accepted the item, or the reason it did not. An item that goes back to
  * the queue after an error that may pass hears that error first, and its answer later; a caller keeps the first.
+ * Returns `true` when a caller was still waiting and heard it: a refusal nobody heard counts as dropped.
  */
-type Settle = (error: NiadraError | null) => void;
+type Settle = (error: NiadraError | null) => boolean;
 
 interface Pending {
   item: BatchItem;
@@ -35,6 +36,9 @@ const MAX_PAUSE_MS = 60_000;
  * the queue pauses, doubling the pause up to a minute while Niadra stays down: what an agent
  * said during an outage arrives once Niadra is back, each item under its own idempotency key.
  * `maxQueueSize` bounds what an outage can hold. A batch refused for any other reason is dropped.
+ * Every item that will never reach memory and that no caller waits for is counted in `dropped`, by
+ * reason: `queue_full`, or the code the API refused it with, for the whole batch or for the item alone
+ * in a 207 (`unknown_object`, say).
  */
 export class EventQueue {
   private items: Pending[] = [];
@@ -43,6 +47,7 @@ export class EventQueue {
   private tail: Promise<unknown> = Promise.resolve();
   private closed = false;
   private droppedSinceWarning = 0;
+  private readonly droppedCounts = new Map<string, number>();
   private windowStart: number;
   private sentInWindow = 0;
   private pauseMs = 0;
@@ -62,6 +67,18 @@ export class EventQueue {
     return this.items.length;
   }
 
+  /** Items dropped so far: the queue was full, or the API refused them, the whole batch or the item alone. */
+  get dropped(): number {
+    let total = 0;
+    for (const count of this.droppedCounts.values()) total += count;
+    return total;
+  }
+
+  /** `dropped` by reason: `queue_full`, or the code the API refused the item with. */
+  get droppedByReason(): Record<string, number> {
+    return Object.fromEntries(this.droppedCounts);
+  }
+
   /** Queues one item. Returns `false`, and settles it with an error, when the queue is full or closed. */
   push(item: BatchItem, settle?: Settle): boolean {
     if (this.closed || this.items.length >= this.options.maxQueueSize) {
@@ -69,7 +86,8 @@ export class EventQueue {
       if (this.droppedSinceWarning === 1) {
         this.logger.warn(this.closed ? "client is shut down; dropping events" : "event queue is full; dropping events");
       }
-      settle?.(new NiadraError(this.closed ? "client is shut down" : "event queue is full"));
+      const heard = settle?.(new NiadraError(this.closed ? "client is shut down" : "event queue is full")) === true;
+      if (!this.closed && !heard) this.drop("queue_full");
       return false;
     }
     this.droppedSinceWarning = 0;
@@ -150,16 +168,17 @@ export class EventQueue {
       }
       report.failed += batch.length;
       this.logger.warn(`dropped ${batch.length} events refused by the API: ${failure.message}`);
-      for (const pending of batch) pending.settle?.(failure);
+      const reason = failure instanceof NiadraAPIError ? failure.code : failure.name;
+      for (const pending of batch) this.refuse(pending, failure, reason);
       return true;
     }
     this.pauseMs = 0;
     this.resumeAt = 0;
 
-    const rejected = new Map<number, NiadraError>();
+    const rejected = new Map<number, { error: NiadraError; code: string }>();
     for (const itemError of response.errors) {
       const detail = itemError.detail ? `: ${itemError.detail}` : "";
-      rejected.set(itemError.index, new NiadraValidationError(`${itemError.code}${detail}`));
+      rejected.set(itemError.index, { error: new NiadraValidationError(`${itemError.code}${detail}`), code: itemError.code });
     }
     if (rejected.size > 0) {
       const codes = [...new Set(response.errors.map((e) => e.code))].join(", ");
@@ -167,17 +186,28 @@ export class EventQueue {
     }
     batch.forEach((pending, index) => {
       if (pending.item.type === "heartbeat") return;
-      const error = rejected.get(index) ?? null;
-      if (error) {
+      const refusal = rejected.get(index);
+      if (refusal) {
         report.failed++;
-        report.errors.push(error);
+        report.errors.push(refusal.error);
+        this.refuse(pending, refusal.error, refusal.code);
       } else {
         report.sent++;
         this.sentInWindow++;
+        pending.settle?.(null);
       }
-      pending.settle?.(error);
     });
     return true;
+  }
+
+  /** Tells an item's caller it was refused, or counts it as dropped when no caller waits for it. */
+  private refuse(pending: Pending, error: NiadraError, reason: string): void {
+    if (pending.item.type === "heartbeat") return;
+    if (pending.settle?.(error) !== true) this.drop(reason);
+  }
+
+  private drop(reason: string, count = 1): void {
+    this.droppedCounts.set(reason, (this.droppedCounts.get(reason) ?? 0) + count);
   }
 
   /** Puts a batch back at the front, keeping only what still fits; what does not is dropped. */
@@ -187,7 +217,8 @@ export class EventQueue {
     this.items.unshift(...batch.slice(0, room));
     if (lost.length > 0) {
       this.logger.warn(`event queue is full; dropped ${lost.length} events`);
-      for (const pending of lost) pending.settle?.(new NiadraError("event queue is full"));
+      const full = new NiadraError("event queue is full");
+      for (const pending of lost) this.refuse(pending, full, "queue_full");
     }
   }
 

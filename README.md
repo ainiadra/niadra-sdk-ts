@@ -755,8 +755,8 @@ Memory should make an agent better, never make it fail. By default:
 | 421 (the space moved to another cell) | Retried at once, up to three attempts. |
 | 429 on a batch | Retried after `Retry-After`. |
 | Batch failure | Retried with exponential backoff and jitter, three attempts. 4xx answers other than 408, 421 and 429 are never retried. A batch that still fails goes back to the front of the queue and leaves again after a pause that doubles, up to a minute, while Niadra stays down; each event keeps its idempotency key, so it is stored once. |
-| Queue full (10,000 items) | New events are dropped and logged. |
-| Server rejects one item of a batch (207) | Only that item fails; the rest are stored. |
+| Queue full (10,000 items) | New events are dropped, logged and counted in `dropped`. |
+| Server rejects one item of a batch (207) | Only that item fails; the rest are stored. A queued item nobody waits for is counted in `dropped`, by the API's code in `droppedByReason` (`unknown_object`, say). |
 
 With Niadra down, a read serves the conversation's last good pack (`source: "fallback"`) with `ageMs`
 saying how old it is; the opt-out holds by the local copy of the suppression list; turn records, events

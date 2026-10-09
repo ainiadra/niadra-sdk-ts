@@ -193,9 +193,21 @@ describe("identify(), verify() and handoff()", () => {
       status: 207,
       body: { accepted: 0, duplicates: 0, errors: [{ index: 0, code: "verification_not_allowed" }] },
     });
-    const result = await makeClient(server).verify({ handle: marina, method: "kba", level: "V4", conversation_id: "c" });
+    const niadra = makeClient(server);
+    const result = await niadra.verify({ handle: marina, method: "kba", level: "V4", conversation_id: "c" });
     expect(result.ok).toBe(false);
     expect(result.error?.message).toBe("verification_not_allowed");
+    expect(niadra.dropped).toBe(0);
+  });
+
+  it("counts as dropped a refusal that comes after the caller stopped waiting", async () => {
+    const refused = { status: 207, body: { accepted: 0, duplicates: 0, errors: [{ index: 0, code: "unknown_object" }] } };
+    const server = new MockServer().on("POST /v1/batch", { ...problem(503, "unavailable"), delay: 60 }, refused);
+    const niadra = makeClient(server, { timeouts: { write: 100 }, queue: { flushIntervalMs: 60_000, retryDelayMs: 200 } });
+    const result = await niadra.identify({ handles: [marina, { type: "email", value: "marina@example.com" }] });
+    expect(result).toMatchObject({ ok: false, error: { name: "NiadraTimeoutError" } });
+    await niadra.flush();
+    expect(niadra.droppedByReason).toEqual({ unknown_object: 1 });
   });
 
   it("stops waiting at the write budget and keeps sending the item in the background", async () => {
