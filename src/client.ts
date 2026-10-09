@@ -81,7 +81,7 @@ import type { TaskParams } from "./task.js";
 import { bindTools } from "./tools.js";
 import type { BoundTools, Navigator, Result, ToolBinding, ToolOptions } from "./tools.js";
 import type { Route } from "./routes.js";
-import { READ_POLICY, Transport } from "./transport.js";
+import { READ_POLICY, Transport, voiced } from "./transport.js";
 import { BLOCK_RECHECK_AFTER_MS, MIN_PREFETCH, turnText } from "./turns.js";
 import { VoiceLines, budgetWarnings, compose, rttWarnings, wordsOf } from "./voice.js";
 import type { TurnRead, VoiceLine } from "./voice.js";
@@ -123,6 +123,11 @@ import type { DeclareRequest } from "./types/coordination.js";
 import type { ClaimContractSummary, ObjectRead, SdkProfile, StateRef, StateVerifyResponse } from "./types/state.js";
 import type { TurnPins, TurnsResponse } from "./types/turns.js";
 import type { Verification } from "./types/vocabulary.js";
+
+/** A read's options inside the client: `voice` when a voice turn waits for it, so its budget is its ceiling. */
+interface ReadOptions extends RequestOptions {
+  voice?: boolean;
+}
 
 /** Keys of answered reads a client remembers to tell a first read from the next (`timeouts.contextFirst`). */
 const READ_KEYS_KEPT = 4096;
@@ -890,7 +895,7 @@ export class Niadra {
     const readKey = `agent-memory:${key}`;
     const first = !this.answeredReads.has(readKey);
     const timeout = options.timeout ?? (params.view === "voice" ? this.timeouts.contextVoice : this.readBudget("context", first));
-    const spec = this.readSpec("GET", "/v1/agent-memory/block", undefined, timeout, options);
+    const spec = this.readSpec("GET", "/v1/agent-memory/block", undefined, timeout, { ...options, voice: params.view === "voice" });
     spec.query = {
       max_tokens: String(params.max_tokens ?? 300),
       view: params.view,
@@ -1245,8 +1250,8 @@ export class Niadra {
     return failure;
   }
 
-  private voiceBudget(voice: boolean): RequestOptions {
-    return voice ? { timeout: this.timeouts.navigationVoice } : {};
+  private voiceBudget(voice: boolean): ReadOptions {
+    return voice ? { timeout: this.timeouts.navigationVoice, voice: true } : {};
   }
 
   private readSpec(
@@ -1254,7 +1259,7 @@ export class Niadra {
     path: string,
     body: unknown,
     defaultTimeout: number,
-    options: RequestOptions,
+    options: ReadOptions,
   ): RequestSpec {
     const spec: RequestSpec = {
       method,
@@ -1265,7 +1270,7 @@ export class Niadra {
       headers: options.headers,
     };
     if (body !== undefined) spec.body = body;
-    return spec;
+    return voiced(spec, options.voice === true);
   }
 
   /** A write sent at once, retried like a batch; the idempotency key makes the retries safe. */
@@ -1337,8 +1342,10 @@ export class Niadra {
     headers: Record<string, string> | undefined,
   ): Promise<ContextResponse> {
     const started = Date.now();
+    // A voice read keeps its budget whatever the connection (`RequestSpec.ceilingMs`).
+    const voice = request.view === "voice";
     try {
-      const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", request, timeout, { signal, headers }));
+      const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", request, timeout, { signal, headers, voice }));
       return normalizeContext(response.data, request.include ?? undefined);
     } catch (error) {
       // A space that serves none of the blocks answers 404: the read goes on without them. `/v1/context` also
@@ -1348,7 +1355,7 @@ export class Niadra {
       const left = timeout - (Date.now() - started);
       if (!request.include?.length || !refused || left <= 0) throw error;
       const { include: _dropped, ...plain } = request;
-      const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", plain, left, { signal, headers }));
+      const response = await core.transport.request<unknown>(this.readSpec("POST", "/v1/context", plain, left, { signal, headers, voice }));
       for (const name of request.include) this.refusedBlocks.set(name, Date.now() + BLOCK_RECHECK_AFTER_MS);
       return normalizeContext(response.data);
     }

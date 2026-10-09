@@ -4,6 +4,16 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-10-09
+
+### Fixed
+
+- A voice read keeps its turn's budget whatever the connection. The cold-connection allowance
+  (`timeouts.connect`) took the first voice read of a new client to 1.2 s with a slow memory, past a 1 s voice
+  turn; `context()` and `agentMemory()` with `view: "voice"`, the navigation tools with `voice: true`, and the
+  first read of a call (`begin()`) now never grow past their own budget (`RequestSpec.ceilingMs`). Chat and task
+  reads keep the first-read budget and the allowance.
+
 ## [0.11.4] - 2026-10-08
 
 ### Changed
