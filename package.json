@@ -1,6 +1,6 @@
 {
   "name": "@niadra/sdk",
-  "version": "0.11.4",
+  "version": "0.11.5",
   "description": "TypeScript SDK for Niadra, the omnichannel memory layer for a company's AI agents: context before the model call, history, tools and MCP.",
   "license": "Apache-2.0",
   "author": "Niadra",

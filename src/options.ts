@@ -64,7 +64,9 @@ export interface Timeouts {
   /**
    * Added once to a call's budget when no connection to the API is likely open (no answer within
    * `keepAliveMs`): TCP and TLS take a few round trips, 300 ms or more from another continent. With a
-   * connection open, budgets are exact. 0 never adds it.
+   * connection open, budgets are exact. 0 never adds it. Never to a voice read: the turn waits for it, so it
+   * keeps its own budget and answers empty in time; a call's first read made with `begin()` while it rings is
+   * where the connection opens.
    */
   connect: number;
 }

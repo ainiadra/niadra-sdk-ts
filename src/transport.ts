@@ -39,6 +39,16 @@ export interface RequestSpec {
   headers?: Record<string, string> | undefined;
   /** `false` for the SDK's own upkeep (the keep-warm ping): it is not the client's use. */
   activity?: boolean;
+  /**
+   * The most `timeoutMs` may become with the cold-connection allowance; none: no limit. A voice read sets it
+   * to its own budget, since the turn waits for it (`voiced`).
+   */
+  ceilingMs?: number;
+}
+
+/** `spec` with its budget as its ceiling when a voice turn waits for it (`RequestSpec.ceilingMs`). */
+export function voiced(spec: RequestSpec, voice: boolean): RequestSpec {
+  return voice ? { ...spec, ceilingMs: spec.timeoutMs } : spec;
 }
 
 /** Bytes for a pre-signed storage URL. The URL is the credential; nothing of the API's goes along. */
@@ -108,7 +118,9 @@ export class Transport {
   /**
    * `spec` with the allowance for opening a connection, when it has a budget and none is likely open. The calls
    * that start while the first one opens it get it too; after that, none does until an answer comes, so an
-   * outage costs the allowance once, not on every turn.
+   * outage costs the allowance once, not on every turn. A call with a `ceilingMs` (a voice read) never grows
+   * past it: a voice turn keeps its budget, and a cold connection there answers empty in time instead of
+   * holding the turn.
    */
   private withAllowance(spec: RequestSpec): RequestSpec {
     const allowance = this.config.coldAllowanceMs ?? 0;
@@ -119,8 +131,10 @@ export class Transport {
     if (this.answeredAt !== undefined && now - this.answeredAt <= keep) return spec;
     this.grantedAt ??= now;
     if (now - this.grantedAt > allowance) return spec;
-    const total = retry.kind === "write" && retry.totalMs !== undefined ? { ...retry, totalMs: retry.totalMs + allowance } : retry;
-    return { ...spec, timeoutMs: spec.timeoutMs + allowance, retry: total };
+    const extra = spec.ceilingMs === undefined ? allowance : Math.min(allowance, spec.ceilingMs - spec.timeoutMs);
+    if (extra <= 0) return spec;
+    const total = retry.kind === "write" && retry.totalMs !== undefined ? { ...retry, totalMs: retry.totalMs + extra } : retry;
+    return { ...spec, timeoutMs: spec.timeoutMs + extra, retry: total };
   }
 
   private async read<T>(spec: RequestSpec, policy: { maxAttempts: number }): Promise<TransportResponse<T>> {
