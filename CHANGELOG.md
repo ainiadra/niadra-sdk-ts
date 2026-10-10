@@ -4,6 +4,10 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.7] - 2026-10-10
+
+0.11.5 and 0.11.6 were never published on npm: this release carries their changes too.
+
 ### Added
 
 - `mayContact(handle, purpose, { channel, at })` honors a person's own contact hours (`spec/suppression-list.md`,
