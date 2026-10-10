@@ -13,7 +13,7 @@ import type { ICommonObject, IMessage, INode, INodeData, INodeParams, MemoryMeth
  * chat's own messages follow, from the memory connected as "Chat History" or kept here. What
  * the agent adds is recorded as the customer's and the agent's turns.
  */
-export class NiadraCustomerMemory implements MemoryMethods {
+class NiadraCustomerMemory implements MemoryMethods {
   memoryKey = "chat_history";
   inputKey = "input";
   private readonly conversations = new Map<string, Conversation>();

@@ -27,7 +27,7 @@ const REFRESH_MS = 60_000;
 const FAIL_OPEN = new Set(["transactional", "service"]);
 const PAGE = 200;
 /** Pages one read takes at most; the next read goes on from its cursor. */
-export const MAX_PAGES = 50;
+const MAX_PAGES = 50;
 /**
  * Round trips the first check waits for, each within its own budget: the salt and the first page, the whole
  * list of a space with up to `PAGE` entries. A read stopped at one budget for all of them: from Sao Paulo the
