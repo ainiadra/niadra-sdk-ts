@@ -165,6 +165,24 @@ describe("coordination in the agent's process", () => {
     expect(await niadra.mayContact(OTHER, "marketing")).toBe(true);
   });
 
+  it("waits for a read under way no longer than its own round trips", async () => {
+    // A check that found the copy being read waited for that read, whatever it was: the background read an
+    // earlier check left goes through every page at the write timeout, far past the first check's two round trips.
+    const cell = new Cell();
+    cell.features.add("coordination");
+    const niadra = new Niadra({
+      apiKey: KEY,
+      logger: silentLogger,
+      flushOnExit: false,
+      fetch: slowList(cell, 1_000, 1_000),
+      timeouts: { navigation: 100, connect: 0, write: 5_000 },
+    });
+    expect(await niadra.mayContact(OTHER, "marketing")).toBe(false); // runs out and leaves the read going on
+    const started = Date.now();
+    expect(await niadra.mayContact(OTHER, "marketing")).toBe(false); // still no copy, and marketing waits
+    expect(Date.now() - started).toBeLessThan(800); // two round trips of 100 ms, never the 2 s background read
+  });
+
   it("holds nothing back in a space that does not coordinate", async () => {
     const { cell, niadra } = setup();
     cell.features.delete("coordination");
