@@ -4,6 +4,16 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- `mayContact(handle, purpose, { channel, at })` honors a person's own contact hours (`spec/suppression-list.md`,
+  6.4): a suppression list entry may carry a `window` of local hours (`from`, `to`, an IANA `tz`, ISO `days`),
+  and one of purpose `any` holds for every purpose. "Não me liguem antes das 9h" says no to a call at 07:00 and
+  yes at 14:00, on the voice channel only; it never says no all day. `at` defaults to now. With Niadra out of
+  reach, a check inside the window defers until it ends (`contact_window`, `contact_window_until`).
+  `windowUntil` is the window's rule, checked against the spec's `contact-window` vectors; it reads the zones
+  through `Intl`.
+
 ### Fixed
 
 - A first `mayContact` that finds the suppression list being read waits for that read at most as long as for

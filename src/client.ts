@@ -476,8 +476,11 @@ export class Niadra {
    * than a page goes on in the background. With no copy
    * and Niadra out of reach, the purpose decides: `transactional` and `service` go, every other purpose waits;
    * `failOpen` overrides that. A space without a list suppresses nothing.
+   *
+   * The person's own contact hours ("don't call before 9 am") hold as a window: `at` (now by default) inside it
+   * says no, outside it yes, on the channel they named and for every purpose.
    */
-  async mayContact(handle: Handle, purpose: string, options: { channel?: string; failOpen?: boolean } = {}): Promise<boolean> {
+  async mayContact(handle: Handle, purpose: string, options: { channel?: string; at?: Date; failOpen?: boolean } = {}): Promise<boolean> {
     if (this.core && this.suppressions.due()) {
       if (this.suppressions.held) {
         void this.readSuppressions(this.timeouts.write);
@@ -489,8 +492,9 @@ export class Niadra {
         this.keepSuppressions(); // what the first check could not read goes on in the background
       }
     }
-    const checkOptions: { channel?: string | null; failOpen?: boolean } = { channel: options.channel ?? null };
+    const checkOptions: { channel?: string | null; at?: Date; failOpen?: boolean } = { channel: options.channel ?? null };
     if (options.failOpen !== undefined) checkOptions.failOpen = options.failOpen;
+    if (options.at !== undefined) checkOptions.at = options.at;
     return this.suppressions.mayContact(handle, purpose, checkOptions);
   }
 

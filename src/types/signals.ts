@@ -166,6 +166,25 @@ export interface ConstraintOrigin {
   turn_id?: string | null;
 }
 
+/**
+ * The local hours a suppression applies in (the suppression-list spec, 6.1): from `from` up to `to`, in
+ * the IANA zone `tz`, on the ISO weekdays `days` (1 is Monday; null for every day). A window whose `to` is
+ * not after its `from` crosses midnight and belongs to the day it starts on.
+ */
+export interface ContactWindow {
+  days?: number[] | null;
+  from: string;
+  to: string;
+  tz: string;
+}
+
+/** A contact window the subject said, in their own block (the suppression-list spec, 6.1). */
+export interface ContactWindowEntry {
+  channel?: string | null;
+  said_at: string;
+  window: ContactWindow;
+}
+
 /** Only what the person said: an inference is never hard. */
 export interface HardConstraint {
   attr: string;
@@ -273,6 +292,11 @@ export interface ConstraintsBlock {
   ask?: string[];
   attributes?: AttributeEntry[];
   conflicts?: Conflict[];
+  /**
+   * The local hours the subject said they may not be contacted in, one per channel (null: every channel), the
+   * latest said: a contact of any purpose waits for the window's end.
+   */
+  contact_windows?: ContactWindowEntry[];
   exclude?: string[];
   hard?: HardConstraint[];
   /** What people said must or must not be done about the objects the read is about. */

@@ -5,6 +5,7 @@
  */
 
 import type { Handle, ObjectRef } from "./common.js";
+import type { ContactWindow } from "./signals.js";
 import type { Verification } from "./vocabulary.js";
 
 /** The claim a case closes, with the epoch it got when it was accepted. */
@@ -138,6 +139,11 @@ export interface CheckResult {
   commitments_active?: CommitmentRef[];
   contact_budget?: Record<string, ContactBudget>;
   contact_token?: string | null;
+  /**
+   * With `contact_window`: when the subject's contact window on the channel ends, the first moment the
+   * contact may go.
+   */
+  contact_window_until?: string | null;
   decision: "allow" | "defer" | "deny" | "handoff_to";
   decision_id: string;
   effect?: EffectStatus | null;
@@ -386,14 +392,16 @@ export interface LeaseDeclared {
 }
 
 /**
- * The subject may not be contacted for `purpose`, on `channel` or on every channel. `until` defaults to
- * the reason's own interval, or to no end.
+ * The subject may not be contacted for `purpose` (`any`: every purpose), on `channel` or on every
+ * channel. `until` defaults to the reason's own interval, or to no end. With `window`, only during those
+ * local hours (the suppression-list spec, 6.1).
  */
 export interface SuppressionAddedDetail {
   channel?: string | null;
   purpose: string;
   reason: string;
   until?: string | null;
+  window?: ContactWindow | null;
 }
 
 export interface SuppressionAdded {
@@ -578,6 +586,7 @@ export interface Suppression {
   removed?: boolean;
   since: string;
   until?: string | null;
+  window?: ContactWindow | null;
 }
 
 /**

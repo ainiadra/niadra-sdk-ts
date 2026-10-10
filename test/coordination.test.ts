@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NiadraAPIError, NiadraContactTokenError, Niadra, silentLogger } from "../src/index.js";
 import type { Handle } from "../src/index.js";
 import { Cell, SPACE } from "./support/cell.js";
@@ -7,6 +7,11 @@ import { KEY, marina, spyLogger } from "./helpers.js";
 const OTHER: Handle = { type: "phone_e164", value: "+5511998765432" };
 const GATEWAY_KEY = new Uint8Array(32).fill(107);
 const b64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+const BEFORE_NINE = { from: "00:00", to: "09:00", tz: "America/Sao_Paulo", days: null };
+const SEVEN = new Date("2026-10-10T10:00:00Z"); // 07:00 in Sao Paulo
+const NINE = new Date("2026-10-10T12:00:00Z");
+const NOON = new Date("2026-10-10T15:00:00Z");
 
 function setup(): { cell: Cell; niadra: Niadra } {
   const cell = new Cell();
@@ -95,6 +100,33 @@ describe("coordination in the agent's process", () => {
     const conversation = niadra.conversation({ subject: marina, channel: "whatsapp", conversation_id: "c-3" });
     const result = await conversation.check("follow_up", { purpose: "service" });
     expect([result.decision, result.reasons]).toEqual(["deny", ["suppressed"]]);
+  });
+
+  it("holds a person's contact hours as a window, never all day", async () => {
+    // juridico-zero, 09/10/2026: "não liguem antes das 9h" said no to a call at any hour.
+    const { cell, niadra } = setup();
+    await cell.suppress(marina, "any", { channel: "voice", window: BEFORE_NINE });
+    expect(await niadra.mayContact(marina, "service", { channel: "voice", at: SEVEN })).toBe(false);
+    expect(await niadra.mayContact(marina, "marketing", { channel: "voice", at: SEVEN })).toBe(false);
+    expect(await niadra.mayContact(marina, "service", { channel: "voice", at: NOON })).toBe(true);
+    expect(await niadra.mayContact(marina, "service", { channel: "whatsapp", at: SEVEN })).toBe(true);
+    expect(await niadra.mayContact(OTHER, "service", { channel: "voice", at: SEVEN })).toBe(true);
+  });
+
+  it("with Niadra down, defers a check inside the window until it ends", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(SEVEN);
+      const { cell, niadra } = setup();
+      await cell.suppress(marina, "any", { channel: "voice", window: BEFORE_NINE });
+      expect(await niadra.mayContact(marina, "service", { channel: "voice", at: NOON })).toBe(true); // the copy is read
+      cell.failNext("/", 503, 100);
+      const conversation = niadra.conversation({ subject: marina, channel: "voice", conversation_id: "c-w" });
+      const result = await conversation.check("reminder", { purpose: "service" });
+      expect([result.decision, result.reasons, result.contact_window_until]).toEqual(["defer", ["contact_window"], NINE.toISOString()]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reads the suppression list to a short page, which still names the cursor to go on from", async () => {

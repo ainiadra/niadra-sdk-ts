@@ -71,11 +71,21 @@ export interface CheckOptions {
 }
 
 /** The decision when Niadra did not answer in time, by the purpose's direction. Nothing reserved, no token. */
-function fallback(request: CheckRequest, suppressed: boolean, failOpen?: boolean): CheckResult {
+function fallback(request: CheckRequest, suppressed: boolean, failOpen?: boolean, windowUntil: Date | null = null): CheckResult {
   let decision: CheckResult["decision"];
   let reason: string;
   if (request.direction === "inbound") [decision, reason] = ["allow", "unchecked"];
   else if (suppressed) [decision, reason] = ["deny", "suppressed"];
+  else if (windowUntil !== null) {
+    // Inside the subject's own contact window: the contact waits until it ends.
+    return {
+      decision: "defer",
+      decision_id: uuidv7(),
+      reasons: ["contact_window"],
+      contact_window_until: windowUntil.toISOString(),
+      valid_for_s: 0,
+    };
+  }
   else if (request.effect_key != null) [decision, reason] = ["defer", "unavailable"];
   else if (failOpen ?? !FAIL_CLOSED.has(request.purpose)) [decision, reason] = ["allow", "unchecked"];
   else [decision, reason] = ["defer", "unavailable"];
@@ -116,12 +126,12 @@ export class Coordinator {
       return recorded({ decision, decision_id: uuidv7(), reasons: ["invalid_request"], valid_for_s: 0 });
     }
     const off = error instanceof NiadraAPIError && error.status === 404;
-    const suppressed =
+    const found =
       request.subject != null && request.direction === "outbound"
-        ? !(await this.suppressions.mayContact(request.subject, request.purpose, { channel: request.channel ?? null, failOpen: true }))
-        : false;
+        ? await this.suppressions.blocking(request.subject, request.purpose, { channel: request.channel ?? null })
+        : null;
     const plain = off ? { ...request, effect_key: null } : request;
-    return recorded(fallback(plain, suppressed, off ? true : failOpen));
+    return recorded(fallback(plain, found?.suppressed ?? false, off ? true : failOpen, found?.windowUntil ?? null));
   }
 
   decided(result: CheckResult, request: CheckRequest, checked: Checked): CheckResult {

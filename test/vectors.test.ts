@@ -10,6 +10,7 @@ import {
   NiadraContactTokenError,
   NiadraDestinationError,
   NiadraExposureTokenError,
+  NiadraWindowError,
   canonicalDestination,
   canonicalJson,
   claims,
@@ -22,6 +23,7 @@ import {
   renderConstraints,
   suppressionKey,
   verifyContactToken,
+  windowUntil,
 } from "../src/index.js";
 import type {
   ClaimCategory,
@@ -268,6 +270,20 @@ async function regressionStatsCase(c: Case): Promise<void> {
     expect(Object.keys(execution).sort()).toEqual(["outcomes", "paraphrase", "status"]);
   }
   expect(scenarioVerdict(c.executions as Execution[], c.baseline as Record<string, [number, number]> | null)).toEqual(c.expect);
+  await Promise.resolve();
+}
+
+// A contact window at an instant (`spec/suppression-list.md`, section 6.4).
+async function contactWindowCase(c: Case): Promise<void> {
+  let got: Record<string, unknown>;
+  try {
+    const until = windowUntil(c.window as Parameters<typeof windowUntil>[0], new Date(c.at as string));
+    got = { applies: until !== null, until: until === null ? null : until.toISOString().replace(".000Z", "Z") };
+  } catch (error) {
+    if (!(error instanceof NiadraWindowError)) throw error;
+    got = { error: error.code };
+  }
+  expect(got).toStrictEqual(c.expect);
   await Promise.resolve();
 }
 
@@ -552,6 +568,11 @@ const EXPECTED: Record<string, Expected> = {
     caseFields: ["id", "description", "executions", "baseline", "expect"],
     expectFields: ["verdict", "completed", "infrastructure_errors", "pin_mismatches", "needs_paraphrase", "assertions"],
     run: regressionStatsCase,
+  },
+  "contact-window.v0": {
+    caseFields: ["id", "description", "window", "at", "expect"],
+    expectFields: ["applies", "until"],
+    run: contactWindowCase,
   },
   "suppression-key.v0": {
     caseFields: ["id", "description", "salt", "type", "value", "expect"],
