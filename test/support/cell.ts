@@ -70,9 +70,17 @@ export class Cell {
     this.failures = [];
   }
 
-  suppress(handle: Handle, purpose: string): Promise<void> {
+  /** A suppression of `purpose` (`any` for every purpose), on `channel` and only in `window`'s hours when given. */
+  suppress(handle: Handle, purpose: string, options: { channel?: string; window?: Json } = {}): Promise<void> {
     return suppressionKey(SALT, canonicalDestination(handle.type, handle.value)).then((key) => {
-      this.suppressions.push({ id: `s${this.suppressions.length + 1}`, key, purpose, since: "2026-01-01T00:00:00Z" });
+      this.suppressions.push({
+        id: `s${this.suppressions.length + 1}`,
+        key,
+        purpose,
+        since: "2026-01-01T00:00:00Z",
+        ...(options.channel === undefined ? {} : { channel: options.channel }),
+        ...(options.window === undefined ? {} : { window: options.window }),
+      });
     });
   }
 
@@ -275,7 +283,7 @@ export class Cell {
     const subject = body.subject ? `${body.subject.type}:${body.subject.value}` : null;
     if (subject !== null) {
       const key = await suppressionKey(SALT, canonicalDestination(body.subject.type, body.subject.value));
-      if (this.suppressions.some((s) => s.key === key && s.purpose === body.purpose)) return { ...result, decision: "deny", reasons: ["suppressed"] };
+      if (this.suppressions.some((s) => s.key === key && (s.purpose === body.purpose || s.purpose === "any") && s.window == null)) return { ...result, decision: "deny", reasons: ["suppressed"] };
       const limit = this.budgets.get(body.purpose);
       const spentKey = `${body.purpose}|${subject}`;
       if (limit !== undefined && (this.spent.get(spentKey) ?? 0) >= limit) return { ...result, decision: "deny", reasons: ["budget_exhausted"] };

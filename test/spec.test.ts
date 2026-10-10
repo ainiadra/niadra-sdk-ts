@@ -158,6 +158,7 @@ const blockKeys: Record<string, Record<string, true>> = {
     ask: true,
     attributes: true,
     conflicts: true,
+    contact_windows: true,
     exclude: true,
     hard: true,
     instructions: true,

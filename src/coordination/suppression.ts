@@ -6,7 +6,9 @@
  * `GET /v1/suppressions/salt`, and read again once it is a minute old. Before an outbound contact the SDK
  * computes the destination's key and looks it up here, in memory:
  *
- * - an entry with that key, the purpose, the channel (or every channel), in force now, forbids the contact;
+ * - an entry with that key, the purpose (or `any`), the channel (or every channel), in force now, forbids the
+ *   contact; one with a `window` (the person's own contact hours, section 6.4) forbids it only inside those local
+ *   hours, and the contact waits until the window ends;
  * - when the list cannot be read, the last copy keeps applying, however old: an opt-out does not wait for
  *   Niadra;
  * - with no copy at all and Niadra out of reach, the purpose decides: transactional and service contacts go
@@ -20,6 +22,16 @@ import { NiadraAPIError } from "../errors.js";
 import type { Handle } from "../types/common.js";
 import type { Suppression, SuppressionPage, SuppressionSalt } from "../types/coordination.js";
 import { NiadraDestinationError, canonicalDestination, suppressionKey } from "./destination.js";
+import { NiadraWindowError, windowUntil } from "./window.js";
+
+/** An entry of `any` purpose holds for every purpose: a person's own contact hours. */
+export const ANY_PURPOSE = "any";
+
+/** What the local copy says of one contact: suppressed at every hour, or inside a contact window until when. */
+export interface Blocking {
+  suppressed: boolean;
+  windowUntil: Date | null;
+}
 
 /** Milliseconds after which the copy is read again. */
 const REFRESH_MS = 60_000;
@@ -132,23 +144,55 @@ export class SuppressionCopy {
    * purpose's direction when there is no copy.
    */
   async mayContact(handle: Handle, purpose: string, options: { channel?: string | null; at?: Date; failOpen?: boolean } = {}): Promise<boolean> {
-    if (this.absent) return true;
-    if (this.saltValue === null || this.readAt === null) return options.failOpen ?? FAIL_OPEN.has(purpose);
+    const found = await this.blocking(handle, purpose, options);
+    if (found === null) return options.failOpen ?? FAIL_OPEN.has(purpose);
+    return !found.suppressed && found.windowUntil === null;
+  }
+
+  /**
+   * What the copy says of a contact at `at` (now by default): suppressed at every hour, or inside a contact
+   * window until when; null when there is no copy to say it.
+   */
+  async blocking(handle: Handle, purpose: string, options: { channel?: string | null; at?: Date } = {}): Promise<Blocking | null> {
+    if (this.absent) return { suppressed: false, windowUntil: null };
+    if (this.saltValue === null || this.readAt === null) return null;
     let key: string;
     try {
       key = await suppressionKey(this.saltValue.salt, canonicalDestination(handle.type, handle.value));
     } catch (error) {
-      if (error instanceof NiadraDestinationError) return true; // not a destination the list covers
+      // not a destination the list covers
+      if (error instanceof NiadraDestinationError) return { suppressed: false, windowUntil: null };
       throw error;
     }
-    const at = (options.at ?? new Date()).getTime();
+    const moment = options.at ?? new Date();
+    const at = moment.getTime();
+    let suppressed = false;
+    let until: Date | null = null;
     for (const e of this.entries.values()) {
-      if (e.key !== key || e.purpose !== purpose) continue;
+      if (e.key !== key || (e.purpose !== purpose && e.purpose !== ANY_PURPOSE)) continue;
       if (e.channel != null && e.channel !== options.channel) continue;
       if (Date.parse(e.since) > at) continue;
       if (e.until != null && Date.parse(e.until) <= at) continue;
-      return false;
+      if (e.window == null) {
+        suppressed = true;
+        continue;
+      }
+      const end = windowEnd(e.window, moment);
+      if (end !== null && (until === null || end > until)) until = end;
     }
-    return true;
+    return { suppressed, windowUntil: until };
+  }
+}
+
+/**
+ * When the entry's window `at` falls in ends. A window this runtime cannot read (its time zone data lacks the
+ * zone) is not applied, and is never taken as every hour (section 6.5).
+ */
+function windowEnd(window: NonNullable<Suppression["window"]>, at: Date): Date | null {
+  try {
+    return windowUntil(window, at);
+  } catch (error) {
+    if (error instanceof NiadraWindowError) return null;
+    throw error;
   }
 }

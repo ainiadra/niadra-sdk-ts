@@ -7,6 +7,8 @@ export * as claims from "./claims/index.js";
 export * as introspect from "./introspect/derive.js";
 export type { Logic } from "./state/logic.js";
 export { NiadraDestinationError, canonicalDestination, suppressionKey } from "./coordination/destination.js";
+export { NiadraWindowError, windowUntil } from "./coordination/window.js";
+export type { WindowLike } from "./coordination/window.js";
 export { ContactGateway, MemorySeen, NiadraContactTokenError, recipientHash, verifyContactToken } from "./coordination/token.js";
 export type { ContactClaims, GatewayOptions, Refusal as ContactTokenRefusal, SeenTokens, VerifyParams as ContactTokenParams } from "./coordination/token.js";
 export { NiadraExposureTokenError, exposureToken, parseExposureToken } from "./exposure.js";
