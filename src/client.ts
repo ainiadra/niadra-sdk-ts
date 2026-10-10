@@ -471,8 +471,9 @@ export class Niadra {
    * copy of the space's suppression list: the opt-out holds with Niadra down, from the last copy read. Only
    * messages the agent starts need it; an answer to the customer is never suppressed.
    *
-   * The copy is read on the first call, the salt and the first page each within `timeouts.navigation`, and
-   * again in the background once a minute; a list longer than a page goes on in the background. With no copy
+   * The copy is read on the first call, the salt and the first page each within `timeouts.navigation` (a call
+   * that finds a read under way waits for it as long), and again in the background once a minute; a list longer
+   * than a page goes on in the background. With no copy
    * and Niadra out of reach, the purpose decides: `transactional` and `service` go, every other purpose waits;
    * `failOpen` overrides that. A space without a list suppresses nothing.
    */
@@ -481,7 +482,10 @@ export class Niadra {
       if (this.suppressions.held) {
         void this.readSuppressions(this.timeouts.write);
       } else {
-        await this.readSuppressions(this.readBudget("navigation"), FIRST_READ_ROUNDS);
+        // A read under way (another check's, or the background one) is the one awaited, as long as the first
+        // check's own round trips: a background read goes through every page at the write timeout.
+        const budget = this.readBudget("navigation");
+        await waitAtMost(this.readSuppressions(budget, FIRST_READ_ROUNDS), budget * FIRST_READ_ROUNDS);
         this.keepSuppressions(); // what the first check could not read goes on in the background
       }
     }
@@ -1914,3 +1918,16 @@ async function waitFor(
   }
 }
 
+/** Waits for `promise` at most `ms`; the promise goes on either way and never rejects here. */
+async function waitAtMost(promise: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+    unref(timer);
+  });
+  try {
+    await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}

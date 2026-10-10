@@ -4,6 +4,12 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- A first `mayContact` that finds the suppression list being read waits for that read at most as long as for
+  its own two round trips. It waited for whatever read was under way, and the background read an earlier check
+  left goes through every page at the write timeout.
+
 ## [0.11.6] - 2026-10-09
 
 0.11.5 was never published on npm: this release carries its changes too.
