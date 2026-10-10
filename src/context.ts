@@ -304,7 +304,7 @@ export function emptyResult(error: NiadraError | null): ContextResult {
 export type ServedContext = ContextResponse & { asked_blocks?: Include[] };
 
 /** The blocks the read asked by `include` that the answer does not carry. */
-export function unreadOf(response: ServedContext): Include[] {
+function unreadOf(response: ServedContext): Include[] {
   return (response.asked_blocks ?? []).filter((name) => response[name] == null);
 }
 

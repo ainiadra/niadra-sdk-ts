@@ -31,7 +31,7 @@ export interface INodeParams {
   list?: boolean;
 }
 
-export interface INodeProperties {
+interface INodeProperties {
   label: string;
   name: string;
   type: string;
