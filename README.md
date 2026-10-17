@@ -2,6 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@niadra/sdk)](https://www.npmjs.com/package/@niadra/sdk)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![GitHub](https://img.shields.io/badge/server-ainiadra%2Fniadra-a3d600?logo=github)](https://github.com/ainiadra/niadra)
 
 **Niadra is the omnichannel memory layer for a company's AI agents.** It takes the events from
 every channel, platform and system, builds one memory of each customer and delivers it to any AI
@@ -12,7 +13,11 @@ Node 20+, Deno, Bun, Cloudflare Workers and the Vercel Edge Runtime: it needs on
 Web Crypto, and CI runs the build on each of them.
 
 [Website](https://niadra.com/en) · [Documentation](https://docs.niadra.com/en) ·
+[Server, Console and deployment (open source)](https://github.com/ainiadra/niadra) ·
 [Talk to us](https://niadra.com/en/enterprise) · [Python SDK](https://github.com/ainiadra/niadra-sdk-python)
+
+Niadra is open source under Apache 2.0. The server, the Console and everything that deploys them are in
+[ainiadra/niadra](https://github.com/ainiadra/niadra): run your own and point `baseURL` (or `NIADRA_BASE_URL`) at it.
 
 ```sh
 npm install @niadra/sdk
